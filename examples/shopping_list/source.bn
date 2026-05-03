@@ -1,0 +1,6 @@
+items:
+    LIST { TEXT { milk } }
+    |> List/append(item: TEXT { bread })
+
+document:
+    items |> Text/join(separator: TEXT { , }) |> Document/new()

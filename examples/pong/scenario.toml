@@ -1,0 +1,10 @@
+[initial]
+expect_text = "frame 0"
+
+[[step]]
+description = "synthetic animation frame"
+actions = [
+  { source = "store.sources.frame", value = { delta = 16, now = 16 } }
+]
+expect_text = "frame 1"
+expect_monitor_changed = ["Pong", "DocumentText"]

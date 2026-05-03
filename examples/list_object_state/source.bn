@@ -1,0 +1,11 @@
+items:
+    LIST {
+        [title: TEXT { milk } completed: False]
+        [title: TEXT { bread } completed: False]
+    }
+
+active_count:
+    items |> List/count(item, if: item.completed |> Bool/not())
+
+document:
+    active_count |> Text/from_number() |> Text/append(TEXT {  active }) |> Document/new()

@@ -1,0 +1,10 @@
+[initial]
+expect_text = "removed"
+
+[[step]]
+description = "remove retained row"
+actions = [
+  { source = "item.remove_button.event.press", owner = "item-1", generation = 0, value = [] }
+]
+expect_text = "removed"
+expect_monitor_changed = ["ListRetainRemove", "DocumentText"]

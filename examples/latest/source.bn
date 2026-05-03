@@ -1,0 +1,8 @@
+value:
+    LATEST {
+        sources.a
+        sources.b
+    }
+
+document:
+    value |> Document/new()

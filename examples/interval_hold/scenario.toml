@@ -1,0 +1,10 @@
+[initial]
+expect_text = "0"
+
+[[step]]
+description = "synthetic tick into hold"
+actions = [
+  { source = "tick", value = [] }
+]
+expect_text = "1"
+expect_monitor_changed = ["TimerInterval", "IntervalHoldCounter", "DocumentText"]

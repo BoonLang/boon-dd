@@ -1,0 +1,9 @@
+uppercase:
+    True
+
+items:
+    LIST { TEXT { a } TEXT { b } TEXT { c } }
+    |> List/map(item, new: item |> Text/uppercase(if: uppercase))
+
+document:
+    items |> Text/join(separator: TEXT { , }) |> Document/new()

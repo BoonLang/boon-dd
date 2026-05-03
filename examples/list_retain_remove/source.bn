@@ -1,0 +1,6 @@
+items:
+    LIST { TEXT { milk } TEXT { bread } }
+    |> List/remove(item, on: item.sources.remove_button.event.press)
+
+document:
+    TEXT { removed } |> Document/new()

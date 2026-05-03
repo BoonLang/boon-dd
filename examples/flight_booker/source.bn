@@ -1,0 +1,8 @@
+store: [
+    sources: [
+        book_button: [event: [press: SOURCE]]
+    ]
+]
+
+document:
+    TEXT { booked } |> Document/new()

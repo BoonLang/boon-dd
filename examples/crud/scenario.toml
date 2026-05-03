@@ -1,0 +1,10 @@
+[initial]
+expect_text = "saved"
+
+[[step]]
+description = "create record"
+actions = [
+  { source = "save_button.event.press", value = [] }
+]
+expect_text = "saved"
+expect_monitor_changed = ["Crud", "DocumentText"]

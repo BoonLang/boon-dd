@@ -1,0 +1,10 @@
+[initial]
+expect_text = "booked"
+
+[[step]]
+description = "book valid flight"
+actions = [
+  { source = "book_button.event.press", value = [] }
+]
+expect_text = "booked"
+expect_monitor_changed = ["FlightBooker", "DocumentText"]

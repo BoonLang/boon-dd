@@ -1,0 +1,5 @@
+value:
+    sources.press |> THEN { 1 }
+
+document:
+    value |> Document/new()

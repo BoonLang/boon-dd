@@ -1,0 +1,10 @@
+[initial]
+expect_text = "physical ready"
+
+[[step]]
+description = "render physical scene"
+actions = [
+  { source = "scene.frame", value = [] }
+]
+expect_text = "physical ready"
+expect_monitor_changed = ["TodoMvcPhysical", "DocumentText"]

@@ -1,0 +1,8 @@
+visible:
+    selected_filter |> WHILE {
+        Active => TEXT { visible }
+        Completed => SKIP
+    }
+
+document:
+    visible |> Document/new()

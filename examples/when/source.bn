@@ -1,0 +1,8 @@
+accepted:
+    sources.key_down.key |> WHEN {
+        Enter => TEXT { accepted }
+        __ => SKIP
+    }
+
+document:
+    accepted |> Document/new()

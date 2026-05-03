@@ -1,0 +1,13 @@
+store: [
+    sources: [
+        frame: Window/animation_frame()
+    ]
+
+    game:
+        Pong/initial() |> HOLD game {
+            sources.frame |> THEN { Pong/step(game: game) }
+        }
+]
+
+document:
+    TEXT { frame 1 } |> Document/new()

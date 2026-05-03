@@ -1,0 +1,10 @@
+[initial]
+expect_text = "active"
+
+[[step]]
+description = "reactive retain switches visibility"
+actions = [
+  { source = "selected_filter", value = "Active" }
+]
+expect_text = "active"
+expect_monitor_changed = ["ListRetainReactive", "DocumentText"]

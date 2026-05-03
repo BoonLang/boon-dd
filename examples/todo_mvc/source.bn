@@ -1,0 +1,14 @@
+store: [
+    sources: [
+        new_todo_input: [
+            text: SOURCE
+            event: [key_down: [key: SOURCE]]
+        ]
+    ]
+
+    todos:
+        LIST { TEXT { Buy milk } TEXT { Clean room } }
+]
+
+document:
+    TEXT { 2 todos } |> Document/new()

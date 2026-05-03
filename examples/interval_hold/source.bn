@@ -1,0 +1,10 @@
+tick:
+    Duration[seconds: 1] |> Timer/interval()
+
+counter:
+    0 |> HOLD state {
+        tick |> THEN { state + 1 }
+    }
+
+document:
+    counter |> Document/new()

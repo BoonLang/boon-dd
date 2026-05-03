@@ -1,0 +1,8 @@
+celsius:
+    20
+
+fahrenheit:
+    celsius |> Temperature/c_to_f()
+
+document:
+    TEXT { 68 F } |> Document/new()

@@ -1,0 +1,11 @@
+[initial]
+expect_text = ""
+
+[[step]]
+description = "same epoch branch tie"
+actions = [
+  { source = "a", value = "branch_a" },
+  { source = "b", value = "branch_b" }
+]
+expect_text = "branch_b"
+expect_monitor_changed = ["LatestValue", "DocumentText"]

@@ -1,0 +1,10 @@
+items:
+    LIST {
+        [title: TEXT { milk } completed: False]
+        [title: TEXT { bread } completed: False]
+        [title: TEXT { done } completed: True]
+    }
+    |> List/retain(item, if: item.completed |> Bool/not())
+
+document:
+    items |> List/count() |> Text/from_number() |> Document/new()

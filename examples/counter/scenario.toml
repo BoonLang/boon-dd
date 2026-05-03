@@ -1,0 +1,10 @@
+[initial]
+expect_text = "0"
+
+[[step]]
+description = "increment"
+actions = [
+  { source = "store.sources.increment_button.event.press", value = [] }
+]
+expect_text = "1"
+expect_monitor_changed = ["IncrementButtonEventPress", "Counter", "DocumentText"]

@@ -1,0 +1,10 @@
+[initial]
+expect_text = "2"
+
+[[step]]
+description = "retain active rows and count"
+actions = [
+  { source = "filter", value = "Active" }
+]
+expect_text = "2"
+expect_monitor_changed = ["ListRetainCount", "DocumentText"]

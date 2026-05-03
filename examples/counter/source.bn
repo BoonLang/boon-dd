@@ -1,0 +1,24 @@
+store: [
+    sources: [
+        increment_button: [
+            event: [
+                press: SOURCE
+            ]
+        ]
+    ]
+
+    counter:
+        store.sources.increment_button.event.press
+        |> THEN { 1 }
+        |> Math/sum()
+]
+
+document:
+    Document/new(
+        root:
+            Element/button(
+                element: store.sources.increment_button
+                style: []
+                label: store.counter |> Text/from_number()
+            )
+    )

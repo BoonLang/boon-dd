@@ -1,0 +1,10 @@
+[initial]
+expect_text = "A1=1"
+
+[[step]]
+description = "update cell"
+actions = [
+  { source = "cells.A1.text", value = "1" }
+]
+expect_text = "A1=1"
+expect_monitor_changed = ["Cells", "DocumentText"]

@@ -1,0 +1,10 @@
+[initial]
+expect_text = "68 F"
+
+[[step]]
+description = "convert celsius"
+actions = [
+  { source = "celsius_input.text", value = "20" }
+]
+expect_text = "68 F"
+expect_monitor_changed = ["TemperatureConverter", "DocumentText"]

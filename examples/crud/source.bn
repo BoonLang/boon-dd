@@ -1,0 +1,8 @@
+store: [
+    sources: [
+        save_button: [event: [press: SOURCE]]
+    ]
+]
+
+document:
+    TEXT { saved } |> Document/new()

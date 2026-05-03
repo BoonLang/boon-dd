@@ -1,0 +1,6 @@
+items:
+    LIST { TEXT { a } TEXT { b } TEXT { c } }
+    |> List/map(item, new: BLOCK { item })
+
+document:
+    items |> Text/join(separator: TEXT { , }) |> Document/new()

@@ -1,0 +1,11 @@
+[initial]
+expect_text = "2 todos"
+
+[[step]]
+description = "add and count todos"
+actions = [
+  { source = "store.sources.new_todo_input.text", value = "Buy milk" },
+  { source = "store.sources.new_todo_input.event.key_down.key", value = "Enter" }
+]
+expect_text = "2 todos"
+expect_monitor_changed = ["TodoMvc", "DocumentText"]
