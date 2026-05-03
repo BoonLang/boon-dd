@@ -1,6 +1,6 @@
 # Boon Timely/Differential Dataflow Transpiler Plan
 
-This file is an implementation brief for Codex CLI / implementation agents. Treat it as the source of truth for the next `boon-rust` direction unless a human maintainer changes it.
+This file is an implementation brief for Codex CLI / implementation agents. Treat it as the source of truth for this repository unless a human maintainer changes it.
 
 The goal is to replace the painful custom Rust scheduler direction with a generated, static Timely/Differential Dataflow graph. Boon should compile to Rust code that **constructs a Timely/DD graph**, not Rust code that manually schedules dirty nodes.
 
@@ -28,6 +28,52 @@ The important examples are:
 - app examples: `shopping_list`, `crud`, `flight_booker`, `temperature_converter`
 
 Do not make the compiler know about any specific example. The examples must work because the Boon core and library metadata are general.
+
+---
+
+## Unattended `/goal` contract
+
+The implementation goal is complete only when local verification passes. Continuous integration is not required for this plan.
+
+Required local commands:
+
+```bash
+cargo xtask bootstrap --check
+cargo xtask verify-deps --format json
+cargo xtask verify-wasm-dd --required --browser firefox
+cargo xtask verify all --format json
+```
+
+Required success artifacts:
+
+```text
+target/boon-artifacts/verify-report.json
+target/boon-artifacts/success.json
+```
+
+`success.json` must report `success: true`, zero failed gates, the exact dependency/tool versions, the canonical example matrix results, and the forbidden-pattern scan result.
+
+An unattended agent may stop only in one of two states:
+
+1. `cargo xtask verify all --format json` passes locally and writes `success.json` with `success: true`.
+2. A hard blocker prevents the full goal, and the agent writes a checked-in blocker report under `docs/blockers/` with the failing command, exact output, dependency revisions, minimized repro, and next pin/fork/fix decision.
+
+Browser-hosted Timely/Differential WASM is part of the final deliverable. If it fails, the full `/goal` is blocked; do not treat terminal/native progress as a complete goal.
+
+All commands that open native or browser windows during verification must launch the actual window-creating process through:
+
+```bash
+cosmic-background-launch -- <command> [args...]
+```
+
+Before any native/browser GUI verification, `xtask` must check:
+
+```bash
+command -v cosmic-background-launch
+busctl --user list | rg 'com\.system76\.CosmicComp\.BackgroundLaunch'
+```
+
+If the helper or live COSMIC background-launch service is unavailable, native/browser GUI verification must fail with a clear local blocker instead of opening foreground windows. Wrapping a long bootstrap command is not enough; the helper must be applied to the process that creates the native window or Firefox/browser window so it does not steal focus or change the user’s current workspace layout.
 
 ---
 
@@ -226,18 +272,30 @@ phase 2: derived values, collection/list outputs
 phase 3: render/effect/persist/monitor commands
 ```
 
+Formal timestamp contract:
+
+- Source events and persisted bootstrap records are injected at `BoonTime { epoch: e, phase: 0 }`.
+- `HOLD` and `keyed_hold` outputs for that event are retimed to `BoonTime { epoch: e, phase: 1 }`.
+- Derived values, collection/list outputs, `LATEST`, `WHEN`, `THEN`, and `WHILE` outputs are retimed to `BoonTime { epoch: e, phase: 2 }` unless the operator explicitly documents a narrower phase.
+- Render, effect, persistence, and monitor command streams are retimed to `BoonTime { epoch: e, phase: 3 }`.
+- A host submission is complete only after the probe frontier is no longer less than `BoonTime { epoch: e, phase: 3 }`.
+- `THEN` bodies that sample cells read the previous completed epoch snapshot unless an operator explicitly retimes an input to a later phase. This prevents same-epoch feedback from becoming implementation-defined.
+- Multiple same-owner updates in one epoch must be ordered by generated branch/order metadata or rejected as a compile error. Do not leave same-epoch ordering to collection iteration order.
+
+The implementation must prove `BoonTime` satisfies a real Timely/DD graph with `map`, `join` or `reduce`, `probe`, `then_const`, and `hold` before building user examples. If a custom timestamp cannot satisfy Timely/Differential progress traits cleanly, encode `(epoch, phase)` into a supported scalar timestamp such as `u64`; keep the public semantics above unchanged.
+
 Start with one Timely worker. Multiple workers are optional later.
 
 ---
 
 ## 1. Repository direction
 
-The current `boon-rust` workspace layout is useful. Keep the rough crate layout, but change the purpose of `boon_runtime`: it should contain DD/Timely graph helpers and host boundary adapters, not a custom dirty scheduler.
+The existing `boon-rust` workspace layout is useful as a reference. Implement this plan in this repository. Keep the rough crate layout, but change the purpose of `boon_runtime`: it should contain DD/Timely graph helpers and host boundary adapters, not a custom dirty scheduler.
 
 Recommended workspace:
 
 ```text
-boon-rust/
+boon-dd/
   Cargo.toml
   crates/
     boon_syntax/
@@ -292,7 +350,7 @@ If existing crate names already exist, do not churn names unless necessary. It i
 
 ### 1.1 Dependencies
 
-Start with pinned versions unless the workspace already pins newer compatible ones:
+Start with pinned versions unless a dependency gate proves and records a newer compatible set:
 
 ```toml
 [dependencies]
@@ -316,16 +374,40 @@ thiserror = "2"
 Renderer dependencies:
 
 ```toml
-ratatui = "latest-compatible"
-crossterm = "latest-compatible"
-wgpu = "latest-compatible"
-wesl = "latest-compatible"
-wgsl_bindgen = "latest-compatible"
+ratatui = "=0.30.0"
+crossterm = "=0.29.0"
+wgpu = "=29.0.3"
+wesl = "=0.3.2"
+wgsl_bindgen = "=0.22.2"
+app_window = "=0.3.3"
 ```
 
-Do not spend the first implementation week fighting version exactness. Pin once the first example runs.
+Tooling versions:
 
-For browser builds, start with `default-features = false` on Timely/DD where possible. The wasm gate decides the exact working dependency set. Do not move browser execution out of WASM to avoid dependency issues.
+```text
+wasm-bindgen-cli = 0.2.120
+```
+
+The first implementation step must choose and commit a coherent dependency set, `Cargo.lock`, and Rust toolchain file. `cargo xtask verify-deps --format json` must report the exact crate versions, feature flags, Rust version, installed `wasm32-unknown-unknown` target, local wasm tooling, Firefox/WebGPU preflight, WESL-to-WGSL shader compile preflight, and `cargo tree -e features` artifact path.
+
+For browser builds, start with `default-features = false` on Timely/DD where the crates support it. The wasm gate decides the exact working dependency set. Do not move browser execution out of WASM to avoid dependency issues.
+
+### 1.2 Local verification only
+
+Do not require GitHub Actions or any other remote automation for this plan. All compile, test, browser, native-window, shader, and scenario gates are local `xtask` gates. `/goal` readiness and completion are defined only by local commands and local artifacts.
+
+### 1.3 Focus-safe native/browser launch
+
+Native window and browser playground commands must be launched through `cosmic-background-launch` when they create GUI windows. `xtask` must keep the helper close to the actual GUI phase so the environment variable and compositor launch id are inherited by the process that creates the window.
+
+Use these command shapes for interactive/manual launches:
+
+```bash
+cosmic-background-launch -- cargo xtask run --example counter --target native
+cosmic-background-launch -- cargo xtask run --example counter --target browser
+```
+
+For automated verification, prefer non-interactive/headless assertions when possible. When Firefox or a native window must open, the verifier must use `cosmic-background-launch` and fail if the helper or user D-Bus service is unavailable.
 
 ---
 
@@ -423,6 +505,34 @@ Rules:
 - Key down uses `TagSet` under `.key`, not `.text`.
 - Text input current text uses `.text` as a text cell/source.
 
+### 3.1 Canonical value and wire schema
+
+Generated code and verification artifacts must use one canonical value model:
+
+```rust
+pub enum BoonValue {
+    EmptyRecord,
+    Record(BTreeMap<FieldName, BoonValue>),
+    List(Vec<BoonValue>),
+    Text(String),
+    Number(BoonNumber),
+    Tag { name: TagName, payload: Option<Box<BoonValue>> },
+}
+
+pub enum BoonNumber {
+    Int(i64),
+    Float(OrderedFloat<f64>),
+}
+```
+
+Rules:
+
+- User-facing booleans are tags: `True` and `False`. Generated source payloads must not use raw `bool` unless the field is a private Rust optimization that serializes as `Tag { True | False }`.
+- Key tags with text payloads use `Tag { name: Character, payload: Text(...) }`; non-character keys use tags without payloads.
+- `SKIP` is not a value. It means “emit no record” in event/collection flows.
+- JSON serialization, monitor previews, persisted values, and scenario fixtures must use the same canonical shape names and field ordering.
+- Shape hashes are computed from canonical shape JSON with sorted map keys, not from Rust type names.
+
 Example host schema:
 
 ```rust
@@ -511,22 +621,46 @@ FUNCTION new_todo(title) {
 }
 ```
 
-This becomes generated Rust enum variants/families:
+This becomes one canonical generated event schema. Rust enum variants may be generated for ergonomics, but they must serialize and inject through this shape:
 
 ```rust
+pub enum GeneratedSourceEventPayload {
+    EmptyRecord,
+    Text(String),
+    Tag { name: TagName, payload: Option<BoonValue> },
+    Record(BTreeMap<FieldName, BoonValue>),
+}
+
 pub enum GeneratedSourceEvent {
-    IncrementButtonPress,
-    NewTodoInputText { text: String },
-    NewTodoInputKeyDownKey { key: KeyTag },
-    TodoCheckboxClick { todo_id: TodoId },
-    TodoRemoveButtonPress { todo_id: TodoId },
-    TodoEditInputText { todo_id: TodoId, text: String },
-    TodoEditInputKeyDownKey { todo_id: TodoId, key: KeyTag },
-    TodoEditInputBlur { todo_id: TodoId },
+    Static {
+        source_id: SourceId,
+        payload: GeneratedSourceEventPayload,
+    },
+    Dynamic {
+        family_id: SourceFamilyId,
+        owner_key: OwnerKey,
+        generation: u32,
+        payload: GeneratedSourceEventPayload,
+    },
 }
 ```
 
-But these variants only inject into Timely/DD source input handles. They do not schedule Boon logic.
+Example ergonomic variants must follow the same naming rule as `SourceId` and include generation for dynamic sources:
+
+```rust
+pub enum GeneratedSourceEventVariant {
+    IncrementButtonEventPress,
+    NewTodoInputText { text: String },
+    NewTodoInputEventKeyDownKey { key: KeyTag },
+    TodoCheckboxEventClick { owner: OwnerKey, generation: u32 },
+    TodoRemoveButtonEventPress { owner: OwnerKey, generation: u32 },
+    TodoEditInputText { owner: OwnerKey, generation: u32, text: String },
+    TodoEditInputEventKeyDownKey { owner: OwnerKey, generation: u32, key: KeyTag },
+    TodoEditInputEventBlur { owner: OwnerKey, generation: u32 },
+}
+```
+
+These variants only inject into Timely/DD source input handles. They do not schedule Boon logic.
 
 Compiler errors:
 
@@ -597,11 +731,11 @@ Generated host event enum:
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GeneratedSourceEvent {
     IncrementButtonEventPress,
-    IncrementButtonHovered { value: bool },
+    IncrementButtonHovered { value: BoolTag },
     NewTodoInputText { text: String },
     NewTodoInputEventKeyDownKey { key: KeyTag },
-    TodoCheckboxEventClick { owner: TodoId },
-    TodoEditInputText { owner: TodoId, text: String },
+    TodoCheckboxEventClick { owner: OwnerKey, generation: u32 },
+    TodoEditInputText { owner: OwnerKey, generation: u32, text: String },
 }
 ```
 
@@ -634,19 +768,26 @@ pub struct AppHost {
 }
 
 impl AppHost {
-    pub fn submit(&mut self, event: GeneratedSourceEvent) {
+    pub fn submit_and_drain(&mut self, event: GeneratedSourceEvent, max_steps: usize) -> Result<(), DrainError> {
         self.epoch += 1;
+        let target = BoonTime { epoch: self.epoch, phase: 3 };
         self.graph.sources.inject(event, BoonTime { epoch: self.epoch, phase: 0 });
         self.graph.sources.advance_to(BoonTime { epoch: self.epoch + 1, phase: 0 });
         self.graph.sources.flush();
-        while self.graph.probe.less_than(self.graph.sources.time()) {
+        let mut steps = 0;
+        while self.graph.probe.less_than(&target) {
+            if steps == max_steps {
+                return Err(DrainError::Stalled { target, steps });
+            }
             self.worker.step();
+            steps += 1;
         }
+        Ok(())
     }
 }
 ```
 
-This host loop is not a Boon scheduler. It only drives Timely progress.
+This host loop is not a Boon scheduler. It only drives Timely progress. Browser hosts must expose a bounded or yielding drain API so a stalled probe cannot spin forever or monopolize the browser UI thread. The Firefox gate must prove source injection returns control while still producing the expected monitor/render command.
 
 ---
 
@@ -914,6 +1055,29 @@ pub enum RenderCommand {
 ```
 
 Ratatui can redraw from a render tree cache. Native/browser WebGPU can update scene/UI buffers. The graph should still emit patch commands for monitoring and deterministic testing.
+
+Render/input binding schema:
+
+```rust
+pub struct RenderNode {
+    pub id: RenderNodeId,
+    pub owner: OwnerKey,
+    pub kind: RenderNodeKind,
+    pub source_bindings: Vec<RenderSourceBinding>,
+    pub children: Vec<RenderNode>,
+}
+
+pub struct RenderSourceBinding {
+    pub source_id: Option<SourceId>,
+    pub family_id: Option<SourceFamilyId>,
+    pub owner_key: OwnerKey,
+    pub generation: u32,
+    pub host_event: HostEventKind,
+    pub payload_shape: Shape,
+}
+```
+
+Hosts convert platform input to `GeneratedSourceEvent` only through these render bindings and generated source metadata. Runtime discovery of source kinds from rendered elements is forbidden. Initial `ReplaceRoot` must precede patches for the same root epoch, and keyed list patches must be ordered by `(epoch, phase, command_order)`.
 
 ### 6.12 Effect sinks
 
@@ -1463,8 +1627,8 @@ Acceptance tests:
 Target command:
 
 ```bash
-cargo xtask run --example counter --target native
-cargo xtask run --example todo_mvc_physical --target native
+cosmic-background-launch -- cargo xtask run --example counter --target native
+cosmic-background-launch -- cargo xtask run --example todo_mvc_physical --target native
 cargo xtask test --target native
 ```
 
@@ -1488,14 +1652,15 @@ Acceptance tests:
 - TodoMVC: add/toggle/filter/clear, render-command assertion and optional readback.
 - Pong: deterministic synthetic frame events, game state/render patch assertions.
 - TodoMVC Physical: smoke test scene renders and responds to source events.
+- Any test that opens a native window must be launched through `cosmic-background-launch`; foreground native windows are a verification failure.
 
 ### 11.4 Browser window playground
 
 Target commands:
 
 ```bash
-cargo xtask run --example counter --target browser
-cargo xtask run --example todo_mvc_physical --target browser
+cosmic-background-launch -- cargo xtask run --example counter --target browser
+cosmic-background-launch -- cargo xtask run --example todo_mvc_physical --target browser
 cargo xtask test --target browser --browser firefox
 ```
 
@@ -1521,12 +1686,36 @@ Acceptance tests:
 
 - Firefox-first test harness.
 - Scenario scripts inject events and assert monitor/render command outputs.
-- CI must run a minimal browser/WASM graph smoke test before browser renderer work is accepted.
+- Local verification must run a minimal browser/WASM graph smoke test before browser renderer work is accepted.
 - If `timely` or `differential-dataflow` fails to compile or run in browser-hosted WASM, stop the browser milestone and fix/pin/fork the dependency. Do not build a bridge fallback.
+- Any test that opens Firefox or another browser window must be launched through `cosmic-background-launch`; foreground browser windows are a verification failure.
 
 ---
 
 ## 12. Verification and testing
+
+### 12.0 Local verification gates
+
+All gates are local. Do not require remote automation to prove this plan.
+
+Required top-level gate:
+
+```bash
+cargo xtask verify all --format json
+```
+
+It must run or dispatch:
+
+- `cargo xtask bootstrap --check`
+- `cargo xtask verify-deps --format json`
+- `cargo xtask verify-wasm-dd --required --browser firefox`
+- compiler tests
+- DD kernel tests, including native and browser-WASM coverage for every kernel operator when introduced
+- scenario tests for the canonical example matrix
+- forbidden-pattern scan for dirty scheduler APIs
+- focus-safe launch preflight for any native/browser GUI tests
+
+`verify-report.json` must include each gate name, command, status, duration, relevant artifact paths, and blocker path if failed. `success.json` must be written only when every required local gate passes.
 
 ### 12.1 Scenario files
 
@@ -1598,71 +1787,78 @@ Add direct Rust tests for:
 Required matrix:
 
 ```text
-counter               terminal native browser
-counter_hold          terminal native browser
-interval              terminal native browser
-interval_hold         terminal native browser
-todo_mvc              terminal native browser
-todo_mvc_physical     terminal native browser
-pong                  terminal native browser
-cells                 terminal native browser
+example                    terminal required  native required  browser required
+counter                    1                  5                7
+counter_hold               1                  5                7
+interval                   2                  5                7
+interval_hold              2                  5                7
+latest                     2                  5                7
+when                       2                  5                7
+while                      2                  5                7
+then                       2                  5                7
+list_map_block             3                  5                7
+list_map_external_dep      3                  5                7
+list_object_state          3                  5                7
+list_retain_count          3                  5                7
+list_retain_reactive       3                  5                7
+list_retain_remove         3                  5                7
+shopping_list              3                  5                7
+todo_mvc                   4                  5                7
+crud                       4                  5                7
+flight_booker              4                  5                7
+temperature_converter      4                  5                7
+pong                       6                  6                7
+cells                      6                  6                7
+todo_mvc_physical          8                  8                8
 ```
 
 Browser matrix entries are pass/fail only. Do not mark browser-hosted graph as pending because of a bridge fallback.
+
+Each matrix row must have scenario fixtures with expected render/monitor JSON. Terminal snapshots use a fixed `120x40` viewport. Native/browser render verification uses a fixed `1280x720` viewport at DPR `1.0` when pixel/framebuffer checks are required. Subjective acceptance words such as “works” are not sufficient gate criteria.
 
 ---
 
 ## 13. Milestones
 
-### Milestone 0: Repo reset / architecture guardrails
+### Milestone 0: Repo reset, dependency lock, and architecture guardrails
 
 Tasks:
 
-- Add this plan to `docs/plans/timely_dd_transpiler_plan.md`.
+- Keep this root plan as the canonical source of truth. If a docs copy is needed later, make it a pointer to this file instead of a divergent copy.
 - Add `ARCHITECTURE.md` summarizing DD-first rule.
-- Add a CI check or grep test that fails if new code adds obvious dirty scheduler APIs like `mark_dirty`, `dirty_nodes`, `recompute_dependents`, except inside comments/tests documenting forbidden patterns.
-- Add dependencies on Timely/DD.
+- Add a local `xtask` grep gate that fails if new code adds obvious dirty scheduler APIs like `mark_dirty`, `dirty_nodes`, `recompute_dependents`, except inside comments/tests documenting forbidden patterns.
+- Pin dependencies, features, Rust toolchain, wasm tooling, and renderer tooling.
 - Create `boon_dd` crate/module.
-- Add an early wasm gate target: `cargo xtask verify-wasm-dd`.
+- Add `cargo xtask bootstrap --check`, `cargo xtask verify-deps --format json`, and `cargo xtask verify all --format json`.
+- Add focus-safe GUI preflight for `cosmic-background-launch`.
 
 Acceptance:
 
-- Workspace builds.
-- Plan is checked in.
+- Workspace builds locally.
+- `cargo xtask bootstrap --check` passes.
+- `cargo xtask verify-deps --format json` passes and records exact versions/features/tool paths.
+- Plan is checked in as the root source of truth.
 - No custom dirty scheduler is added.
-- `cargo xtask verify-wasm-dd` either passes or fails with a precise checked-in diagnostic. It must not silently substitute a native graph worker.
+- `cosmic-background-launch` and its user D-Bus service are verified before native/browser GUI gates run.
 
-### Milestone 0.5: Browser-hosted Timely/DD wasm gate
+### Gate 0.5: Browser-hosted Timely/DD proof
 
 Tasks:
 
 - Create a tiny generated graph crate that uses Timely + Differential Dataflow with default features disabled where required.
+- Prove `BoonTime` or the chosen encoded timestamp in a real Timely/DD graph with `map`, `join` or `reduce`, `probe`, `then_const`, and `hold`.
 - Compile it to `wasm32-unknown-unknown`.
-- Run a browser smoke test that inserts one input record, advances/probes the graph, and observes one expected output diff.
-- Test in Firefox first.
-
-Acceptance:
-
-- A minimal DD graph runs inside browser WASM.
-- The result is observable through the same render/monitor command boundary planned for real examples.
-- Failure blocks browser playground implementation; no fallback path is implemented.
-
-### Milestone 0.5: Browser WASM compatibility proof
-
-Tasks:
-
-- Add `wasm32-unknown-unknown` target checks to CI.
+- Run a Firefox smoke test through `cosmic-background-launch` that inserts one input record, advances/probes the graph with bounded drain, and observes one expected monitor/render output diff.
 - Create a minimal hand-written Boon DD graph using `timely` + `differential-dataflow`: one source, one `then_const`, one `hold`, one monitor output.
-- Build it for native and for WASM.
-- Build a tiny `wasm-bindgen` browser harness that constructs the threadless Timely worker, injects one source event, steps the probe, and reads one monitor/render command.
 - Keep all default features disabled where needed.
 
 Acceptance:
 
+- `cargo xtask verify-wasm-dd --required --browser firefox` passes.
 - `cargo check --target wasm32-unknown-unknown -p boon_dd` passes.
 - The minimal generated-style graph builds to WASM.
-- The browser harness runs the graph in Firefox and receives the expected monitor/render command.
-- If this cannot be achieved, browser work stops with a minimized blocker. No fallback implementation is allowed.
+- Firefox receives the expected monitor/render command and returns control without an unbounded spin.
+- If this cannot be achieved, the full `/goal` stops with `docs/blockers/timely-dd-wasm.md`. No fallback implementation is allowed.
 
 ### Milestone 1: Minimal graph kernel + counter
 
@@ -1673,14 +1869,14 @@ Tasks:
 - Implement `then_const`, `hold`, `monitor_tap`, `render_text`.
 - Generate graph for `counter` and `counter_hold`.
 - Terminal playground only.
+- Add scenario fixtures and expected render/monitor JSON for `counter` and `counter_hold`.
 
 Acceptance:
 
-- `cargo xtask run --example counter --target terminal` works.
-- `counter_hold` works.
-- Press events increment.
-- Monitor shows node values.
-- Persistence toggle stores/restores `counter_hold`.
+- `cargo xtask run --example counter --target terminal` renders the expected initial text and exits cleanly under scripted input.
+- `counter_hold` scripted press events increment according to fixture expectations.
+- Monitor output contains the expected source, `THEN`, `HOLD`, render, and persistence records.
+- Persistence toggle stores/restores `counter_hold` according to fixture JSON.
 
 ### Milestone 2: Timer + LATEST/WHEN/THEN/WHILE basics
 
@@ -1692,11 +1888,13 @@ Tasks:
 - Implement enough `while_switch` for examples.
 - Implement `Stream/skip` as library operator.
 - Run `interval`, `interval_hold`, `latest`, `when`, `while`, `then`.
+- Add native and browser-WASM tests for each introduced DD kernel operator.
 
 Acceptance:
 
 - Synthetic tick tests pass without waiting wall-clock seconds.
 - Monitor shows source/timer nodes.
+- Scenario fixtures pass for all Milestone 2 rows on terminal. Native/browser coverage for those rows becomes required at their matrix milestones.
 
 ### Milestone 3: Keyed lists and dynamic source families
 
@@ -1707,14 +1905,16 @@ Tasks:
 - Implement dynamic source families under list item owners.
 - Implement keyed render list patches.
 - Run list examples and shopping list.
+- Verify dynamic source events carry `owner_key` and `generation`.
 
 Acceptance:
 
-- Single list item update emits one keyed patch where possible.
+- Single list item update emits one keyed patch when a key-preserving patch is valid; otherwise it emits a deterministic keyed remove/insert pair.
 - Removing an item invalidates its dynamic source generation.
 - Stale event for removed item is rejected/ignored with monitor record.
+- Scenario fixtures pass for all Milestone 3 rows on terminal. Native/browser coverage for those rows becomes required at their matrix milestones.
 
-### Milestone 4: TodoMVC terminal
+### Milestone 4: TodoMVC and small apps
 
 Tasks:
 
@@ -1723,13 +1923,15 @@ Tasks:
 - Implement text input `.text` source.
 - Implement filters, clear completed, toggle all, edit title.
 - Run in terminal playground.
+- Add scenario fixtures for TodoMVC, CRUD, Flight Booker, and Temperature Converter.
 
 Acceptance:
 
-- Visual/semantic behavior matches TodoMVC.
+- TodoMVC fixture covers add, toggle, filter, clear completed, edit title, and persistence restore.
 - Monitor graph shows static graph + keyed row instances.
 - Persistence stores todos.
-- 1000 synthetic todos: single toggle and toggle-all remain interactive in release.
+- Release-mode 1000 synthetic todos pass recorded thresholds for single toggle and toggle-all.
+- Scenario fixtures pass for all Milestone 4 rows on terminal. Native/browser coverage for those rows becomes required at their matrix milestones.
 
 ### Milestone 5: Native wgpu playground
 
@@ -1740,13 +1942,15 @@ Tasks:
 - Add WESL/WGSL shader pipeline.
 - Run counter/counter_hold/interval/todo_mvc in native window.
 - Add monitor overlay.
+- Add `cargo xtask verify-render-deps --format json` for native surface smoke, WESL-to-WGSL compile, shader validation, and deterministic render-command or pixel/readback assertion.
 
 Acceptance:
 
-- Native window can load examples.
+- `cargo xtask verify-render-deps --format json` passes locally.
+- Native window opens only through `cosmic-background-launch`.
+- Native window loads examples from scripted launch.
 - Input events route to source injection.
-- Render commands apply correctly.
-- Framebuffer/readback or render-command tests pass.
+- Render-command JSON or framebuffer/readback artifacts match fixtures.
 
 ### Milestone 6: Pong
 
@@ -1755,28 +1959,30 @@ Tasks:
 - Implement `Window/animation_frame` source.
 - Implement `Keyboard/state` library operator.
 - Add `Pong/initial`, `Pong/step`, `Pong/view` as library/user functions.
-- Run terminal/native/browser where possible.
+- Run Pong and Cells through the canonical matrix.
 
 Acceptance:
 
 - Synthetic frame tests are deterministic.
 - No Pong-specific compiler logic.
 - Monitor shows game state evolution.
+- Scenario fixtures pass for Pong and Cells on terminal/native/browser.
 
 ### Milestone 7: Browser playground
 
 Tasks:
 
-- Prove browser-hosted Timely/Differential WASM first with a minimal generated graph smoke test.
-- Add Firefox test harness.
-- Run counter, TodoMVC, Pong, TodoMVC Physical inside browser-hosted WASM.
-- Add CI checks for `wasm32-unknown-unknown` compilation of the Boon DD kernel and at least one generated graph using Timely/Differential.
+- Build browser playground infrastructure after Gate 0.5 has passed.
+- Add Firefox test harness launched through `cosmic-background-launch`.
+- Run counter, TodoMVC, Pong, and non-physical matrix rows inside browser-hosted WASM.
+- Grow browser-WASM tests with each DD kernel operator; do not leave browser coverage as a single smoke graph.
 
 Acceptance:
 
 - Browser window exercises examples with the generated Timely/Differential graph running inside the browser WASM module.
 - Source events and render/monitor patches round-trip deterministically.
 - Browser target fails fast if Timely/Differential browser-hosted WASM is unavailable.
+- Foreground browser windows are never opened by verification.
 
 ### Milestone 8: TodoMVC Physical
 
@@ -1786,18 +1992,20 @@ Tasks:
 - Implement enough scene/render IR for physical example.
 - WESL/WGSL shaders compile and are reused native/browser.
 - Terminal uses the explicit terminal semantic renderer for physical UI. If that renderer is not implemented, the terminal target fails rather than substituting an ad-hoc fallback.
+- Add physical scene fixtures for native/browser render-command or pixel/readback verification.
 
 Acceptance:
 
 - Native and browser render physical scene.
 - Terminal still exercises source/state logic.
 - Monitor can inspect scene nodes and app nodes.
+- TodoMVC Physical passes the canonical matrix after physical renderer support lands.
 
 ### Milestone 9: Full example matrix and docs
 
 Tasks:
 
-- Run all important examples across available targets.
+- Run all important examples across the canonical matrix.
 - Add docs for writing new examples.
 - Add docs for source records.
 - Add docs for monitor/persistence toggles.
@@ -1805,7 +2013,8 @@ Tasks:
 
 Acceptance:
 
-- CI scenario matrix passes.
+- `cargo xtask verify all --format json` reports the full scenario matrix passing locally.
+- `target/boon-artifacts/success.json` reports `success: true`.
 - New user can write an app without transpiler changes.
 
 ---
@@ -1840,14 +2049,14 @@ But milestone 4 should use normal keyed state and accept O(N) toggle-all.
 
 Current evidence as of 2026-05-03:
 
-- Timely master contains a dedicated `wasm-bindgen` browser example and CI checks `timely_communication`, `timely`, the `threadless` example, and the `wasm-bindgen` example against `wasm32-unknown-unknown`.
-- Differential master has an open WebAssembly-support issue and its visible CI workflow does not include a wasm target check. Treat DD browser-WASM support as an implementation gate, not as proven.
+- Timely master contains a dedicated `wasm-bindgen` browser example and upstream automation checks `timely_communication`, `timely`, the `threadless` example, and the `wasm-bindgen` example against `wasm32-unknown-unknown`.
+- Differential master has an open WebAssembly-support issue and its visible upstream automation does not include a wasm target check. Treat DD browser-WASM support as a local implementation gate, not as proven.
 
 Fail-fast plan:
 
 1. Before implementing browser UI, create a minimal generated-graph crate that depends on the chosen `timely` and `differential-dataflow` revisions with `default-features = false`.
 2. The crate must compile for `wasm32-unknown-unknown` and run a tiny in-browser graph: one source, one DD collection/count or reduce, one probe, one monitor output.
-3. Add this smoke test to CI.
+3. Add this smoke test to local `cargo xtask verify-wasm-dd --required --browser firefox`.
 4. If this fails, stop the browser milestone and fix/pin/fork Timely/DD. Do not introduce a native graph worker, JS scheduler, interpreter fallback, or non-DD browser semantics.
 5. Keep terminal and native targets progressing only if they use the same graph-construction semantics and do not create a divergent browser architecture.
 
@@ -1926,8 +2135,10 @@ Allowed:
 Start here.
 
 1. Read this file fully.
-2. Inspect the current workspace and identify code implementing custom dirty scheduling.
-3. Add `boon_dd` crate/module with:
+2. Add or verify local `xtask` support for `cargo xtask bootstrap --check`, `cargo xtask verify-deps --format json`, `cargo xtask verify-wasm-dd --required --browser firefox`, and `cargo xtask verify all --format json`.
+3. Pin the Rust toolchain, dependencies, feature flags, `Cargo.lock`, wasm tooling, renderer tooling, and focus-safe GUI preflight.
+4. Inspect the current workspace and identify code implementing custom dirty scheduling.
+5. Add `boon_dd` crate/module with:
    - `BoonTime`
    - `Event`, `Cell`, `Command`
    - source input handle wrapper
@@ -1935,17 +2146,17 @@ Start here.
    - `hold`
    - `monitor_tap`
    - simple text render command sink
-4. Immediately add `wasm32-unknown-unknown` `cargo check` for `boon_dd` and a minimal hand-written graph. This is a fail-fast gate, not a late browser task.
-5. Add a tiny hand-written generated graph for `counter_hold` before writing full codegen.
-6. Run it in terminal with source injection test.
-7. Run it in a minimal browser WASM harness with source injection test.
-8. Only after the hand-written DD graph works natively and in WASM, implement codegen to produce equivalent graph construction code.
-9. Add scenario tests for `counter` and `counter_hold`.
-10. Add persistence tap for `HOLD` state.
-11. Implement `interval` with synthetic timer injection.
-12. Implement `LATEST` and `WHEN` tests.
+6. Immediately add `wasm32-unknown-unknown` `cargo check` for `boon_dd` and a minimal hand-written graph. This is a fail-fast gate, not a late browser task.
+7. Run `cargo xtask verify-wasm-dd --required --browser firefox`; if it fails, write `docs/blockers/timely-dd-wasm.md` and stop the full `/goal`.
+8. Add a tiny hand-written generated graph for `counter_hold` before writing full codegen.
+9. Run it in terminal with source injection test and fixture assertions.
+10. Only after the hand-written DD graph passes native and browser-WASM gates, implement codegen to produce equivalent graph construction code.
+11. Add scenario tests for `counter` and `counter_hold`.
+12. Add persistence tap for `HOLD` state.
+13. Implement `interval` with synthetic timer injection.
+14. Implement `LATEST` and `WHEN` tests.
 
-The first milestone is successful when a generated static Timely/DD graph runs `counter_hold` in the terminal, monitor records update in real time, and persistence restore works.
+The first milestone gate passes when generated static Timely/DD graphs run `counter` and `counter_hold` in the terminal, expected monitor records update, persistence restore matches fixture JSON, and the relevant local `xtask` gates report success.
 
 ---
 
@@ -1956,10 +2167,9 @@ These are not requirements to copy architecture from, only grounding references.
 - Boon main repo examples and language direction: `https://github.com/BoonLang/boon`
 - Existing `boon-rust` repo layout, app_window vendor, shaders, examples: `https://github.com/BoonLang/boon-rust`
 - Differential Dataflow: `https://github.com/TimelyDataflow/differential-dataflow`
-- Timely wasm example/CI: `https://github.com/TimelyDataflow/timely-dataflow/tree/master/timely/examples/wasm-bindgen`
+- Timely wasm example: `https://github.com/TimelyDataflow/timely-dataflow/tree/master/timely/examples/wasm-bindgen`
 - Timely/Differential mdBook: `https://timelydataflow.github.io/differential-dataflow/`
 - Verified progress tracking for Timely Dataflow: `https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.ITP.2021.10`
 - Ratatui rendering model: `https://ratatui.rs/concepts/rendering/under-the-hood/`
 - WESL: `https://wesl-lang.dev/`
 - wgpu: `https://github.com/gfx-rs/wgpu`
-
