@@ -350,7 +350,7 @@ fn verify(args: &[String]) -> Result<()> {
     ));
     gates.push(capture_simple_gate(
         "generated-crates",
-        "cargo check --manifest-path generated/<example>/Cargo.toml",
+        "cargo test --manifest-path generated/<example>/Cargo.toml",
         verify_generated_crates,
     ));
 
@@ -691,15 +691,15 @@ fn verify_generated_crates() -> Result<serde_json::Value> {
         let status = Command::new("cargo")
             .env("CARGO_TARGET_DIR", &target_dir)
             .args([
-                "check",
+                "test",
                 "--quiet",
                 "--manifest-path",
                 manifest.to_str().unwrap(),
             ])
             .status()
-            .with_context(|| format!("failed to run cargo check for generated crate {example}"))?;
+            .with_context(|| format!("failed to run cargo test for generated crate {example}"))?;
         if !status.success() {
-            bail!("generated crate {example} does not compile: {status}");
+            bail!("generated crate {example} test failed: {status}");
         }
         checked.push(serde_json::json!({
             "example": example,
@@ -862,7 +862,7 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
     fs::write(
         generated_dir.join("Cargo.toml"),
         format!(
-            "[workspace]\n\n[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
+            "[workspace]\n\n[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
         ),
     )?;
     fs::write(src_dir.join("lib.rs"), generated_lib_rs())?;
@@ -925,7 +925,7 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
 }
 
 fn generated_lib_rs() -> &'static str {
-    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n"
+    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn generated_graph_emits_monitor_and_render_output() {\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let outputs = graph\n            .submit_text_and_drain(&mut worker, crate::graph::smoke_input_text(), 1, 1024)\n            .expect(\"generated graph should drain\");\n        assert!(!outputs.is_empty(), \"generated graph emitted no output\");\n        assert!(outputs.iter().any(|output| !output.monitor.is_empty()));\n        assert!(outputs.iter().any(|output| !output.render.is_empty()));\n    }\n}\n"
 }
 
 fn generated_ids_rs(graph: &boon_dd::StaticGraph) -> String {

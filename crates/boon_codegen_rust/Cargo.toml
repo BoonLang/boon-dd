@@ -7,4 +7,5 @@ rust-version.workspace = true
 
 [dependencies]
 boon_compiler = { path = "../boon_compiler" }
+boon_dd = { path = "../boon_dd" }
 serde.workspace = true

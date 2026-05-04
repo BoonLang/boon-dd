@@ -227,7 +227,7 @@ fn evaluate_text(graph: &StaticGraph, actions: &[SourceAction]) -> String {
     }
 }
 
-fn value_to_text(value: &BoonValue) -> String {
+pub fn value_to_text(value: &BoonValue) -> String {
     match value {
         BoonValue::EmptyRecord => String::new(),
         BoonValue::Record(_) => "<record>".to_owned(),
@@ -244,6 +244,10 @@ fn value_to_text(value: &BoonValue) -> String {
             None => name.0.clone(),
         },
     }
+}
+
+pub fn source_action_text(action: &SourceAction) -> String {
+    value_to_text(&action.value)
 }
 
 fn emit_text_through_timely(graph: &StaticGraph, text: String) -> SmokeOutput {

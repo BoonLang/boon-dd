@@ -583,6 +583,7 @@ name = "boon_codegen_rust"
 version = "0.1.0"
 dependencies = [
  "boon_compiler",
+ "boon_dd",
  "serde",
 ]
 
