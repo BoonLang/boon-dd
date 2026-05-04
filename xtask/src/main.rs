@@ -164,6 +164,7 @@ fn verify_deps(_args: &[String]) -> Result<GateReport> {
 
 fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
+    sync_generated_artifacts()?;
     run_status("cargo", &["test", "-p", "boon_dd"])?;
     run_status(
         "cargo",
@@ -983,6 +984,13 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
     )?;
     format_generated_rust(&generated_dir)?;
     Ok(generated_dir.display().to_string())
+}
+
+fn sync_generated_artifacts() -> Result<()> {
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        write_generated_artifacts(example)?;
+    }
+    Ok(())
 }
 
 fn format_generated_rust(generated_dir: &Path) -> Result<()> {
