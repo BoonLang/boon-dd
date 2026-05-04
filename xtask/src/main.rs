@@ -10,6 +10,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WASM_BINDGEN_VERSION: &str = "0.2.120";
+const COSMIC_WORKSPACE: &str = "boon-dd";
 
 #[derive(Debug, Serialize)]
 struct GateReport {
@@ -1437,7 +1438,7 @@ fn terminal_snapshot(outputs: &[boon_dd::SmokeOutput]) -> String {
 fn require_background_launch_env(target: &str) -> Result<()> {
     if env::var("COSMIC_BACKGROUND_LAUNCH_ID").is_err() {
         bail!(
-            "{target} playground launches must be wrapped as: cosmic-background-launch --workspace 'Boon DD Playground' -- cargo xtask run --example <name> --target {target}"
+            "{target} playground launches must be wrapped as: cosmic-background-launch --workspace boon-dd -- cargo xtask run --example <name> --target {target}"
         );
     }
     Ok(())
@@ -1541,8 +1542,9 @@ fn launch_background_process(args: &[&str]) -> Result<String> {
         "com.system76.CosmicComp.BackgroundLaunch1",
         "Launch",
         "--",
-        "assa{ss}",
+        "sassa{ss}",
     ];
+    busctl_args.push(COSMIC_WORKSPACE);
     let argc = args.len().to_string();
     busctl_args.push(&argc);
     busctl_args.extend_from_slice(args);

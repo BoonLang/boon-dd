@@ -542,6 +542,7 @@ version = "0.1.0"
 dependencies = [
  "app_window",
  "boon_backend_wgpu",
+ "boon_compiler",
  "boon_dd",
  "boon_examples",
  "boon_runtime_host",

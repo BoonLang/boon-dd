@@ -1,15 +1,17 @@
 use app_window::coordinates::{Position, Size};
 use app_window::input::keyboard::Keyboard;
 use app_window::input::keyboard::key::KeyboardKey;
+use app_window::input::mouse::{MOUSE_BUTTON_LEFT, Mouse};
 use app_window::window::Window;
 use app_window::{WGPU_SURFACE_STRATEGY, WGPUStrategy};
+use boon_dd::{BoonValue, SmokeOutput, SourceAction};
 use some_executor::SomeExecutor;
 use some_executor::observer::Observer;
 use std::borrow::Cow;
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 use wgpu::{CurrentSurfaceTexture, SurfaceTargetUnsafe};
 
@@ -66,6 +68,15 @@ struct SmokeRequest {
     screenshots: Option<PathBuf>,
 }
 
+struct PlaygroundExample {
+    name: String,
+    graph: boon_dd::StaticGraph,
+    scenario_actions: Vec<SourceAction>,
+    actions: Vec<SourceAction>,
+    output: SmokeOutput,
+    last_auto_tick: Instant,
+}
+
 fn main() {
     let mut args = env::args().skip(1);
     let smoke = match args.next().as_deref() {
@@ -106,7 +117,7 @@ fn main() {
 }
 
 async fn run_playground(smoke: Option<SmokeRequest>) -> Result<(), Box<dyn std::error::Error>> {
-    let examples = boon_examples::run_embedded_matrix();
+    let mut examples = build_playground_examples();
     let mut selected = 0_usize;
     let mut window = Window::new(
         Position::new(64.0, 64.0),
@@ -183,8 +194,9 @@ async fn run_playground(smoke: Option<SmokeRequest>) -> Result<(), Box<dyn std::
         multiview_mask: None,
         cache: None,
     });
-    let config = surface
-        .get_default_config(&adapter, WIDTH, HEIGHT)
+    let (surface_width, surface_height) = surface_config_size(size, scale);
+    let mut config = surface
+        .get_default_config(&adapter, surface_width, surface_height)
         .ok_or("failed to create native surface config")?;
     surface.configure(&device, &config);
     let first_scene = build_scene(&examples, selected);
@@ -220,8 +232,11 @@ async fn run_playground(smoke: Option<SmokeRequest>) -> Result<(), Box<dyn std::
             },
             "per_example": per_example,
             "interactive_controls": ["up", "down", "left", "right", "q"],
-            "input_handlers": ["app_window::input::keyboard::Keyboard"],
-            "loaded_examples": examples.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+            "input_handlers": [
+                "app_window::input::keyboard::Keyboard",
+                "app_window::input::mouse::Mouse"
+            ],
+            "loaded_examples": examples.iter().map(|example| &example.name).collect::<Vec<_>>(),
             "example_count": examples.len(),
         });
         write_json_atomic(&smoke.artifact, &details)?;
@@ -229,9 +244,19 @@ async fn run_playground(smoke: Option<SmokeRequest>) -> Result<(), Box<dyn std::
     }
 
     let keyboard = Keyboard::coalesced().await;
+    let mut mouse = Mouse::coalesced().await;
+    let mut left_was_down = false;
     loop {
         if keyboard.is_pressed(KeyboardKey::Q) || keyboard.is_pressed(KeyboardKey::Escape) {
             break;
+        }
+        let (size, scale) = app_surface.size_scale().await;
+        let (surface_width, surface_height) = surface_config_size(size, scale);
+        if config.width != surface_width || config.height != surface_height {
+            config.width = surface_width;
+            config.height = surface_height;
+            surface.configure(&device, &config);
+            eprintln!("native playground resized surface to {surface_width}x{surface_height}");
         }
         if keyboard.is_pressed(KeyboardKey::DownArrow)
             || keyboard.is_pressed(KeyboardKey::RightArrow)
@@ -242,6 +267,23 @@ async fn run_playground(smoke: Option<SmokeRequest>) -> Result<(), Box<dyn std::
         {
             selected = selected.saturating_sub(1);
         }
+        let (_scroll_x, scroll_y) = mouse.load_clear_scroll_delta();
+        if scroll_y > 0.0 {
+            selected = (selected + 1).min(examples.len().saturating_sub(1));
+        } else if scroll_y < 0.0 {
+            selected = selected.saturating_sub(1);
+        }
+        let left_down = mouse.button_state(MOUSE_BUTTON_LEFT);
+        if left_down
+            && !left_was_down
+            && let Some(pos) = mouse.window_pos()
+        {
+            let x = (pos.pos_x() / pos.window_width()).clamp(0.0, 1.0) as f32 * WIDTH as f32;
+            let y = (pos.pos_y() / pos.window_height()).clamp(0.0, 1.0) as f32 * HEIGHT as f32;
+            handle_click(x, y, &mut examples, &mut selected);
+        }
+        left_was_down = left_down;
+        update_auto_tick(&mut examples[selected]);
         let scene = build_scene(&examples, selected);
         let _ = render_frame(&surface, &device, &queue, &pipeline, &config, &scene)?;
         std::thread::sleep(Duration::from_millis(80));
@@ -287,15 +329,153 @@ where
     }
 }
 
+fn surface_config_size(size: Size, scale: f64) -> (u32, u32) {
+    let width = (size.width() * scale).round().max(1.0) as u32;
+    let height = (size.height() * scale).round().max(1.0) as u32;
+    (width, height)
+}
+
+fn build_playground_examples() -> Vec<PlaygroundExample> {
+    boon_examples::REQUIRED_FIXTURES
+        .iter()
+        .map(|fixture| {
+            let graph = boon_compiler::compile_source(
+                &format!("examples/{}/source.bn", fixture.name),
+                fixture.source,
+            )
+            .graph;
+            let scenario = boon_runtime_host::parse_scenario(fixture.scenario);
+            let output = boon_dd::execute_static_graph(&graph, &[]);
+            PlaygroundExample {
+                name: fixture.name.to_owned(),
+                graph,
+                scenario_actions: scenario
+                    .steps
+                    .first()
+                    .map(|step| step.actions.clone())
+                    .unwrap_or_default(),
+                actions: Vec::new(),
+                output,
+                last_auto_tick: Instant::now(),
+            }
+        })
+        .collect()
+}
+
+fn handle_click(x: f32, y: f32, examples: &mut [PlaygroundExample], selected: &mut usize) {
+    if let Some(index) = sidebar_index_at(y, *selected, examples.len())
+        && x <= 278.0
+    {
+        *selected = index;
+        eprintln!(
+            "native playground selected example {}",
+            examples[index].name
+        );
+        return;
+    }
+    let Some(example) = examples.get_mut(*selected) else {
+        return;
+    };
+    if matches!(example.name.as_str(), "counter" | "counter_hold") {
+        if (Rect {
+            x: 710.0,
+            y: 420.0,
+            w: 178.0,
+            h: 52.0,
+        })
+        .contains(x, y)
+        {
+            trigger_example_action(example);
+            eprintln!(
+                "native playground clicked {} increment -> {}",
+                example.name,
+                render_text(&example.output)
+            );
+            return;
+        }
+        if (Rect {
+            x: 520.0,
+            y: 420.0,
+            w: 178.0,
+            h: 52.0,
+        })
+        .contains(x, y)
+        {
+            example.actions.pop();
+            refresh_example_output(example);
+            eprintln!(
+                "native playground clicked {} decrement -> {}",
+                example.name,
+                render_text(&example.output)
+            );
+        }
+        return;
+    }
+    if x > 278.0 {
+        trigger_example_action(example);
+        eprintln!(
+            "native playground clicked {} -> {}",
+            example.name,
+            render_text(&example.output)
+        );
+    }
+}
+
+fn sidebar_index_at(y: f32, selected: usize, total: usize) -> Option<usize> {
+    let start = selected
+        .saturating_sub(VISIBLE_ROWS / 2)
+        .min(total.saturating_sub(VISIBLE_ROWS));
+    let row = ((y - 86.0) / 38.0).floor() as isize;
+    if row < 0 || row >= VISIBLE_ROWS as isize {
+        return None;
+    }
+    let index = start + row as usize;
+    (index < total).then_some(index)
+}
+
+fn update_auto_tick(example: &mut PlaygroundExample) {
+    if !matches!(example.name.as_str(), "interval" | "interval_hold") {
+        return;
+    }
+    if example.last_auto_tick.elapsed() < Duration::from_secs(1) {
+        return;
+    }
+    example.last_auto_tick = Instant::now();
+    trigger_example_action(example);
+    eprintln!(
+        "native playground auto tick {} -> {}",
+        example.name,
+        render_text(&example.output)
+    );
+}
+
+fn trigger_example_action(example: &mut PlaygroundExample) {
+    if let Some(action) = example.scenario_actions.first().cloned() {
+        example.actions.push(action);
+    } else if let Some(binding) = example.graph.source_bindings.first() {
+        example.actions.push(SourceAction {
+            source: binding.path.clone(),
+            owner: None,
+            generation: None,
+            value: BoonValue::EmptyRecord,
+        });
+    }
+    refresh_example_output(example);
+}
+
+fn refresh_example_output(example: &mut PlaygroundExample) {
+    example.output = boon_dd::execute_static_graph(&example.graph, &example.actions);
+}
+
 fn render_frame(
     surface: &wgpu::Surface<'_>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     pipeline: &wgpu::RenderPipeline,
-    config: &wgpu::SurfaceConfiguration,
+    _config: &wgpu::SurfaceConfiguration,
     scene: &Scene,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    let vertices = scene_vertices(config.width as f32, config.height as f32, scene);
+    let vertices = scene_vertices(WIDTH as f32, HEIGHT as f32, scene);
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("boon-dd-native-playground-vertices"),
         contents: vertices_as_bytes(&vertices),
@@ -382,6 +562,12 @@ struct Rect {
     h: f32,
 }
 
+impl Rect {
+    fn contains(self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+}
+
 impl Scene {
     fn rect(&mut self, rect: Rect, color: Color) {
         self.primitives.push(Primitive::Rect { rect, color });
@@ -398,7 +584,7 @@ impl Scene {
     }
 }
 
-fn build_scene(examples: &[(String, boon_dd::SmokeOutput)], selected: usize) -> Scene {
+fn build_scene(examples: &[PlaygroundExample], selected: usize) -> Scene {
     let mut scene = Scene::default();
     scene.rect(
         Rect {
@@ -410,13 +596,19 @@ fn build_scene(examples: &[(String, boon_dd::SmokeOutput)], selected: usize) -> 
         BG,
     );
     draw_sidebar(&mut scene, examples, selected);
-    if let Some((name, output)) = examples.get(selected) {
-        draw_example_app(&mut scene, name, output, selected, examples.len());
+    if let Some(example) = examples.get(selected) {
+        draw_example_app(
+            &mut scene,
+            &example.name,
+            &example.output,
+            selected,
+            examples.len(),
+        );
     }
     scene
 }
 
-fn draw_sidebar(scene: &mut Scene, examples: &[(String, boon_dd::SmokeOutput)], selected: usize) {
+fn draw_sidebar(scene: &mut Scene, examples: &[PlaygroundExample], selected: usize) {
     scene.rect(
         Rect {
             x: 0.0,
@@ -458,7 +650,7 @@ fn draw_sidebar(scene: &mut Scene, examples: &[(String, boon_dd::SmokeOutput)], 
             format!(
                 "{:02} {}",
                 index + 1,
-                short_example_name(&examples[index].0)
+                short_example_name(&examples[index].name)
             ),
             Color([0.92, 0.95, 1.0, 1.0]),
         );
@@ -475,7 +667,7 @@ fn draw_sidebar(scene: &mut Scene, examples: &[(String, boon_dd::SmokeOutput)], 
 fn draw_example_app(
     scene: &mut Scene,
     name: &str,
-    output: &boon_dd::SmokeOutput,
+    output: &SmokeOutput,
     selected: usize,
     total: usize,
 ) {
@@ -1009,7 +1201,7 @@ fn ring(scene: &mut Scene, cx: f32, cy: f32, radius: f32, color: Color) {
     }
 }
 
-fn render_text(output: &boon_dd::SmokeOutput) -> String {
+fn render_text(output: &SmokeOutput) -> String {
     output
         .render
         .first()
@@ -1118,7 +1310,7 @@ fn vertices_as_bytes(vertices: &[Vertex]) -> &[u8] {
 
 fn write_per_example_screenshots(
     screenshots_dir: Option<&std::path::Path>,
-    examples: &[(String, boon_dd::SmokeOutput)],
+    examples: &[PlaygroundExample],
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let Some(screenshots_dir) = screenshots_dir else {
         return Ok(Vec::new());
@@ -1128,14 +1320,14 @@ fn write_per_example_screenshots(
     }
     std::fs::create_dir_all(screenshots_dir)?;
     let mut entries = Vec::new();
-    for (index, (name, _)) in examples.iter().enumerate() {
+    for (index, example) in examples.iter().enumerate() {
         let scene = build_scene(examples, index);
         let vertices = scene_vertices(WIDTH as f32, HEIGHT as f32, &scene);
         let pixels = rasterize_vertices(WIDTH, HEIGHT, &vertices);
-        let screenshot = screenshots_dir.join(format!("{:02}-{name}.png", index + 1));
+        let screenshot = screenshots_dir.join(format!("{:02}-{}.png", index + 1, example.name));
         write_png_rgb(&screenshot, WIDTH, HEIGHT, &pixels)?;
         entries.push(serde_json::json!({
-            "example": name,
+            "example": &example.name,
             "selected_index": index,
             "scene_kind": scene.evidence.scene_kind,
             "native_widgets": scene.evidence.native_widgets,
