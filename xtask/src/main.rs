@@ -30,7 +30,9 @@ struct VerifyReport {
 fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
-        bail!("usage: cargo xtask <bootstrap|verify-deps|verify-wasm-dd|verify> ...");
+        bail!(
+            "usage: cargo xtask <bootstrap|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify> ..."
+        );
     }
 
     match args.remove(0).as_str() {
@@ -40,6 +42,7 @@ fn main() -> Result<()> {
         "verify-deps" => verify_deps(&args).map(|_| ()),
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
         "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
+        "verify-playgrounds" => verify_playgrounds(&args).map(|_| ()),
         "verify" => verify(&args),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -291,6 +294,295 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
     })
 }
 
+fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    sync_generated_artifacts()?;
+    run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
+    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
+    run_status(
+        "cargo",
+        &[
+            "build",
+            "--target",
+            "wasm32-unknown-unknown",
+            "-p",
+            "boon_wasm_smoke",
+            "--release",
+        ],
+    )?;
+
+    let dir = artifacts_dir()?;
+    let terminal_artifact = dir.join("terminal-playground.json");
+    let native_artifact = dir.join("native-playground.json");
+    let native_screenshots_dir = dir.join("native-playground-screenshots");
+    let browser_artifact = dir.join("browser-playground-result.json");
+
+    if terminal_artifact.exists() {
+        fs::remove_file(&terminal_artifact)?;
+    }
+    run_status(
+        "cargo",
+        &[
+            "run",
+            "--quiet",
+            "-p",
+            "boon_backend_ratatui",
+            "--bin",
+            "terminal_playground",
+            "--",
+            "--smoke",
+            terminal_artifact.to_str().unwrap(),
+        ],
+    )?;
+    let terminal_details = read_playground_artifact(&terminal_artifact)?;
+    require_playground_examples("terminal", &terminal_details)?;
+    let nonblank_cells = terminal_details
+        .pointer("/ratatui_test_backend/nonblank_cells")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    if nonblank_cells == 0 {
+        bail!("terminal playground rendered no Ratatui cells: {terminal_details}");
+    }
+
+    if native_artifact.exists() {
+        fs::remove_file(&native_artifact)?;
+    }
+    launch_background_process(&[
+        "cargo",
+        "run",
+        "--quiet",
+        "-p",
+        "boon_backend_app_window",
+        "--bin",
+        "native_playground",
+        "--",
+        "--smoke",
+        native_artifact.to_str().unwrap(),
+        native_screenshots_dir.to_str().unwrap(),
+    ])?;
+    wait_for_json_artifact(
+        &native_artifact,
+        Duration::from_secs(45),
+        "native playground",
+    )?;
+    let native_details = read_playground_artifact(&native_artifact)?;
+    require_playground_examples("native", &native_details)?;
+    for pointer in [
+        "/window_created",
+        "/surface_created",
+        "/wgpu/adapter",
+        "/wgpu/device",
+        "/wgpu/surface_configured",
+        "/wgpu/frame_presented",
+        "/visible_ui/full_surface_background",
+        "/visible_ui/sidebar",
+        "/visible_ui/example_labels",
+        "/visible_ui/paged_example_list",
+        "/visible_ui/native_vector_scene",
+        "/visible_ui/selected_output_panel",
+    ] {
+        if native_details
+            .pointer(pointer)
+            .and_then(|value| value.as_bool())
+            != Some(true)
+        {
+            bail!("native playground did not prove {pointer}: {native_details}");
+        }
+    }
+    let rendered_vertices = native_details
+        .pointer("/visible_ui/rendered_vertices")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    if rendered_vertices < 1000 {
+        bail!("native playground rendered too little UI geometry: {native_details}");
+    }
+    require_native_per_example_screenshots(&native_details)?;
+
+    let browser_dir = prepare_wasm_bindgen_output()?;
+    let browser_html = browser_dir.join("index.html");
+    fs::write(&browser_html, browser_playground_html())?;
+    if browser_artifact.exists() {
+        fs::remove_file(&browser_artifact)?;
+    }
+    run_firefox_smoke(&browser_html, &browser_artifact)?;
+    let browser_details = read_playground_artifact(&browser_artifact)?;
+    require_webgpu_smoke(&browser_details)?;
+    require_playground_examples("browser", &browser_details)?;
+    for pointer in [
+        "/ui/canvas",
+        "/ui/output_panel",
+        "/ui/simulated_click",
+        "/webgpu/canvas_context",
+        "/webgpu/frame_presented",
+    ] {
+        if browser_details
+            .pointer(pointer)
+            .and_then(|value| value.as_bool())
+            != Some(true)
+        {
+            bail!("browser playground did not prove {pointer}: {browser_details}");
+        }
+    }
+
+    let artifact = dir.join("verify-playgrounds.json");
+    let details = serde_json::json!({
+        "terminal": terminal_details,
+        "native": native_details,
+        "browser": browser_details,
+        "required_examples": boon_dd::REQUIRED_EXAMPLES,
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "verify-playgrounds".to_owned(),
+        command: "cargo xtask verify-playgrounds --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![
+            artifact.display().to_string(),
+            terminal_artifact.display().to_string(),
+            native_artifact.display().to_string(),
+            native_screenshots_dir.display().to_string(),
+            browser_artifact.display().to_string(),
+        ],
+        details,
+    })
+}
+
+fn read_playground_artifact(path: &Path) -> Result<serde_json::Value> {
+    serde_json::from_str(&fs::read_to_string(path)?)
+        .with_context(|| format!("playground artifact is not JSON: {}", path.display()))
+}
+
+fn require_playground_examples(name: &str, details: &serde_json::Value) -> Result<()> {
+    let count = details
+        .get("example_count")
+        .and_then(|value| value.as_u64())
+        .context("playground artifact missing example_count")?;
+    if count != boon_dd::REQUIRED_EXAMPLES.len() as u64 {
+        bail!(
+            "{name} playground loaded {count} examples; expected {}",
+            boon_dd::REQUIRED_EXAMPLES.len()
+        );
+    }
+    let loaded = details
+        .get("loaded_examples")
+        .and_then(|value| value.as_array())
+        .context("playground artifact missing loaded_examples")?;
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        if !loaded.iter().any(|value| value.as_str() == Some(example)) {
+            bail!("{name} playground did not load required example {example}: {details}");
+        }
+    }
+    Ok(())
+}
+
+fn require_native_per_example_screenshots(details: &serde_json::Value) -> Result<()> {
+    let rows = details
+        .get("per_example")
+        .and_then(|value| value.as_array())
+        .context("native playground artifact missing per_example screenshot list")?;
+    if rows.len() != boon_dd::REQUIRED_EXAMPLES.len() {
+        bail!(
+            "native playground wrote {} per-example screenshots; expected {}",
+            rows.len(),
+            boon_dd::REQUIRED_EXAMPLES.len()
+        );
+    }
+    for (index, example) in boon_dd::REQUIRED_EXAMPLES.iter().enumerate() {
+        let row = rows
+            .get(index)
+            .with_context(|| format!("missing native screenshot row for {example}"))?;
+        if row.get("example").and_then(|value| value.as_str()) != Some(*example) {
+            bail!("native screenshot row {index} is not for {example}: {row}");
+        }
+        if row.get("selected_index").and_then(|value| value.as_u64()) != Some(index as u64) {
+            bail!("native screenshot row has wrong selected_index for {example}: {row}");
+        }
+        if row
+            .get("rendered_vertices")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0)
+            < 3000
+        {
+            bail!("native screenshot row rendered too little geometry for {example}: {row}");
+        }
+        let scene_kind = row
+            .get("scene_kind")
+            .and_then(|value| value.as_str())
+            .with_context(|| format!("native screenshot row missing scene_kind for {example}"))?;
+        if scene_kind.is_empty() || scene_kind == "native_workbench_app" {
+            bail!("native screenshot row has insufficient scene kind for {example}: {row}");
+        }
+        let widgets = row
+            .get("native_widgets")
+            .and_then(|value| value.as_array())
+            .with_context(|| {
+                format!("native screenshot row missing widget evidence for {example}")
+            })?;
+        if widgets.len() < 3 {
+            bail!("native screenshot row has too few native widgets for {example}: {row}");
+        }
+        let screenshot = row
+            .get("screenshot")
+            .and_then(|value| value.as_str())
+            .with_context(|| format!("native screenshot row missing path for {example}"))?;
+        require_png_signature(Path::new(screenshot))
+            .with_context(|| format!("invalid native screenshot for {example}: {screenshot}"))?;
+    }
+    Ok(())
+}
+
+fn require_png_signature(path: &Path) -> Result<()> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    if bytes.len() < 64 {
+        bail!("PNG file is too small: {}", path.display());
+    }
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        bail!("file does not have a PNG signature: {}", path.display());
+    }
+    Ok(())
+}
+
+fn wait_for_json_artifact(path: &Path, timeout: Duration, label: &str) -> Result<()> {
+    let start = Instant::now();
+    loop {
+        if path.exists() {
+            let text = fs::read_to_string(path).unwrap_or_default();
+            if !text.is_empty() && serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+                return Ok(());
+            }
+        }
+        if start.elapsed() > timeout {
+            bail!(
+                "{label} did not write parseable JSON {} within {:?}",
+                path.display(),
+                timeout
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn prepare_wasm_bindgen_output() -> Result<PathBuf> {
+    let wasm_bindgen = find_wasm_bindgen().context("missing wasm-bindgen 0.2.120")?;
+    let root = repo_root()?;
+    let out_dir = root.join("target/boon-artifacts/wasm-bindgen");
+    fs::create_dir_all(&out_dir)?;
+    run_status(
+        wasm_bindgen.to_str().unwrap(),
+        &[
+            "--target",
+            "web",
+            "--out-dir",
+            out_dir.to_str().unwrap(),
+            root.join("target/wasm32-unknown-unknown/release/boon_wasm_smoke.wasm")
+                .to_str()
+                .unwrap(),
+        ],
+    )?;
+    Ok(out_dir)
+}
+
 fn verify_native_app_window_smoke() -> Result<PathBuf> {
     let artifact = artifacts_dir()?.join("native-app-window-smoke.json");
     if artifact.exists() {
@@ -361,6 +653,11 @@ fn verify(args: &[String]) -> Result<()> {
         "verify-render-deps",
         "cargo xtask verify-render-deps --format json",
         || verify_render_deps(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "verify-playgrounds",
+        "cargo xtask verify-playgrounds --format json",
+        || verify_playgrounds(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
         "example-matrix",
@@ -1397,6 +1694,129 @@ try {
     wasm_smoke: JSON.parse(run_smoke_json())
   });
   document.body.textContent = result;
+  await fetch("/result", { method: "POST", body: result });
+} catch (error) {
+  document.body.textContent = String(
+    (error && error.message ? error.message + "\n" : "") +
+    (error && error.stack || error)
+  );
+  await fetch("/result", { method: "POST", body: document.body.textContent });
+  throw error;
+}
+</script>
+"#
+}
+
+fn browser_playground_html() -> &'static str {
+    r#"<!doctype html>
+<meta charset="utf-8">
+<title>Boon DD Browser Playground</title>
+<style>
+body { margin: 0; font: 14px system-ui, sans-serif; color: #e7edf7; background: #11151c; }
+#app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+#examples { border-right: 1px solid #303846; padding: 12px; overflow: auto; }
+button { display: block; width: 100%; margin: 0 0 4px; padding: 6px 8px; color: #dce8ff; background: #1d2633; border: 1px solid #3c495b; text-align: left; }
+button[aria-selected="true"] { background: #285ea8; color: white; }
+#stage { display: grid; grid-template-rows: minmax(240px, 1fr) auto; }
+canvas { width: 100%; height: 100%; background: #0c1017; }
+pre { margin: 0; padding: 12px; white-space: pre-wrap; border-top: 1px solid #303846; background: #151b24; }
+</style>
+<div id="app">
+  <nav id="examples"></nav>
+  <main id="stage">
+    <canvas id="canvas" width="960" height="540"></canvas>
+    <pre id="output"></pre>
+  </main>
+</div>
+<script type="module">
+import init, { run_smoke_json } from "./boon_wasm_smoke.js";
+try {
+  await init();
+  const rows = JSON.parse(run_smoke_json());
+  const loadedExamples = rows.map((row) => row[0]);
+  const outputs = new Map(rows);
+  const nav = document.getElementById("examples");
+  const output = document.getElementById("output");
+  let selected = loadedExamples[0];
+  function renderSelection(name) {
+    selected = name;
+    for (const button of nav.querySelectorAll("button")) {
+      button.setAttribute("aria-selected", String(button.dataset.example === name));
+    }
+    const value = outputs.get(name);
+    const text = value && value.render && value.render[0] && value.render[0].PatchText
+      ? value.render[0].PatchText.text
+      : JSON.stringify(value && value.render || []);
+    output.textContent = `Selected: ${name}\n\nRender output:\n${text}\n\nMonitor entries: ${(value && value.monitor || []).length}`;
+  }
+  for (const name of loadedExamples) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.example = name;
+    button.textContent = name;
+    button.addEventListener("click", () => renderSelection(name));
+    nav.append(button);
+  }
+  renderSelection(selected);
+
+  if (!("gpu" in navigator)) {
+    throw new Error("Browser playground WebGPU failed: navigator.gpu is unavailable");
+  }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    throw new Error("Browser playground WebGPU failed: requestAdapter returned null");
+  }
+  const device = await adapter.requestDevice();
+  if (!device) {
+    throw new Error("Browser playground WebGPU failed: requestDevice returned null");
+  }
+  const canvas = document.getElementById("canvas");
+  const context = canvas.getContext("webgpu");
+  if (!context) {
+    throw new Error("Browser playground WebGPU failed: canvas webgpu context is unavailable");
+  }
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: "opaque" });
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view: context.getCurrentTexture().createView(),
+      clearValue: { r: 0.05, g: 0.08, b: 0.12, a: 1.0 },
+      loadOp: "clear",
+      storeOp: "store"
+    }]
+  });
+  pass.end();
+  device.queue.submit([encoder.finish()]);
+
+  const second = nav.querySelectorAll("button")[1];
+  if (second) {
+    second.click();
+  }
+  const result = JSON.stringify({
+    backend: "browser-webgpu",
+    mode: "playground",
+    webgpu: {
+      navigator_gpu: true,
+      adapter: true,
+      device: true,
+      canvas_context: true,
+      frame_presented: true
+    },
+    ui: {
+      buttons: nav.querySelectorAll("button").length,
+      canvas: true,
+      output_panel: output.textContent.includes("Selected:"),
+      simulated_click: selected === loadedExamples[1]
+    },
+    interactive_controls: ["click example button"],
+    loaded_examples: loadedExamples,
+    example_count: loadedExamples.length,
+    selected_initial: loadedExamples[0],
+    selected_after_simulated_click: selected,
+    wasm_smoke: rows
+  });
+  document.body.dataset.result = result;
   await fetch("/result", { method: "POST", body: result });
 } catch (error) {
   document.body.textContent = String(

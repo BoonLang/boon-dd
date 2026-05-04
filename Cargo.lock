@@ -543,9 +543,11 @@ dependencies = [
  "app_window",
  "boon_backend_wgpu",
  "boon_dd",
+ "boon_examples",
  "boon_runtime_host",
  "serde_json",
  "some_executor",
+ "wgpu",
 ]
 
 [[package]]
@@ -564,9 +566,11 @@ name = "boon_backend_ratatui"
 version = "0.1.0"
 dependencies = [
  "boon_dd",
+ "boon_examples",
  "boon_runtime_host",
  "crossterm",
  "ratatui",
+ "serde_json",
 ]
 
 [[package]]
