@@ -211,6 +211,9 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
 
     let output = fs::read_to_string(&smoke_json)
         .with_context(|| format!("missing Firefox smoke output {}", smoke_json.display()))?;
+    let smoke_value: serde_json::Value =
+        serde_json::from_str(&output).context("Firefox smoke output is not JSON")?;
+    require_webgpu_smoke(&smoke_value)?;
     for example in boon_dd::REQUIRED_EXAMPLES {
         if !output.contains(example) {
             bail!("Firefox smoke output did not contain required example {example}: {output}");
@@ -237,6 +240,18 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
     })
 }
 
+fn require_webgpu_smoke(smoke_value: &serde_json::Value) -> Result<()> {
+    let webgpu = smoke_value
+        .get("webgpu")
+        .context("Firefox smoke output missing webgpu object")?;
+    for field in ["navigator_gpu", "adapter", "device"] {
+        if webgpu.get(field).and_then(|value| value.as_bool()) != Some(true) {
+            bail!("Firefox WebGPU smoke did not prove webgpu.{field}: {smoke_value}");
+        }
+    }
+    Ok(())
+}
+
 fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
@@ -258,7 +273,7 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
         "wgsl_bindgen": "0.22.2",
         "app_window": "0.3.3",
         "native_surface_mode": "noninteractive render-command and dependency compile preflight",
-        "browser_surface_mode": "browser-hosted wasm render-command preflight",
+        "browser_surface_mode": "browser-hosted wasm plus Firefox WebGPU adapter/device preflight",
         "shader_parse": shader_path,
         "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
     });
@@ -339,7 +354,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "browser".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "browser",
-                "mode": "browser-hosted wasm smoke artifact verification"
+                "mode": "browser-hosted wasm plus Firefox WebGPU smoke artifact verification"
             }))
         },
     ));
@@ -765,14 +780,17 @@ fn test_target(args: &[String]) -> Result<()> {
         run_terminal_scenario(&example)?;
     }
     if target == "browser" {
-        let output = fs::read_to_string(
+        let output_text = fs::read_to_string(
             artifacts_dir()?
                 .join("wasm-bindgen")
                 .join("smoke-result.json"),
         )
         .context("missing browser WASM smoke artifact; run verify-wasm-dd first")?;
+        let output: serde_json::Value =
+            serde_json::from_str(&output_text).context("browser smoke artifact is not JSON")?;
+        require_webgpu_smoke(&output)?;
         for example in boon_dd::REQUIRED_EXAMPLES {
-            if !output.contains(example) {
+            if !output_text.contains(example) {
                 bail!("browser smoke artifact does not include example {example}");
             }
         }
@@ -1120,6 +1138,13 @@ fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
         fs::remove_dir_all(&profile_dir)?;
     }
     fs::create_dir_all(&profile_dir)?;
+    fs::write(
+        profile_dir.join("user.js"),
+        r#"user_pref("dom.webgpu.enabled", true);
+user_pref("gfx.webgpu.force-enabled", true);
+user_pref("gfx.webrender.all", true);
+"#,
+    )?;
 
     let smoke_url = format!("http://{addr}/index.html");
     launch_background_process(&[
@@ -1287,11 +1312,32 @@ fn smoke_html() -> &'static str {
 import init, { run_smoke_json } from "./boon_wasm_smoke.js";
 try {
   await init();
-  const result = run_smoke_json();
+  if (!("gpu" in navigator)) {
+    throw new Error("Firefox WebGPU preflight failed: navigator.gpu is unavailable");
+  }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    throw new Error("Firefox WebGPU preflight failed: requestAdapter returned null");
+  }
+  const device = await adapter.requestDevice();
+  if (!device) {
+    throw new Error("Firefox WebGPU preflight failed: requestDevice returned null");
+  }
+  const result = JSON.stringify({
+    webgpu: {
+      navigator_gpu: true,
+      adapter: true,
+      device: true
+    },
+    wasm_smoke: JSON.parse(run_smoke_json())
+  });
   document.body.textContent = result;
   await fetch("/result", { method: "POST", body: result });
 } catch (error) {
-  document.body.textContent = String(error && error.stack || error);
+  document.body.textContent = String(
+    (error && error.message ? error.message + "\n" : "") +
+    (error && error.stack || error)
+  );
   await fetch("/result", { method: "POST", body: document.body.textContent });
   throw error;
 }
