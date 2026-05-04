@@ -544,6 +544,8 @@ dependencies = [
  "boon_backend_wgpu",
  "boon_dd",
  "boon_runtime_host",
+ "serde_json",
+ "some_executor",
 ]
 
 [[package]]

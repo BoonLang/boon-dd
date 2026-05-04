@@ -258,6 +258,7 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
     run_status("cargo", &["check", "-p", "boon_backend_wgpu"])?;
     run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
     run_status("cargo", &["check", "-p", "boon_backend_browser"])?;
+    let native_smoke_artifact = verify_native_app_window_smoke()?;
     let shader_path = repo_root()?.join("shaders/common/ui_rect.wgsl");
     let shader_source = fs::read_to_string(&shader_path)
         .with_context(|| format!("missing shader {}", shader_path.display()))?;
@@ -272,9 +273,10 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
         "wesl": "0.3.2",
         "wgsl_bindgen": "0.22.2",
         "app_window": "0.3.3",
-        "native_surface_mode": "noninteractive render-command and dependency compile preflight",
+        "native_surface_mode": "app_window native window and surface smoke plus render-command preflight",
         "browser_surface_mode": "browser-hosted wasm plus Firefox WebGPU adapter/device preflight",
         "shader_parse": shader_path,
+        "native_app_window_smoke": native_smoke_artifact,
         "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
     });
     fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
@@ -286,6 +288,42 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
         artifacts: vec![artifact.display().to_string()],
         details,
     })
+}
+
+fn verify_native_app_window_smoke() -> Result<PathBuf> {
+    let artifact = artifacts_dir()?.join("native-app-window-smoke.json");
+    if artifact.exists() {
+        fs::remove_file(&artifact)?;
+    }
+    let artifact_arg = artifact.display().to_string();
+    launch_background_process(&[
+        "cargo",
+        "run",
+        "--quiet",
+        "-p",
+        "boon_backend_app_window",
+        "--bin",
+        "native_smoke",
+        "--",
+        &artifact_arg,
+    ])?;
+    let start = Instant::now();
+    while !artifact.exists() {
+        if start.elapsed() > Duration::from_secs(30) {
+            bail!(
+                "native app_window smoke did not write {} within 30s",
+                artifact.display()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let details: serde_json::Value = serde_json::from_str(&fs::read_to_string(&artifact)?)?;
+    for field in ["window_created", "surface_created"] {
+        if details.get(field).and_then(|value| value.as_bool()) != Some(true) {
+            bail!("native app_window smoke did not prove {field}: {details}");
+        }
+    }
+    Ok(artifact)
 }
 
 fn verify(args: &[String]) -> Result<()> {
@@ -343,7 +381,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "native".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "native",
-                "mode": "noninteractive render-command verification"
+                "mode": "app_window native window/surface smoke plus render-command verification"
             }))
         },
     ));
