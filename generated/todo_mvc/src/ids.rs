@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 pub enum NodeId {
     DocumentText,
     TodoMvc,
-    Event,
-    Text,
+    StoreSourcesNewTodoInputEventKeyDownKey,
+    StoreSourcesNewTodoInputText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SourceId {
-    Event,
-    Text,
+    StoreSourcesNewTodoInputEventKeyDownKey,
+    StoreSourcesNewTodoInputText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

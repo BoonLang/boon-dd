@@ -4,14 +4,14 @@
   "source_hash": 4086533069330835489,
   "source_bindings": [
     {
-      "source_id": "Event",
-      "path": "event",
-      "shape": "EmptyRecord",
+      "source_id": "StoreSourcesNewTodoInputEventKeyDownKey",
+      "path": "store.sources.new_todo_input.event.key_down.key",
+      "shape": "TagSet",
       "dynamic": false
     },
     {
-      "source_id": "Text",
-      "path": "text",
+      "source_id": "StoreSourcesNewTodoInputText",
+      "path": "store.sources.new_todo_input.text",
       "shape": "Text",
       "dynamic": false
     }
@@ -30,16 +30,16 @@
       "source_span": "examples/todo_mvc/source.bn:document"
     },
     {
-      "node": "Event",
+      "node": "StoreSourcesNewTodoInputEventKeyDownKey",
       "kind": "source.leaf",
-      "shape": "EmptyRecord",
-      "source_span": "examples/todo_mvc/source.bn:event"
+      "shape": "TagSet",
+      "source_span": "examples/todo_mvc/source.bn:store.sources.new_todo_input.event.key_down.key"
     },
     {
-      "node": "Text",
+      "node": "StoreSourcesNewTodoInputText",
       "kind": "source.leaf",
       "shape": "Text",
-      "source_span": "examples/todo_mvc/source.bn:text"
+      "source_span": "examples/todo_mvc/source.bn:store.sources.new_todo_input.text"
     }
   ],
   "operators": [

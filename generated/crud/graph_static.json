@@ -4,8 +4,8 @@
   "source_hash": 4393315833593944045,
   "source_bindings": [
     {
-      "source_id": "SaveButton",
-      "path": "save_button",
+      "source_id": "StoreSourcesSaveButtonEventPress",
+      "path": "store.sources.save_button.event.press",
       "shape": "EmptyRecord",
       "dynamic": false
     }
@@ -24,10 +24,10 @@
       "source_span": "examples/crud/source.bn:document"
     },
     {
-      "node": "SaveButton",
+      "node": "StoreSourcesSaveButtonEventPress",
       "kind": "source.leaf",
       "shape": "EmptyRecord",
-      "source_span": "examples/crud/source.bn:save_button"
+      "source_span": "examples/crud/source.bn:store.sources.save_button.event.press"
     }
   ],
   "operators": [

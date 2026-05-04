@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 pub enum NodeId {
     DocumentText,
     Crud,
-    SaveButton,
+    StoreSourcesSaveButtonEventPress,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SourceId {
-    SaveButton,
+    StoreSourcesSaveButtonEventPress,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

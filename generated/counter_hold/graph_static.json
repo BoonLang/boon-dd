@@ -4,8 +4,8 @@
   "source_hash": 4929524148008013500,
   "source_bindings": [
     {
-      "source_id": "IncrementButton",
-      "path": "increment_button",
+      "source_id": "StoreSourcesIncrementButtonEventPress",
+      "path": "store.sources.increment_button.event.press",
       "shape": "EmptyRecord",
       "dynamic": false
     }
@@ -24,10 +24,10 @@
       "source_span": "examples/counter_hold/source.bn:document"
     },
     {
-      "node": "IncrementButton",
+      "node": "StoreSourcesIncrementButtonEventPress",
       "kind": "source.leaf",
       "shape": "EmptyRecord",
-      "source_span": "examples/counter_hold/source.bn:increment_button"
+      "source_span": "examples/counter_hold/source.bn:store.sources.increment_button.event.press"
     }
   ],
   "operators": [

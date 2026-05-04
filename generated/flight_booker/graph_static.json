@@ -4,8 +4,8 @@
   "source_hash": 1420025816131664238,
   "source_bindings": [
     {
-      "source_id": "BookButton",
-      "path": "book_button",
+      "source_id": "StoreSourcesBookButtonEventPress",
+      "path": "store.sources.book_button.event.press",
       "shape": "EmptyRecord",
       "dynamic": false
     }
@@ -24,10 +24,10 @@
       "source_span": "examples/flight_booker/source.bn:document"
     },
     {
-      "node": "BookButton",
+      "node": "StoreSourcesBookButtonEventPress",
       "kind": "source.leaf",
       "shape": "EmptyRecord",
-      "source_span": "examples/flight_booker/source.bn:book_button"
+      "source_span": "examples/flight_booker/source.bn:store.sources.book_button.event.press"
     }
   ],
   "operators": [

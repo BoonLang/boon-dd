@@ -18,7 +18,7 @@
       "source_span": "examples/list_retain_reactive/source.bn:document"
     },
     {
-      "node": "ListRetainReactive",
+      "node": "WhileFilter",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_retain_reactive/source.bn:document"
@@ -60,7 +60,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ListRetainReactive",
+  "monitor_node": "WhileFilter",
   "render_node": "DocumentText",
   "initial_text": "",
   "text_behavior": {

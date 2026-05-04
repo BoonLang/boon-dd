@@ -76,7 +76,7 @@
   ],
   "monitor_node": "Pong",
   "render_node": "DocumentText",
-  "initial_text": "0",
+  "initial_text": "frame 1",
   "text_behavior": {
     "Constant": "frame 1"
   },

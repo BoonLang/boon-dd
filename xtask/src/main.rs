@@ -507,6 +507,10 @@ fn forbidden_pattern_scan() -> Result<serde_json::Value> {
         concat!("recompute", "_dependents"),
         concat!("native graph", " worker"),
         concat!("browser-side custom", " scheduler"),
+        concat!("graph_id", " =="),
+        concat!("graph_id", ".contains"),
+        concat!("Pong", "/"),
+        concat!("A1", ": 1"),
     ];
     let mut hits = Vec::new();
     for base in ["crates", "xtask/src"] {

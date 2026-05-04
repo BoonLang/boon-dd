@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "ListRetainReactive",
+          "node": "WhileFilter",
           "owner": "Root",
           "value_preview": "active"
         }

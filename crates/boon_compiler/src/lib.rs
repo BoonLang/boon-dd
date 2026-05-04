@@ -31,10 +31,26 @@ fn compile_static_graph(source_path: &str, text: &str) -> StaticGraph {
         .replace('/', "_");
     let operators = detect_operators(text);
     let source_bindings = infer_sources(text);
-    let monitor_node = NodeId(infer_monitor_node(&graph_id, text, &operators));
+    let document_text = definition_block(text, "document").unwrap_or_else(|| text.to_owned());
+    let document_target = infer_document_target(&document_text);
+    let target_definition = document_target
+        .as_deref()
+        .and_then(|target| definition_block(text, target_name(target)));
+    let monitor_node = NodeId(infer_monitor_node(
+        &graph_id,
+        text,
+        document_target.as_deref(),
+        target_definition.as_deref(),
+        &operators,
+    ));
     let render_node = NodeId("DocumentText".to_owned());
-    let initial_text = infer_initial_text(text);
-    let text_behavior = infer_text_behavior(text, &initial_text);
+    let initial_text = infer_initial_text(text, &document_text, target_definition.as_deref());
+    let text_behavior = infer_text_behavior(
+        text,
+        &document_text,
+        target_definition.as_deref(),
+        &initial_text,
+    );
     let mut nodes = Vec::new();
     nodes.push(GraphNode {
         node: render_node.clone(),
@@ -130,7 +146,7 @@ fn infer_sources(text: &str) -> Vec<SourceBinding> {
         bindings.push(SourceBinding {
             source_id: SourceId(to_pascal_identifier(&path)),
             shape: infer_source_shape(&path),
-            dynamic: path.contains("item.") || path.contains(".sources."),
+            dynamic: path.starts_with("item."),
             path,
         });
     }
@@ -141,16 +157,24 @@ fn infer_sources(text: &str) -> Vec<SourceBinding> {
 
 fn infer_source_paths(text: &str) -> Vec<String> {
     let mut paths = Vec::new();
+    let mut stack: Vec<(usize, String)> = Vec::new();
     for line in text.lines() {
+        let indent = leading_spaces(line);
         let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        while stack
+            .last()
+            .is_some_and(|(stack_indent, _)| *stack_indent >= indent)
+        {
+            stack.pop();
+        }
         if trimmed.contains("SOURCE") {
-            let name = trimmed
-                .split(':')
-                .next()
-                .unwrap_or("source")
-                .trim()
-                .trim_matches(&['[', ']'][..]);
-            paths.push(name.to_owned());
+            paths.extend(source_paths_in_line(&stack, trimmed));
+        }
+        if let Some(label) = leading_label(trimmed) {
+            stack.push((indent, label));
         }
     }
     for token in [
@@ -180,82 +204,127 @@ fn infer_source_shape(path: &str) -> String {
     }
 }
 
-fn infer_monitor_node(graph_id: &str, text: &str, operators: &[GraphOperator]) -> String {
-    if text.contains("Math/sum") && text.contains("Timer/interval") {
+fn infer_monitor_node(
+    graph_id: &str,
+    text: &str,
+    document_target: Option<&str>,
+    target_definition: Option<&str>,
+    operators: &[GraphOperator],
+) -> String {
+    let target_name = document_target.map(target_name);
+    let target_pascal = target_name.map(to_pascal_identifier);
+    let target_definition = target_definition.unwrap_or_default();
+    if target_definition.contains("Math/sum") && text.contains("Timer/interval") {
         return "IntervalCounter".to_owned();
     }
-    if text.contains("Timer/interval") && text.contains("HOLD") {
+    if target_definition.contains("HOLD") && text.contains("Timer/interval") {
         return "IntervalHoldCounter".to_owned();
-    }
-    if text.contains("Pong/") {
-        return "Pong".to_owned();
-    }
-    if graph_id == "then" {
-        return "ThenValue".to_owned();
-    }
-    if text.contains("Scene/new") {
-        return "TodoMvcPhysical".to_owned();
     }
     if operators
         .iter()
         .any(|op| op.kind == GraphOperatorKind::Latest)
+        && target_definition.contains("LATEST")
     {
         return "LatestValue".to_owned();
     }
     if operators
         .iter()
         .any(|op| op.kind == GraphOperatorKind::When)
+        && target_definition.contains("WHEN")
     {
         return "WhenEnter".to_owned();
     }
     if operators
         .iter()
         .any(|op| op.kind == GraphOperatorKind::WhileSwitch)
+        && target_definition.contains("WHILE")
     {
-        return if graph_id.contains("retain") {
-            "ListRetainReactive".to_owned()
-        } else {
-            "WhileFilter".to_owned()
-        };
+        return "WhileFilter".to_owned();
     }
-    if text.contains("Math/sum") || text.contains("HOLD") {
-        return "CounterHold".to_owned();
+    if target_definition.contains("HOLD") {
+        return format!(
+            "{}Hold",
+            target_pascal.unwrap_or_else(|| "Value".to_owned())
+        );
+    }
+    if target_definition.contains("Math/sum") {
+        return target_pascal.unwrap_or_else(|| "Sum".to_owned());
+    }
+    if target_definition.contains("|> THEN") {
+        return format!(
+            "Then{}",
+            target_pascal.unwrap_or_else(|| "Value".to_owned())
+        );
     }
     to_pascal_identifier(graph_id)
 }
 
-fn infer_initial_text(text: &str) -> String {
-    if text.contains("Math/sum") || text.contains("HOLD") || text.contains("|> THEN { 1 }") {
+fn infer_initial_text(
+    all_text: &str,
+    document_text: &str,
+    target_definition: Option<&str>,
+) -> String {
+    if let Some(text) = infer_document_text(document_text) {
+        return text;
+    }
+    let target_definition = target_definition.unwrap_or_default();
+    if target_definition.contains("Math/sum")
+        || target_definition.contains("HOLD")
+        || target_definition.contains("|> THEN { 1 }")
+    {
         return "0".to_owned();
     }
-    if text.contains("LATEST") || text.contains("WHEN") || text.contains("WHILE") {
+    if target_definition.contains("LATEST")
+        || target_definition.contains("WHEN")
+        || target_definition.contains("WHILE")
+    {
         return String::new();
     }
-    infer_constant_text(text).unwrap_or_default()
+    infer_constant_text(all_text).unwrap_or_default()
 }
 
-fn infer_text_behavior(text: &str, initial_text: &str) -> TextBehavior {
-    if text.contains("Pong/") {
-        TextBehavior::Constant(infer_constant_text(text).unwrap_or_default())
-    } else if text.contains("LATEST") {
+fn infer_text_behavior(
+    all_text: &str,
+    document_text: &str,
+    target_definition: Option<&str>,
+    initial_text: &str,
+) -> TextBehavior {
+    if let Some(text) = infer_document_text(document_text) {
+        return TextBehavior::Constant(text);
+    }
+    let target_definition = target_definition.unwrap_or_default();
+    if target_definition.contains("LATEST") {
         TextBehavior::LatestAction
-    } else if text.contains("WHEN") {
+    } else if target_definition.contains("WHEN") {
         TextBehavior::BranchOnTag {
             tag: "Enter".to_owned(),
-            text: first_text_literal(text).unwrap_or_default(),
+            text: first_text_literal(target_definition).unwrap_or_default(),
         }
-    } else if text.contains("WHILE") {
+    } else if target_definition.contains("WHILE") {
         TextBehavior::BranchOnTag {
             tag: "Active".to_owned(),
-            text: first_text_literal(text).unwrap_or_default(),
+            text: first_text_literal(target_definition).unwrap_or_default(),
         }
-    } else if text.contains("Math/sum") || text.contains("HOLD") || text.contains("|> THEN { 1 }") {
+    } else if target_definition.contains("Math/sum")
+        || target_definition.contains("HOLD")
+        || target_definition.contains("|> THEN { 1 }")
+    {
         TextBehavior::CountActions {
             initial: initial_text.parse().unwrap_or(0),
         }
     } else {
-        TextBehavior::Constant(infer_constant_text(text).unwrap_or_default())
+        TextBehavior::Constant(infer_constant_text(all_text).unwrap_or_default())
     }
+}
+
+fn infer_document_text(document_text: &str) -> Option<String> {
+    document_head_expression(document_text).and_then(|expression| {
+        expression
+            .trim_start()
+            .starts_with("TEXT {")
+            .then(|| text_literals(expression).last().cloned())
+            .flatten()
+    })
 }
 
 fn infer_constant_text(text: &str) -> Option<String> {
@@ -289,9 +358,6 @@ fn infer_constant_text(text: &str) -> Option<String> {
             return Some(format!("{} F", celsius * 9 / 5 + 32));
         }
     }
-    if text.contains("A1: 1") {
-        return Some("A1=1".to_owned());
-    }
     text_literals(text).last().cloned()
 }
 
@@ -320,6 +386,138 @@ fn number_after_label(text: &str, label: &str) -> Option<i64> {
         .lines()
         .next()
         .and_then(|line| line.trim().parse::<i64>().ok())
+}
+
+fn definition_block(text: &str, label: &str) -> Option<String> {
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        let indent = leading_spaces(line);
+        let trimmed = line.trim();
+        if leading_label(trimmed).as_deref() != Some(label) {
+            continue;
+        }
+        let mut block = String::from(line);
+        while let Some(next) = lines.peek().copied() {
+            if !next.trim().is_empty() && leading_spaces(next) <= indent {
+                break;
+            }
+            block.push('\n');
+            block.push_str(next);
+            lines.next();
+        }
+        return Some(block);
+    }
+    None
+}
+
+fn infer_document_target(document_text: &str) -> Option<String> {
+    for marker in ["|> Text/from_number", "|> Text/join", "|> Document/new"] {
+        if let Some(target) = expression_before_marker(document_text, marker) {
+            return Some(target);
+        }
+    }
+    None
+}
+
+fn expression_before_marker(text: &str, marker: &str) -> Option<String> {
+    for line in text.lines() {
+        let Some(marker_index) = line.find(marker) else {
+            continue;
+        };
+        let before_marker = &line[..marker_index];
+        let expression = before_marker
+            .rsplit(':')
+            .next()
+            .unwrap_or(before_marker)
+            .split("|>")
+            .next()
+            .unwrap_or(before_marker)
+            .trim();
+        if is_reference_expression(expression) {
+            return Some(expression.to_owned());
+        }
+    }
+    None
+}
+
+fn document_head_expression(document_text: &str) -> Option<&str> {
+    for line in document_text.lines() {
+        let Some(pipe_index) = line.find("|>") else {
+            continue;
+        };
+        return Some(
+            line[..pipe_index]
+                .rsplit(':')
+                .next()
+                .unwrap_or(&line[..pipe_index]),
+        );
+    }
+    None
+}
+
+fn is_reference_expression(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+}
+
+fn target_name(target: &str) -> &str {
+    target.rsplit('.').next().unwrap_or(target)
+}
+
+fn leading_spaces(line: &str) -> usize {
+    line.len() - line.trim_start_matches(' ').len()
+}
+
+fn leading_label(trimmed: &str) -> Option<String> {
+    let colon = trimmed.find(':')?;
+    let candidate = trimmed[..colon].trim().trim_matches(&['[', ']'][..]).trim();
+    if candidate.is_empty()
+        || candidate
+            .chars()
+            .any(|ch| !(ch.is_ascii_alphanumeric() || ch == '_'))
+    {
+        None
+    } else {
+        Some(candidate.to_owned())
+    }
+}
+
+fn source_paths_in_line(stack: &[(usize, String)], trimmed: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut rest = trimmed;
+    while let Some(source_index) = rest.find("SOURCE") {
+        let before_source = &rest[..source_index];
+        let mut parts = stack
+            .iter()
+            .map(|(_, label)| label.clone())
+            .collect::<Vec<_>>();
+        parts.extend(labels_before_source(before_source));
+        if !parts.is_empty() {
+            paths.push(parts.join("."));
+        }
+        rest = &rest[source_index + "SOURCE".len()..];
+    }
+    paths
+}
+
+fn labels_before_source(value: &str) -> Vec<String> {
+    let mut labels = Vec::new();
+    let mut token = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+        } else if ch == ':' {
+            if !token.is_empty() {
+                labels.push(token.clone());
+                token.clear();
+            }
+        } else if !ch.is_whitespace() {
+            token.clear();
+        }
+    }
+    labels
 }
 
 fn to_pascal_identifier(value: &str) -> String {

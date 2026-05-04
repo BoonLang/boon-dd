@@ -2,6 +2,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GeneratedSourceEvent {
-    Event,
-    Text { text: String },
+    StoreSourcesNewTodoInputEventKeyDownKey { tag: String },
+    StoreSourcesNewTodoInputText { text: String },
 }

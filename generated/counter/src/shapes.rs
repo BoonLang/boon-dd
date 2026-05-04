@@ -1,5 +1,5 @@
 pub fn source_shapes() -> &'static [(&'static str, &'static str)] {
     &[
-    ("press", "EmptyRecord"),
+    ("store.sources.increment_button.event.press", "EmptyRecord"),
     ]
 }

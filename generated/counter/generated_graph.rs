@@ -88,7 +88,7 @@ pub fn build_dataflow(
     let mut probe = ProbeHandle::new();
     let output = Arc::new(Mutex::new(Vec::<SmokeOutput>::new()));
     let output_in_graph = Arc::clone(&output);
-    let monitor_node = NodeId("CounterHold".to_owned());
+    let monitor_node = NodeId("Counter".to_owned());
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);

@@ -4,8 +4,8 @@
   "source_hash": 11176993741951227581,
   "source_bindings": [
     {
-      "source_id": "Press",
-      "path": "press",
+      "source_id": "StoreSourcesIncrementButtonEventPress",
+      "path": "store.sources.increment_button.event.press",
       "shape": "EmptyRecord",
       "dynamic": false
     }
@@ -18,16 +18,16 @@
       "source_span": "examples/counter/source.bn:document"
     },
     {
-      "node": "CounterHold",
+      "node": "Counter",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/counter/source.bn:document"
     },
     {
-      "node": "Press",
+      "node": "StoreSourcesIncrementButtonEventPress",
       "kind": "source.leaf",
       "shape": "EmptyRecord",
-      "source_span": "examples/counter/source.bn:press"
+      "source_span": "examples/counter/source.bn:store.sources.increment_button.event.press"
     }
   ],
   "operators": [
@@ -74,7 +74,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "CounterHold",
+  "monitor_node": "Counter",
   "render_node": "DocumentText",
   "initial_text": "0",
   "text_behavior": {
