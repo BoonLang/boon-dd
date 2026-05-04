@@ -9,6 +9,6 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-boon_dd = { path = "../boon_dd" }
+boon_examples = { path = "../boon_examples" }
 serde_json.workspace = true
 wasm-bindgen.workspace = true

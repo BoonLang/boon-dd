@@ -1,0 +1,73 @@
+{
+  "graph_id": "when",
+  "source_path": "examples/when/source.bn",
+  "source_hash": 451659559582543046,
+  "source_bindings": [
+    {
+      "source_id": "KeyDownKey",
+      "path": "key_down.key",
+      "shape": "TagSet",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/when/source.bn:document"
+    },
+    {
+      "node": "WhenEnter",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/when/source.bn:document"
+    },
+    {
+      "node": "KeyDownKey",
+      "kind": "source.leaf",
+      "shape": "TagSet",
+      "source_span": "examples/when/source.bn:key_down.key"
+    }
+  ],
+  "operators": [
+    {
+      "node": "When",
+      "kind": "When",
+      "inputs": [],
+      "output": "When",
+      "order": 20
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "WhenEnter",
+  "render_node": "DocumentText",
+  "initial_text": "",
+  "text_behavior": {
+    "BranchOnTag": {
+      "tag": "Enter",
+      "text": "accepted"
+    }
+  },
+  "physical_scene": false
+}

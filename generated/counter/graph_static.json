@@ -1,0 +1,86 @@
+{
+  "graph_id": "counter",
+  "source_path": "examples/counter/source.bn",
+  "source_hash": 11176993741951227581,
+  "source_bindings": [
+    {
+      "source_id": "Press",
+      "path": "press",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/counter/source.bn:document"
+    },
+    {
+      "node": "CounterHold",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/counter/source.bn:document"
+    },
+    {
+      "node": "Press",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/counter/source.bn:press"
+    }
+  ],
+  "operators": [
+    {
+      "node": "SourceLeaf",
+      "kind": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "Then",
+      "kind": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "ThenConst",
+      "kind": "ThenConst",
+      "inputs": [],
+      "output": "ThenConst",
+      "order": 11
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "CounterHold",
+  "render_node": "DocumentText",
+  "initial_text": "0",
+  "text_behavior": {
+    "CountActions": {
+      "initial": 0
+    }
+  },
+  "physical_scene": false
+}

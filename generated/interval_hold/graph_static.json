@@ -1,0 +1,86 @@
+{
+  "graph_id": "interval_hold",
+  "source_path": "examples/interval_hold/source.bn",
+  "source_hash": 17899187861413053059,
+  "source_bindings": [
+    {
+      "source_id": "Tick",
+      "path": "tick",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/interval_hold/source.bn:document"
+    },
+    {
+      "node": "IntervalHoldCounter",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/interval_hold/source.bn:document"
+    },
+    {
+      "node": "Tick",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/interval_hold/source.bn:tick"
+    }
+  ],
+  "operators": [
+    {
+      "node": "Then",
+      "kind": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "Hold",
+      "kind": "Hold",
+      "inputs": [],
+      "output": "Hold",
+      "order": 30
+    },
+    {
+      "node": "PersistTap",
+      "kind": "PersistTap",
+      "inputs": [],
+      "output": "PersistTap",
+      "order": 90
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "IntervalHoldCounter",
+  "render_node": "DocumentText",
+  "initial_text": "0",
+  "text_behavior": {
+    "CountActions": {
+      "initial": 0
+    }
+  },
+  "physical_scene": false
+}

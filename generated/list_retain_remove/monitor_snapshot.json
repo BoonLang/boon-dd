@@ -1,0 +1,22 @@
+[
+  {
+    "monitor": [
+      {
+        "NodeValue": {
+          "epoch": 1,
+          "node": "ListRetainRemove",
+          "owner": "Root",
+          "value_preview": "removed"
+        }
+      }
+    ],
+    "render": [
+      {
+        "PatchText": {
+          "node": "DocumentText",
+          "text": "removed"
+        }
+      }
+    ]
+  }
+]

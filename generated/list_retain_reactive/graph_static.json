@@ -1,0 +1,73 @@
+{
+  "graph_id": "list_retain_reactive",
+  "source_path": "examples/list_retain_reactive/source.bn",
+  "source_hash": 10181089958348202602,
+  "source_bindings": [
+    {
+      "source_id": "SelectedFilter",
+      "path": "selected_filter",
+      "shape": "TagSet",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/list_retain_reactive/source.bn:document"
+    },
+    {
+      "node": "ListRetainReactive",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/list_retain_reactive/source.bn:document"
+    },
+    {
+      "node": "SelectedFilter",
+      "kind": "source.leaf",
+      "shape": "TagSet",
+      "source_span": "examples/list_retain_reactive/source.bn:selected_filter"
+    }
+  ],
+  "operators": [
+    {
+      "node": "WhileSwitch",
+      "kind": "WhileSwitch",
+      "inputs": [],
+      "output": "WhileSwitch",
+      "order": 21
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "ListRetainReactive",
+  "render_node": "DocumentText",
+  "initial_text": "",
+  "text_behavior": {
+    "BranchOnTag": {
+      "tag": "Active",
+      "text": "active"
+    }
+  },
+  "physical_scene": false
+}

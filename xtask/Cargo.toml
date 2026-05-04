@@ -7,6 +7,11 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+boon_codegen_rust = { path = "../crates/boon_codegen_rust" }
+boon_compiler = { path = "../crates/boon_compiler" }
 boon_dd = { path = "../crates/boon_dd" }
+boon_examples = { path = "../crates/boon_examples" }
+boon_runtime_host = { path = "../crates/boon_runtime_host" }
+naga.workspace = true
 serde.workspace = true
 serde_json.workspace = true

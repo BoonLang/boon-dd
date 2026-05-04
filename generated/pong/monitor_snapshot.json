@@ -1,0 +1,22 @@
+[
+  {
+    "monitor": [
+      {
+        "NodeValue": {
+          "epoch": 1,
+          "node": "Pong",
+          "owner": "Root",
+          "value_preview": "frame 1"
+        }
+      }
+    ],
+    "render": [
+      {
+        "PatchText": {
+          "node": "DocumentText",
+          "text": "frame 1"
+        }
+      }
+    ]
+  }
+]

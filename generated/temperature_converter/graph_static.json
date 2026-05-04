@@ -1,0 +1,50 @@
+{
+  "graph_id": "temperature_converter",
+  "source_path": "examples/temperature_converter/source.bn",
+  "source_hash": 13033172464204808072,
+  "source_bindings": [],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/temperature_converter/source.bn:document"
+    },
+    {
+      "node": "TemperatureConverter",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/temperature_converter/source.bn:document"
+    }
+  ],
+  "operators": [
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "TemperatureConverter",
+  "render_node": "DocumentText",
+  "initial_text": "68 F",
+  "text_behavior": {
+    "Constant": "68 F"
+  },
+  "physical_scene": false
+}

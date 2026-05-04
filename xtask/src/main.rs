@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -39,6 +39,7 @@ fn main() -> Result<()> {
         "test" => test_target(&args),
         "verify-deps" => verify_deps(&args).map(|_| ()),
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
+        "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
         "verify" => verify(&args),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -210,11 +211,17 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
 
     let output = fs::read_to_string(&smoke_json)
         .with_context(|| format!("missing Firefox smoke output {}", smoke_json.display()))?;
-    if !output.contains("CounterHold")
-        || !output.contains("TodoMvcPhysical")
-        || !output.contains("DocumentText")
-    {
-        bail!("Firefox smoke output did not contain expected monitor/render records: {output}");
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        if !output.contains(example) {
+            bail!("Firefox smoke output did not contain required example {example}: {output}");
+        }
+    }
+    for required in ["CounterHold", "TodoMvcPhysical", "DocumentText"] {
+        if !output.contains(required) {
+            bail!(
+                "Firefox smoke output did not contain expected monitor/render record {required}: {output}"
+            );
+        }
     }
 
     Ok(GateReport {
@@ -227,6 +234,42 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
             smoke_json.display().to_string(),
         ],
         details: serde_json::json!({ "smoke_output": output }),
+    })
+}
+
+fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
+    run_status("cargo", &["check", "-p", "boon_backend_wgpu"])?;
+    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
+    run_status("cargo", &["check", "-p", "boon_backend_browser"])?;
+    let shader_path = repo_root()?.join("shaders/common/ui_rect.wgsl");
+    let shader_source = fs::read_to_string(&shader_path)
+        .with_context(|| format!("missing shader {}", shader_path.display()))?;
+    naga::front::wgsl::parse_str(&shader_source)
+        .with_context(|| format!("WGSL parse failed for {}", shader_path.display()))?;
+
+    let artifact = artifacts_dir()?.join("verify-render-deps.json");
+    let details = serde_json::json!({
+        "ratatui": "0.30.0",
+        "crossterm": "0.29.0",
+        "wgpu": "29.0.3",
+        "wesl": "0.3.2",
+        "wgsl_bindgen": "0.22.2",
+        "app_window": "0.3.3",
+        "native_surface_mode": "noninteractive render-command and dependency compile preflight",
+        "browser_surface_mode": "browser-hosted wasm render-command preflight",
+        "shader_parse": shader_path,
+        "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "verify-render-deps".to_owned(),
+        command: "cargo xtask verify-render-deps --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
     })
 }
 
@@ -259,6 +302,11 @@ fn verify(args: &[String]) -> Result<()> {
                 "firefox".to_owned(),
             ])
         },
+    ));
+    gates.push(capture_gate(
+        "verify-render-deps",
+        "cargo xtask verify-render-deps --format json",
+        || verify_render_deps(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
         "example-matrix",
@@ -300,6 +348,11 @@ fn verify(args: &[String]) -> Result<()> {
         "cargo xtask verify all --format json",
         verify_plan_coverage,
     ));
+    gates.push(capture_simple_gate(
+        "generated-crates",
+        "cargo check --manifest-path generated/<example>/Cargo.toml",
+        verify_generated_crates,
+    ));
 
     let success = gates.iter().all(|gate| gate.status == "passed");
     let failed_gates = gates
@@ -312,12 +365,19 @@ fn verify(args: &[String]) -> Result<()> {
     let report_path = dir.join("verify-report.json");
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
     let success_path = dir.join("success.json");
+    let matrix_path = dir.join("example-matrix.json");
+    let forbidden_scan = forbidden_pattern_scan()?;
     fs::write(
         &success_path,
         serde_json::to_vec_pretty(&serde_json::json!({
             "success": success,
             "failed_gates": failed_gates,
             "verify_report": report_path,
+            "dependency_tool_versions": collect_dependency_tool_versions()?,
+            "canonical_example_matrix_results": serde_json::from_str::<serde_json::Value>(
+                &fs::read_to_string(&matrix_path).unwrap_or_else(|_| "{}".to_owned())
+            )?,
+            "forbidden_pattern_scan": forbidden_scan,
         }))?,
     )?;
     if !success {
@@ -373,6 +433,76 @@ where
     }
 }
 
+fn collect_dependency_tool_versions() -> Result<serde_json::Value> {
+    Ok(serde_json::json!({
+        "rustc": run_capture("rustc", &["--version"])?,
+        "cargo": run_capture("cargo", &["--version"])?,
+        "timely": "0.29.0",
+        "differential-dataflow": "0.23.0",
+        "wasm-bindgen-cli": find_wasm_bindgen()
+            .and_then(|path| run_capture(path.to_str().unwrap(), &["--version"]).ok()),
+        "firefox": run_capture("firefox", &["--version"]).unwrap_or_else(|error| format!("unavailable: {error}")),
+        "cosmic-background-launch": run_capture("bash", &["-lc", "command -v cosmic-background-launch"]).unwrap_or_else(|error| format!("unavailable: {error}")),
+    }))
+}
+
+fn forbidden_pattern_scan() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let forbidden = [
+        concat!("mark", "_dirty"),
+        concat!("dirty", "_nodes"),
+        concat!("recompute", "_dependents"),
+        concat!("native graph", " worker"),
+        concat!("browser-side custom", " scheduler"),
+    ];
+    let mut hits = Vec::new();
+    for base in ["crates", "xtask/src"] {
+        let dir = root.join(base);
+        if !dir.exists() {
+            continue;
+        }
+        scan_forbidden_in_dir(&dir, &forbidden, &mut hits)?;
+    }
+    let artifact = artifacts_dir()?.join("forbidden-pattern-scan.json");
+    let details = serde_json::json!({
+        "patterns": forbidden,
+        "hits": hits,
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(details)
+}
+
+fn scan_forbidden_in_dir(
+    dir: &Path,
+    forbidden: &[&str],
+    hits: &mut Vec<serde_json::Value>,
+) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            scan_forbidden_in_dir(&path, forbidden, hits)?;
+            continue;
+        }
+        if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
+        let text = fs::read_to_string(&path)?;
+        for (line_index, line) in text.lines().enumerate() {
+            for pattern in forbidden {
+                if line.contains(pattern) {
+                    hits.push(serde_json::json!({
+                        "path": path.display().to_string(),
+                        "line": line_index + 1,
+                        "pattern": pattern,
+                    }));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn verify_example_matrix() -> Result<serde_json::Value> {
     let root = repo_root()?;
     let required = [
@@ -410,7 +540,7 @@ fn verify_example_matrix() -> Result<serde_json::Value> {
     let mut terminal_errors = Vec::new();
     for example in implemented_terminal_examples()? {
         match run_terminal_scenario(&example) {
-            Ok(()) => terminal_checked.push(example),
+            Ok(details) => terminal_checked.push(details),
             Err(error) => terminal_errors.push(serde_json::json!({
                 "example": example,
                 "error": format!("{error:#}"),
@@ -467,10 +597,57 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
         })
         .collect::<Vec<_>>();
 
-    let required_paths = [
+    let mut required_paths = vec![
         "ARCHITECTURE.md",
         "target/boon-artifacts/wasm-bindgen/smoke-result.json",
     ];
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        required_paths.push(Box::leak(
+            format!("generated/{example}/graph_static.json").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/Cargo.toml").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/lib.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/graph.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/ids.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/source_events.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/shapes.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/values.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/render_bindings.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/monitor_bindings.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/src/persist_bindings.rs").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/monitor_snapshot.json").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/terminal_120x40.snapshot.txt").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/native_render_1280x720.json").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
+            format!("generated/{example}/browser_render_1280x720.json").into_boxed_str(),
+        ));
+    }
     let missing_paths = required_paths
         .iter()
         .filter_map(|path| {
@@ -478,20 +655,61 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
             (!path.exists()).then(|| path.display().to_string())
         })
         .collect::<Vec<_>>();
+    let forbidden_scan = forbidden_pattern_scan()?;
+    let forbidden_hits = forbidden_scan["hits"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     let artifact = artifacts_dir()?.join("plan-coverage.json");
     let details = serde_json::json!({
         "required_crates": required_crates,
         "missing_crates": missing_crates,
         "missing_paths": missing_paths,
+        "forbidden_pattern_scan": forbidden_scan,
     });
     fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
 
     if !details["missing_crates"].as_array().unwrap().is_empty()
         || !details["missing_paths"].as_array().unwrap().is_empty()
+        || !forbidden_hits.is_empty()
     {
         bail!("plan coverage is incomplete; see {}", artifact.display());
     }
+    Ok(details)
+}
+
+fn verify_generated_crates() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let mut checked = Vec::new();
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        let manifest = root.join("generated").join(example).join("Cargo.toml");
+        if !manifest.exists() {
+            bail!("missing generated manifest {}", manifest.display());
+        }
+        let target_dir = artifacts_dir()?.join("generated-check").join(example);
+        let status = Command::new("cargo")
+            .env("CARGO_TARGET_DIR", &target_dir)
+            .args([
+                "check",
+                "--quiet",
+                "--manifest-path",
+                manifest.to_str().unwrap(),
+            ])
+            .status()
+            .with_context(|| format!("failed to run cargo check for generated crate {example}"))?;
+        if !status.success() {
+            bail!("generated crate {example} does not compile: {status}");
+        }
+        checked.push(serde_json::json!({
+            "example": example,
+            "manifest": manifest,
+            "target_dir": target_dir,
+        }));
+    }
+    let artifact = artifacts_dir()?.join("generated-crates.json");
+    let details = serde_json::json!({ "checked": checked });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
     Ok(details)
 }
 
@@ -515,10 +733,12 @@ fn run_example(args: &[String]) -> Result<()> {
     }
     let example = example.context("missing --example")?;
     let target = target.context("missing --target")?;
-    if target != "terminal" {
-        bail!("only terminal target is implemented for run so far");
+    if matches!(target.as_str(), "native" | "browser") {
+        require_background_launch_env(&target)?;
+    } else if target != "terminal" {
+        bail!("unknown target {target}");
     }
-    let output = boon_dd_smoke_json(&example)?;
+    let output = compiled_example_json(&example)?;
     println!("{output}");
     Ok(())
 }
@@ -579,7 +799,7 @@ fn implemented_terminal_examples() -> Result<Vec<String>> {
     Ok(examples)
 }
 
-fn run_terminal_scenario(example: &str) -> Result<()> {
+fn run_terminal_scenario(example: &str) -> Result<serde_json::Value> {
     let example_dir = repo_root()?.join("examples").join(example);
     let scenario = example_dir.join("scenario.toml");
     if !scenario.exists() {
@@ -588,7 +808,7 @@ fn run_terminal_scenario(example: &str) -> Result<()> {
     let expected_path = example_dir.join("expected.render.json");
     let expected = fs::read_to_string(&expected_path)
         .with_context(|| format!("missing expected artifact {}", expected_path.display()))?;
-    let actual = boon_dd_smoke_json(example)?;
+    let actual = compiled_example_json(example)?;
     let expected_json: serde_json::Value = serde_json::from_str(&expected)
         .with_context(|| format!("invalid JSON {}", expected_path.display()))?;
     let actual_json: serde_json::Value = serde_json::from_str(&actual)?;
@@ -597,13 +817,250 @@ fn run_terminal_scenario(example: &str) -> Result<()> {
             "terminal scenario {example} output mismatch\nexpected: {expected_json}\nactual: {actual_json}"
         );
     }
-    Ok(())
+    let artifact_dir = write_generated_artifacts(example)?;
+    Ok(serde_json::json!({
+        "example": example,
+        "expected": expected_path,
+        "generated_artifacts": artifact_dir,
+        "output": actual_json,
+    }))
 }
 
-fn boon_dd_smoke_json(example: &str) -> Result<String> {
-    let output = boon_dd::run_named_example_smoke(example)
-        .with_context(|| format!("example {example} is not implemented yet"))?;
-    serde_json::to_string(&output).context("failed to serialize DD smoke output")
+fn compiled_example_json(example: &str) -> Result<String> {
+    let root = repo_root()?;
+    let example_dir = root.join("examples").join(example);
+    let source_path = example_dir.join("source.bn");
+    let scenario_path = example_dir.join("scenario.toml");
+    let source_text = fs::read_to_string(&source_path)
+        .with_context(|| format!("missing source {}", source_path.display()))?;
+    let scenario_text = fs::read_to_string(&scenario_path)
+        .with_context(|| format!("missing scenario {}", scenario_path.display()))?;
+    let scenario = boon_runtime_host::parse_scenario(&scenario_text);
+    let source_path_string = format!("examples/{example}/source.bn");
+    let output = boon_runtime_host::RuntimeHost
+        .compile_and_run_step(&source_path_string, &source_text, &scenario)
+        .with_context(|| format!("example {example} has no runnable scenario step"))?;
+    serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
+}
+
+fn write_generated_artifacts(example: &str) -> Result<String> {
+    let root = repo_root()?;
+    let example_dir = root.join("examples").join(example);
+    let source_path = example_dir.join("source.bn");
+    let scenario_path = example_dir.join("scenario.toml");
+    let source_text = fs::read_to_string(&source_path)?;
+    let scenario_text = fs::read_to_string(&scenario_path)?;
+    let source_path_string = format!("examples/{example}/source.bn");
+    let plan = boon_compiler::compile_source(&source_path_string, &source_text);
+    let scenario = boon_runtime_host::parse_scenario(&scenario_text);
+    let outputs = boon_dd::execute_scenario(&plan.graph, &scenario);
+
+    let generated_dir = root.join("generated").join(example);
+    let src_dir = generated_dir.join("src");
+    fs::create_dir_all(&generated_dir)?;
+    fs::create_dir_all(&src_dir)?;
+    fs::write(
+        generated_dir.join("Cargo.toml"),
+        format!(
+            "[workspace]\n\n[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
+        ),
+    )?;
+    fs::write(src_dir.join("lib.rs"), generated_lib_rs())?;
+    fs::write(
+        src_dir.join("graph.rs"),
+        boon_codegen_rust::generated_graph_module(&plan),
+    )?;
+    fs::write(src_dir.join("ids.rs"), generated_ids_rs(&plan.graph))?;
+    fs::write(
+        src_dir.join("source_events.rs"),
+        generated_source_events_rs(&plan.graph),
+    )?;
+    fs::write(src_dir.join("shapes.rs"), generated_shapes_rs(&plan.graph))?;
+    fs::write(src_dir.join("values.rs"), generated_values_rs())?;
+    fs::write(
+        src_dir.join("render_bindings.rs"),
+        generated_render_bindings_rs(&plan.graph),
+    )?;
+    fs::write(
+        src_dir.join("monitor_bindings.rs"),
+        generated_monitor_bindings_rs(&plan.graph),
+    )?;
+    fs::write(
+        src_dir.join("persist_bindings.rs"),
+        generated_persist_bindings_rs(&plan.graph),
+    )?;
+    fs::write(
+        generated_dir.join("graph_static.json"),
+        serde_json::to_vec_pretty(&plan.graph)?,
+    )?;
+    fs::write(
+        generated_dir.join("generated_graph.rs"),
+        boon_codegen_rust::generated_graph_module(&plan),
+    )?;
+    fs::write(
+        generated_dir.join("monitor_snapshot.json"),
+        serde_json::to_vec_pretty(&outputs)?,
+    )?;
+    fs::write(
+        generated_dir.join("terminal_120x40.snapshot.txt"),
+        terminal_snapshot(&outputs),
+    )?;
+    fs::write(
+        generated_dir.join("native_render_1280x720.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
+            "render": outputs.first().map(|output| &output.render),
+            "backend": "wgpu-command-schema"
+        }))?,
+    )?;
+    fs::write(
+        generated_dir.join("browser_render_1280x720.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
+            "render": outputs.first().map(|output| &output.render),
+            "backend": "browser-webgpu-command-schema"
+        }))?,
+    )?;
+    Ok(generated_dir.display().to_string())
+}
+
+fn generated_lib_rs() -> &'static str {
+    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n"
+}
+
+fn generated_ids_rs(graph: &boon_dd::StaticGraph) -> String {
+    let node_variants = graph
+        .nodes
+        .iter()
+        .map(|node| format!("    {},", sanitize_variant(&node.node.0)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source_variants = graph
+        .source_bindings
+        .iter()
+        .map(|source| format!("    {},", sanitize_variant(&source.source_id.0)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "use serde::{{Deserialize, Serialize}};\n\n#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]\npub enum NodeId {{\n{node_variants}\n}}\n\n#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]\npub enum SourceId {{\n{source_variants}\n}}\n\n#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]\npub enum StorageKey {{\n    SemanticState,\n}}\n"
+    )
+}
+
+fn generated_source_events_rs(graph: &boon_dd::StaticGraph) -> String {
+    let variants = graph
+        .source_bindings
+        .iter()
+        .map(|source| {
+            let variant = sanitize_variant(&source.source_id.0);
+            match source.shape.as_str() {
+                "Text" => format!("    {variant} {{ text: String }},"),
+                "TagSet" => format!("    {variant} {{ tag: String }},"),
+                _ if source.dynamic => {
+                    format!("    {variant} {{ owner: String, generation: u32 }},")
+                }
+                _ => format!("    {variant},"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "use serde::{{Deserialize, Serialize}};\n\n#[derive(Clone, Debug, Serialize, Deserialize)]\npub enum GeneratedSourceEvent {{\n{variants}\n}}\n"
+    )
+}
+
+fn generated_shapes_rs(graph: &boon_dd::StaticGraph) -> String {
+    let shapes = graph
+        .source_bindings
+        .iter()
+        .map(|source| format!("    ({:?}, {:?}),", source.path, source.shape))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "pub fn source_shapes() -> &'static [(&'static str, &'static str)] {{\n    &[\n{shapes}\n    ]\n}}\n"
+    )
+}
+
+fn generated_values_rs() -> &'static str {
+    "pub use boon_dd::{BoonNumber, BoonValue, TagName};\n"
+}
+
+fn generated_render_bindings_rs(graph: &boon_dd::StaticGraph) -> String {
+    format!(
+        "pub fn render_root() -> &'static str {{ {:?} }}\npub fn render_node() -> &'static str {{ {:?} }}\n",
+        graph.graph_id, graph.render_node.0
+    )
+}
+
+fn generated_monitor_bindings_rs(graph: &boon_dd::StaticGraph) -> String {
+    format!(
+        "pub fn monitor_node() -> &'static str {{ {:?} }}\n",
+        graph.monitor_node.0
+    )
+}
+
+fn generated_persist_bindings_rs(graph: &boon_dd::StaticGraph) -> String {
+    let has_persist = graph
+        .operators
+        .iter()
+        .any(|op| op.kind == boon_dd::GraphOperatorKind::PersistTap);
+    format!("pub fn has_persistence_tap() -> bool {{ {has_persist} }}\n")
+}
+
+fn sanitize_variant(value: &str) -> String {
+    let mut result = String::new();
+    let mut upper = true;
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if upper {
+                result.push(ch.to_ascii_uppercase());
+                upper = false;
+            } else {
+                result.push(ch);
+            }
+        } else {
+            upper = true;
+        }
+    }
+    if result.is_empty() {
+        "Generated".to_owned()
+    } else {
+        result
+    }
+}
+
+fn terminal_snapshot(outputs: &[boon_dd::SmokeOutput]) -> String {
+    let text = outputs
+        .first()
+        .and_then(|output| output.render.first())
+        .map(|command| match command {
+            boon_dd::RenderCommand::PatchText { text, .. } => text.clone(),
+        })
+        .unwrap_or_default();
+    let mut snapshot = String::new();
+    snapshot.push_str("+");
+    snapshot.push_str(&"-".repeat(120));
+    snapshot.push_str("+\n");
+    snapshot.push('|');
+    snapshot.push_str(&format!("{text:<120}"));
+    snapshot.push_str("|\n");
+    for _ in 1..40 {
+        snapshot.push('|');
+        snapshot.push_str(&" ".repeat(120));
+        snapshot.push_str("|\n");
+    }
+    snapshot.push_str("+");
+    snapshot.push_str(&"-".repeat(120));
+    snapshot.push_str("+\n");
+    snapshot
+}
+
+fn require_background_launch_env(target: &str) -> Result<()> {
+    if env::var("COSMIC_BACKGROUND_LAUNCH_ID").is_err() {
+        bail!(
+            "{target} playground launches must be wrapped as: cosmic-background-launch --workspace 'Boon DD Playground' -- cargo xtask run --example <name> --target {target}"
+        );
+    }
+    Ok(())
 }
 
 fn find_wasm_bindgen() -> Option<PathBuf> {
@@ -664,19 +1121,15 @@ fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
     }
     fs::create_dir_all(&profile_dir)?;
 
-    let script = format!(
-        "cosmic-background-launch -- firefox --headless --no-remote --profile '{}' 'http://{addr}/index.html'",
-        profile_dir.display()
-    );
-    let status = Command::new("bash")
-        .args(["-lc", &script])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .status()
-        .context("failed to launch Firefox smoke through cosmic-background-launch")?;
-    if !status.success() {
-        bail!("Firefox smoke failed with {status}");
-    }
+    let smoke_url = format!("http://{addr}/index.html");
+    launch_background_process(&[
+        "firefox",
+        "--headless",
+        "--no-remote",
+        "--profile",
+        profile_dir.to_str().unwrap(),
+        &smoke_url,
+    ])?;
     let result = rx.recv_timeout(Duration::from_secs(30));
     let _ = Command::new("pkill")
         .args(["-f", profile_dir.to_str().unwrap()])
@@ -688,6 +1141,47 @@ fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
         bail!("Firefox smoke did not write {}", output.display());
     }
     Ok(())
+}
+
+fn launch_background_process(args: &[&str]) -> Result<String> {
+    run_capture("bash", &["-lc", "command -v cosmic-background-launch"])
+        .context("missing cosmic-background-launch")?;
+    let mut busctl_args = vec![
+        "--user",
+        "call",
+        "com.system76.CosmicComp.BackgroundLaunch",
+        "/com/system76/CosmicComp/BackgroundLaunch",
+        "com.system76.CosmicComp.BackgroundLaunch1",
+        "Launch",
+        "--",
+        "assa{ss}",
+    ];
+    let argc = args.len().to_string();
+    busctl_args.push(&argc);
+    busctl_args.extend_from_slice(args);
+    let cwd = repo_root()?;
+    let cwd_string = cwd.display().to_string();
+    busctl_args.push(&cwd_string);
+    busctl_args.push("0");
+
+    let output = Command::new("busctl")
+        .args(&busctl_args)
+        .output()
+        .context("failed to call COSMIC BackgroundLaunch D-Bus service")?;
+    if !output.status.success() {
+        bail!(
+            "COSMIC BackgroundLaunch D-Bus launch failed with {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    stdout
+        .split('"')
+        .nth(1)
+        .map(str::to_owned)
+        .context("COSMIC BackgroundLaunch did not return a launch id")
 }
 
 fn serve_smoke_http(

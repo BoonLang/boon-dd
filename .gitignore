@@ -1,3 +1,5 @@
 /target/
 /.boon-local/
 **/*.rs.bk
+generated/*/target/
+generated/*/Cargo.lock

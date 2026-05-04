@@ -1,0 +1,84 @@
+{
+  "graph_id": "pong",
+  "source_path": "examples/pong/source.bn",
+  "source_hash": 5114511508823559415,
+  "source_bindings": [
+    {
+      "source_id": "Frame",
+      "path": "frame",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/pong/source.bn:document"
+    },
+    {
+      "node": "Pong",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/pong/source.bn:document"
+    },
+    {
+      "node": "Frame",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/pong/source.bn:frame"
+    }
+  ],
+  "operators": [
+    {
+      "node": "Then",
+      "kind": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "Hold",
+      "kind": "Hold",
+      "inputs": [],
+      "output": "Hold",
+      "order": 30
+    },
+    {
+      "node": "PersistTap",
+      "kind": "PersistTap",
+      "inputs": [],
+      "output": "PersistTap",
+      "order": 90
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "Pong",
+  "render_node": "DocumentText",
+  "initial_text": "0",
+  "text_behavior": {
+    "Constant": "frame 1"
+  },
+  "physical_scene": false
+}

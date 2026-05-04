@@ -1,0 +1,57 @@
+{
+  "graph_id": "shopping_list",
+  "source_path": "examples/shopping_list/source.bn",
+  "source_hash": 12181515890171701497,
+  "source_bindings": [],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/shopping_list/source.bn:document"
+    },
+    {
+      "node": "ShoppingList",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/shopping_list/source.bn:document"
+    }
+  ],
+  "operators": [
+    {
+      "node": "ListAppend",
+      "kind": "ListAppend",
+      "inputs": [],
+      "output": "ListAppend",
+      "order": 40
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "ShoppingList",
+  "render_node": "DocumentText",
+  "initial_text": "milk,bread",
+  "text_behavior": {
+    "Constant": "milk,bread"
+  },
+  "physical_scene": false
+}

@@ -1,0 +1,50 @@
+{
+  "graph_id": "todo_mvc_physical",
+  "source_path": "examples/todo_mvc_physical/source.bn",
+  "source_hash": 3540483067130753592,
+  "source_bindings": [],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/todo_mvc_physical/source.bn:document"
+    },
+    {
+      "node": "TodoMvcPhysical",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/todo_mvc_physical/source.bn:document"
+    }
+  ],
+  "operators": [
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "TodoMvcPhysical",
+  "render_node": "DocumentText",
+  "initial_text": "physical ready",
+  "text_behavior": {
+    "Constant": "physical ready"
+  },
+  "physical_scene": true
+}

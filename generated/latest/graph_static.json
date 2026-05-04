@@ -1,0 +1,80 @@
+{
+  "graph_id": "latest",
+  "source_path": "examples/latest/source.bn",
+  "source_hash": 4249837718771980915,
+  "source_bindings": [
+    {
+      "source_id": "A",
+      "path": "a",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    },
+    {
+      "source_id": "B",
+      "path": "b",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/latest/source.bn:document"
+    },
+    {
+      "node": "LatestValue",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/latest/source.bn:document"
+    },
+    {
+      "node": "A",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/latest/source.bn:a"
+    },
+    {
+      "node": "B",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/latest/source.bn:b"
+    }
+  ],
+  "operators": [
+    {
+      "node": "Latest",
+      "kind": "Latest",
+      "inputs": [],
+      "output": "Latest",
+      "order": 22
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "LatestValue",
+  "render_node": "DocumentText",
+  "initial_text": "",
+  "text_behavior": "LatestAction",
+  "physical_scene": false
+}

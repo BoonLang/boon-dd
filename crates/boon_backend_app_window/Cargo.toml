@@ -6,4 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+app_window.workspace = true
 boon_dd = { path = "../boon_dd" }
+boon_runtime_host = { path = "../boon_runtime_host" }
+boon_backend_wgpu = { path = "../boon_backend_wgpu" }

@@ -1,0 +1,57 @@
+{
+  "graph_id": "list_retain_remove",
+  "source_path": "examples/list_retain_remove/source.bn",
+  "source_hash": 3335787741367088173,
+  "source_bindings": [],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/list_retain_remove/source.bn:document"
+    },
+    {
+      "node": "ListRetainRemove",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/list_retain_remove/source.bn:document"
+    }
+  ],
+  "operators": [
+    {
+      "node": "ListRemove",
+      "kind": "ListRemove",
+      "inputs": [],
+      "output": "ListRemove",
+      "order": 41
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "ListRetainRemove",
+  "render_node": "DocumentText",
+  "initial_text": "removed",
+  "text_behavior": {
+    "Constant": "removed"
+  },
+  "physical_scene": false
+}

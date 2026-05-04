@@ -1,0 +1,50 @@
+{
+  "graph_id": "cells",
+  "source_path": "examples/cells/source.bn",
+  "source_hash": 6542502580434945840,
+  "source_bindings": [],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/cells/source.bn:document"
+    },
+    {
+      "node": "Cells",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/cells/source.bn:document"
+    }
+  ],
+  "operators": [
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "Cells",
+  "render_node": "DocumentText",
+  "initial_text": "A1=1",
+  "text_behavior": {
+    "Constant": "A1=1"
+  },
+  "physical_scene": false
+}

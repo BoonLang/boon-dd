@@ -1,0 +1,16 @@
+{
+  "backend": "wgpu-command-schema",
+  "render": [
+    {
+      "PatchText": {
+        "node": "DocumentText",
+        "text": "A1=1"
+      }
+    }
+  ],
+  "viewport": {
+    "dpr": 1.0,
+    "height": 720,
+    "width": 1280
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "graph_id": "crud",
+  "source_path": "examples/crud/source.bn",
+  "source_hash": 4393315833593944045,
+  "source_bindings": [
+    {
+      "source_id": "SaveButton",
+      "path": "save_button",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/crud/source.bn:document"
+    },
+    {
+      "node": "Crud",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/crud/source.bn:document"
+    },
+    {
+      "node": "SaveButton",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/crud/source.bn:save_button"
+    }
+  ],
+  "operators": [
+    {
+      "node": "SourceLeaf",
+      "kind": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "Crud",
+  "render_node": "DocumentText",
+  "initial_text": "saved",
+  "text_behavior": {
+    "Constant": "saved"
+  },
+  "physical_scene": false
+}

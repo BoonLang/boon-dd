@@ -1,0 +1,70 @@
+{
+  "graph_id": "flight_booker",
+  "source_path": "examples/flight_booker/source.bn",
+  "source_hash": 1420025816131664238,
+  "source_bindings": [
+    {
+      "source_id": "BookButton",
+      "path": "book_button",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/flight_booker/source.bn:document"
+    },
+    {
+      "node": "FlightBooker",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/flight_booker/source.bn:document"
+    },
+    {
+      "node": "BookButton",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/flight_booker/source.bn:book_button"
+    }
+  ],
+  "operators": [
+    {
+      "node": "SourceLeaf",
+      "kind": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "FlightBooker",
+  "render_node": "DocumentText",
+  "initial_text": "booked",
+  "text_behavior": {
+    "Constant": "booked"
+  },
+  "physical_scene": false
+}

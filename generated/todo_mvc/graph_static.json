@@ -1,0 +1,82 @@
+{
+  "graph_id": "todo_mvc",
+  "source_path": "examples/todo_mvc/source.bn",
+  "source_hash": 4086533069330835489,
+  "source_bindings": [
+    {
+      "source_id": "Event",
+      "path": "event",
+      "shape": "EmptyRecord",
+      "dynamic": false
+    },
+    {
+      "source_id": "Text",
+      "path": "text",
+      "shape": "Text",
+      "dynamic": false
+    }
+  ],
+  "nodes": [
+    {
+      "node": "DocumentText",
+      "kind": "render.text",
+      "shape": "Text",
+      "source_span": "examples/todo_mvc/source.bn:document"
+    },
+    {
+      "node": "TodoMvc",
+      "kind": "monitor.value",
+      "shape": "Text",
+      "source_span": "examples/todo_mvc/source.bn:document"
+    },
+    {
+      "node": "Event",
+      "kind": "source.leaf",
+      "shape": "EmptyRecord",
+      "source_span": "examples/todo_mvc/source.bn:event"
+    },
+    {
+      "node": "Text",
+      "kind": "source.leaf",
+      "shape": "Text",
+      "source_span": "examples/todo_mvc/source.bn:text"
+    }
+  ],
+  "operators": [
+    {
+      "node": "SourceLeaf",
+      "kind": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "LibraryCall",
+      "kind": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "kind": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "kind": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "monitor_node": "TodoMvc",
+  "render_node": "DocumentText",
+  "initial_text": "2 todos",
+  "text_behavior": {
+    "Constant": "2 todos"
+  },
+  "physical_scene": false
+}

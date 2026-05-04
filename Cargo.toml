@@ -12,8 +12,15 @@ rust-version = "1.95"
 
 [workspace.dependencies]
 anyhow = "1"
+app_window = "=0.3.3"
+crossterm = "=0.29.0"
 differential-dataflow = { version = "=0.23.0", default-features = false }
+naga = { version = "=29.0.3", features = ["wgsl-in"] }
+ratatui = "=0.30.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 timely = { version = "=0.29.0", default-features = false }
 wasm-bindgen = "=0.2.120"
+wesl = "=0.3.2"
+wgpu = "=29.0.3"
+wgsl_bindgen = "=0.22.2"
