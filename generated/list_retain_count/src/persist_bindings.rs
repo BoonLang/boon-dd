@@ -1,1 +1,3 @@
-pub fn has_persistence_tap() -> bool { false }
+pub fn has_persistence_tap() -> bool {
+    false
+}

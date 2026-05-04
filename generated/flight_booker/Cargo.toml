@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_flight_booker"
 version = "0.1.0"

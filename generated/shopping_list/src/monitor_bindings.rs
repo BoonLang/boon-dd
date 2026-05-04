@@ -1,1 +1,3 @@
-pub fn monitor_node() -> &'static str { "ShoppingList" }
+pub fn monitor_node() -> &'static str {
+    "ShoppingList"
+}

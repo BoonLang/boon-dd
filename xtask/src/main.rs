@@ -922,7 +922,7 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
     fs::write(
         generated_dir.join("Cargo.toml"),
         format!(
-            "[workspace]\n\n[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
+            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
         ),
     )?;
     fs::write(src_dir.join("lib.rs"), generated_lib_rs())?;
@@ -981,7 +981,22 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
             "backend": "browser-webgpu-command-schema"
         }))?,
     )?;
+    format_generated_rust(&generated_dir)?;
     Ok(generated_dir.display().to_string())
+}
+
+fn format_generated_rust(generated_dir: &Path) -> Result<()> {
+    let mut paths = vec![generated_dir.join("generated_graph.rs")];
+    for entry in fs::read_dir(generated_dir.join("src"))? {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            paths.push(path);
+        }
+    }
+    for path in paths {
+        run_status("rustfmt", &[path.to_str().unwrap()])?;
+    }
+    Ok(())
 }
 
 fn generated_lib_rs() -> &'static str {

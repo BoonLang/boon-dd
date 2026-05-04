@@ -9,6 +9,29 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-boon_examples = { path = "../boon_examples" }
+boon_dd = { path = "../boon_dd" }
+generated_cells = { path = "../../generated/cells" }
+generated_counter = { path = "../../generated/counter" }
+generated_counter_hold = { path = "../../generated/counter_hold" }
+generated_crud = { path = "../../generated/crud" }
+generated_flight_booker = { path = "../../generated/flight_booker" }
+generated_interval = { path = "../../generated/interval" }
+generated_interval_hold = { path = "../../generated/interval_hold" }
+generated_latest = { path = "../../generated/latest" }
+generated_list_map_block = { path = "../../generated/list_map_block" }
+generated_list_map_external_dep = { path = "../../generated/list_map_external_dep" }
+generated_list_object_state = { path = "../../generated/list_object_state" }
+generated_list_retain_count = { path = "../../generated/list_retain_count" }
+generated_list_retain_reactive = { path = "../../generated/list_retain_reactive" }
+generated_list_retain_remove = { path = "../../generated/list_retain_remove" }
+generated_pong = { path = "../../generated/pong" }
+generated_shopping_list = { path = "../../generated/shopping_list" }
+generated_temperature_converter = { path = "../../generated/temperature_converter" }
+generated_then = { path = "../../generated/then" }
+generated_todo_mvc = { path = "../../generated/todo_mvc" }
+generated_todo_mvc_physical = { path = "../../generated/todo_mvc_physical" }
+generated_when = { path = "../../generated/when" }
+generated_while = { path = "../../generated/while" }
 serde_json.workspace = true
+timely.workspace = true
 wasm-bindgen.workspace = true

@@ -14,7 +14,8 @@ mod tests {
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
-        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+        let mut worker =
+            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = crate::graph::build_dataflow(&mut worker);
         let outputs = graph
             .submit_text_and_drain(&mut worker, crate::graph::smoke_input_text(), 1, 1024)

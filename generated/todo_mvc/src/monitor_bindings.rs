@@ -1,1 +1,3 @@
-pub fn monitor_node() -> &'static str { "TodoMvc" }
+pub fn monitor_node() -> &'static str {
+    "TodoMvc"
+}

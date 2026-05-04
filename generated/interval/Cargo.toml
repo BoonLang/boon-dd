@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_interval"
 version = "0.1.0"

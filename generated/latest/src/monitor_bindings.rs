@@ -1,1 +1,3 @@
-pub fn monitor_node() -> &'static str { "LatestValue" }
+pub fn monitor_node() -> &'static str {
+    "LatestValue"
+}

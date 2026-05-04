@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_list_object_state"
 version = "0.1.0"

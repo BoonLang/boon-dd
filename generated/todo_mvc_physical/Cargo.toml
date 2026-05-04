@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_todo_mvc_physical"
 version = "0.1.0"

@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_list_retain_remove"
 version = "0.1.0"

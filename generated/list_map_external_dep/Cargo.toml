@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_list_map_external_dep"
 version = "0.1.0"

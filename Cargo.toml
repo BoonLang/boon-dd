@@ -4,6 +4,9 @@ members = [
     "crates/*",
     "xtask",
 ]
+exclude = [
+    "generated/*",
+]
 
 [workspace.package]
 edition = "2024"

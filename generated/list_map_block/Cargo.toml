@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "generated_list_map_block"
 version = "0.1.0"
