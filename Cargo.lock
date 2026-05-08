@@ -617,6 +617,7 @@ dependencies = [
 name = "boon_examples"
 version = "0.1.0"
 dependencies = [
+ "boon_compiler",
  "boon_dd",
  "boon_runtime_host",
  "generated_cells",

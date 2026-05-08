@@ -171,14 +171,11 @@ fn bootstrap(args: &[String]) -> Result<()> {
     let helper = run_capture("bash", &["-lc", "command -v cosmic-background-launch"])
         .or_else(|_| run_capture("which", &["cosmic-background-launch"]))
         .context("missing cosmic-background-launch")?;
-    let bus = run_capture(
-        "bash",
-        &[
-            "-lc",
-            "busctl --user list | rg 'com\\.system76\\.CosmicComp\\.BackgroundLaunch'",
-        ],
-    )
-    .context("COSMIC BackgroundLaunch D-Bus service is not active")?;
+    let bus = run_capture("busctl", &["--user", "list"])
+        .context("failed to query user D-Bus service list with busctl")?;
+    if !bus.contains("com.system76.CosmicComp.BackgroundLaunch") {
+        bail!("COSMIC BackgroundLaunch D-Bus service is not active");
+    }
 
     let wasm_bindgen = find_wasm_bindgen();
     if check {
@@ -196,7 +193,7 @@ fn bootstrap(args: &[String]) -> Result<()> {
         "cargo": cargo,
         "targets": targets.lines().collect::<Vec<_>>(),
         "cosmic_background_launch": helper,
-        "background_launch_service": bus,
+        "background_launch_service": "com.system76.CosmicComp.BackgroundLaunch",
     });
     let path = artifacts_dir()?.join("bootstrap-check.json");
     fs::write(path, serde_json::to_vec_pretty(&details)?)?;
@@ -1547,7 +1544,7 @@ fn deterministic_verification_harness_self_test_gate_result(
         }),
     );
 
-    let counter_index = boon_examples::REQUIRED_FIXTURES
+    let counter_index = boon_examples::GENERATED_CORPUS
         .iter()
         .position(|fixture| fixture.name == "counter")
         .context("missing generated counter fixture")?;
@@ -2246,7 +2243,7 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                 .any(|event| matches!(event, boon_dd::ScenarioEvent::Command(_)))
                         })
                         .count();
-                    let generated_index = boon_examples::REQUIRED_FIXTURES
+                    let generated_index = boon_examples::GENERATED_CORPUS
                         .iter()
                         .position(|fixture| fixture.name == example.id);
                     let execution = generated_index.and_then(|index| {
@@ -2546,7 +2543,7 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         .iter()
         .map(|example| (*example).to_owned())
         .collect::<std::collections::BTreeSet<_>>();
-    let embedded_fixture_examples = boon_examples::REQUIRED_FIXTURES
+    let embedded_fixture_examples = boon_examples::GENERATED_CORPUS
         .iter()
         .map(|fixture| fixture.name.to_owned())
         .collect::<std::collections::BTreeSet<_>>();
@@ -3574,7 +3571,7 @@ fn verify_generated_crates() -> Result<serde_json::Value> {
             "example": example,
             "manifest": manifest,
             "target_dir": target_dir,
-            "contract": "generated graph crate test injects first scenario step values in one epoch and compares the final SmokeOutput to examples/<example>/expected.render.json",
+            "contract": "generated graph crate test replays the full parsed scenario protocol and compares the final SmokeOutput to examples/<example>/expected.render.json",
         }));
     }
     let artifact = artifacts_dir()?.join("generated-crates.json");
@@ -3713,7 +3710,7 @@ fn compiled_example_json(example: &str) -> Result<String> {
     let scenario_text = fs::read_to_string(&scenario_path)
         .with_context(|| format!("missing scenario {}", scenario_path.display()))?;
     let (generated_example, output) =
-        boon_examples::run_generated_for_source(&source_text, &scenario_text)
+        boon_examples::run_generated_for_checked_source(&source_text, &scenario_text)
             .with_context(|| format!("example {example} has no verified generated graph"))?;
     ensure!(
         generated_example == example,
@@ -3736,11 +3733,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let expected_output: boon_dd::SmokeOutput = serde_json::from_str(&expected_render_text)
         .with_context(|| format!("invalid expected render output for {example}"))?;
     let outputs = vec![expected_output];
-    let first_step_actions = scenario
-        .steps
-        .first()
-        .map(|step| step.actions.clone())
-        .unwrap_or_default();
+    let scenario_steps = scenario.steps;
 
     let src_dir = generated_dir.join("src");
     fs::create_dir_all(generated_dir)?;
@@ -3753,7 +3746,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     )?;
     fs::write(
         src_dir.join("lib.rs"),
-        generated_lib_rs(&first_step_actions, &expected_render_text),
+        generated_lib_rs(&scenario_steps, &expected_render_text),
     )?;
     fs::write(
         src_dir.join("graph.rs"),
@@ -3854,13 +3847,13 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generated_lib_rs(actions: &[boon_dd::SourceAction], expected_render_text: &str) -> String {
-    let actions_json = serde_json::to_string(actions)
-        .expect("source actions should serialize into generated test");
+fn generated_lib_rs(steps: &[boon_dd::ScenarioStep], expected_render_text: &str) -> String {
+    let steps_json =
+        serde_json::to_string(steps).expect("scenario steps should serialize into generated test");
     format!(
-        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let actions: Vec<boon_dd::SourceAction> = serde_json::from_str({actions:?})\n            .expect(\"checked scenario actions should deserialize\");\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let epoch = 1_u64;\n        if actions.is_empty() {{\n            graph.sources.submit_host_tick(epoch);\n        }} else {{\n            for action in &actions {{\n                graph.sources.submit_action(action, epoch);\n            }}\n        }}\n        graph.sources.close_epoch(epoch);\n        let target = crate::graph::completion_time(epoch) + 1;\n        let mut steps = 0_usize;\n        while graph.probe.less_than(&target) {{\n            if steps == 1024 {{\n                panic!(\"generated graph probe stalled at {{target}} after {{steps}} steps\");\n            }}\n            worker.step();\n            steps += 1;\n        }}\n        let outputs = graph.sources.outputs();\n        let actual = outputs\n            .last()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
+        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str({steps:?})\n            .expect(\"checked scenario steps should deserialize\");\n        let allocator = || timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let has_persistence_tap = crate::persist_bindings::has_persistence_tap();\n        let mut persistence_enabled = false;\n        let mut persisted_text: Option<String> = None;\n        let mut last_generated_persisted_text: Option<String> = None;\n        let mut last_output: Option<boon_dd::SmokeOutput> = None;\n        for (step_index, step) in scenario_steps.iter().enumerate() {{\n            let epoch = step_index as u64 + 1;\n            let mut submitted = false;\n            for event in &step.events {{\n                match event {{\n                    boon_dd::ScenarioEvent::Source(action) => {{\n                        graph.sources.submit_action(action, epoch);\n                        submitted = true;\n                    }}\n                    boon_dd::ScenarioEvent::Command(command)\n                        if command.command == \"enable_persistence\" =>\n                    {{\n                        if has_persistence_tap {{\n                            persistence_enabled = true;\n                            persisted_text = last_generated_persisted_text.clone();\n                        }}\n                    }}\n                    boon_dd::ScenarioEvent::Command(command) if command.command == \"reload\" => {{\n                        worker = timely::worker::Worker::new(\n                            timely::WorkerConfig::default(),\n                            allocator(),\n                            None,\n                        );\n                        graph = crate::graph::build_dataflow(&mut worker);\n                        if persistence_enabled {{\n                            if let Some(value) = persisted_text.clone() {{\n                                graph.sources.submit_persisted_text(value, epoch);\n                                submitted = true;\n                            }}\n                        }}\n                    }}\n                    boon_dd::ScenarioEvent::Command(_) => {{}}\n                }}\n            }}\n            if !submitted {{\n                graph.sources.submit_host_tick(epoch);\n            }}\n            graph.sources.close_epoch(epoch);\n            let target = crate::graph::completion_time(epoch) + 1;\n            let mut worker_steps = 0_usize;\n            while graph.probe.less_than(&target) {{\n                if worker_steps == 1024 {{\n                    panic!(\"generated graph step {{step_index}} probe stalled at {{target}} after {{worker_steps}} steps\");\n                }}\n                worker.step();\n                worker_steps += 1;\n            }}\n            let output = graph\n                .sources\n                .outputs()\n                .into_iter()\n                .last()\n                .expect(\"generated graph emitted no scenario output\");\n            last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {{\n                match command {{\n                    boon_dd::PersistenceCommand::SaveText {{ value, .. }} => Some(value.clone()),\n                    boon_dd::PersistenceCommand::LoadText {{ .. }} => None,\n                }}\n            }});\n            last_output = Some(output);\n        }}\n        let actual = last_output\n            .as_ref()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
         expected = expected_render_text.trim(),
-        actions = actions_json,
+        steps = steps_json,
     )
 }
 

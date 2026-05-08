@@ -336,11 +336,12 @@ fn surface_config_size(size: Size, scale: f64) -> (u32, u32) {
 }
 
 fn build_playground_examples() -> Vec<PlaygroundExample> {
-    boon_examples::REQUIRED_FIXTURES
+    boon_examples::GENERATED_CORPUS
         .iter()
         .enumerate()
         .map(|(fixture_index, fixture)| {
-            let scenario_actions = boon_examples::scenario_actions_for_text(fixture.scenario);
+            let scenario_actions =
+                boon_examples::scenario_source_actions_for_text(fixture.scenario);
             let output = boon_examples::run_generated_actions_at(fixture_index, &[])
                 .unwrap_or_else(|| panic!("missing generated fixture {}", fixture.name))
                 .1;

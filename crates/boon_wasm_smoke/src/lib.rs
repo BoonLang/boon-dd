@@ -2,49 +2,93 @@ use wasm_bindgen::prelude::*;
 
 macro_rules! run_generated {
     ($name:literal, $crate_name:ident) => {{
-        let allocator = timely::communication::Allocator::Thread(
+        let allocator = || timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
         let mut worker =
-            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);
         let mut graph = $crate_name::graph::build_dataflow(&mut worker);
         let scenario = boon_runtime_host::parse_scenario(include_str!(concat!(
             "../../../examples/",
             $name,
             "/scenario.toml"
         )));
-        let epoch = 1_u64;
-        let mut submitted = false;
-        if let Some(step) = scenario.steps.first() {
-            for action in &step.actions {
-                graph.sources.submit_action(action, epoch);
-                submitted = true;
+        let has_persistence_tap = $crate_name::persist_bindings::has_persistence_tap();
+        let mut persistence_enabled = false;
+        let mut persisted_text: Option<String> = None;
+        let mut last_generated_persisted_text: Option<String> = None;
+        let mut last_output = boon_dd::SmokeOutput {
+            monitor: Vec::new(),
+            render: Vec::new(),
+            effects: Vec::new(),
+            persistence: Vec::new(),
+        };
+        for (step_index, step) in scenario.steps.iter().enumerate() {
+            let epoch = step_index as u64 + 1;
+            let mut submitted = false;
+            for event in &step.events {
+                match event {
+                    boon_dd::ScenarioEvent::Source(action) => {
+                        graph.sources.submit_action(action, epoch);
+                        submitted = true;
+                    }
+                    boon_dd::ScenarioEvent::Command(command)
+                        if command.command == "enable_persistence" =>
+                    {
+                        if has_persistence_tap {
+                            persistence_enabled = true;
+                            persisted_text = last_generated_persisted_text.clone();
+                        }
+                    }
+                    boon_dd::ScenarioEvent::Command(command) if command.command == "reload" => {
+                        worker = timely::worker::Worker::new(
+                            timely::WorkerConfig::default(),
+                            allocator(),
+                            None,
+                        );
+                        graph = $crate_name::graph::build_dataflow(&mut worker);
+                        if persistence_enabled {
+                            if let Some(value) = persisted_text.clone() {
+                                graph.sources.submit_persisted_text(value, epoch);
+                                submitted = true;
+                            }
+                        }
+                    }
+                    boon_dd::ScenarioEvent::Command(_) => {}
+                }
             }
-        }
-        if !submitted {
-            graph.sources.submit_host_tick(epoch);
-        }
-        graph.sources.close_epoch(epoch);
-        let target = $crate_name::graph::completion_time(epoch) + 1;
-        let mut steps = 0_usize;
-        while graph.probe.less_than(&target) {
-            if steps == 1024 {
-                panic!(
-                    "generated browser WASM graph {} probe stalled at {target} after {steps} steps",
-                    $name
-                );
+            if !submitted {
+                graph.sources.submit_host_tick(epoch);
             }
-            worker.step();
-            steps += 1;
+            graph.sources.close_epoch(epoch);
+            let target = $crate_name::graph::completion_time(epoch) + 1;
+            let mut worker_steps = 0_usize;
+            while graph.probe.less_than(&target) {
+                if worker_steps == 1024 {
+                    panic!(
+                        "generated browser WASM graph {} step {} probe stalled at {target} after {worker_steps} steps",
+                        $name, step_index
+                    );
+                }
+                worker.step();
+                worker_steps += 1;
+            }
+            last_output = graph.sources.outputs().into_iter().last().unwrap_or_else(|| {
+                boon_dd::SmokeOutput {
+                    monitor: Vec::new(),
+                    render: Vec::new(),
+                    effects: Vec::new(),
+                    persistence: Vec::new(),
+                }
+            });
+            last_generated_persisted_text = last_output.persistence.iter().rev().find_map(|command| {
+                match command {
+                    boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),
+                    boon_dd::PersistenceCommand::LoadText { .. } => None,
+                }
+            });
         }
-        let outputs = graph.sources.outputs();
-        (
-            $name,
-            outputs
-                .into_iter()
-                .last()
-                .expect("generated browser WASM graph emitted no output"),
-        )
+        ($name, last_output)
     }};
 }
 

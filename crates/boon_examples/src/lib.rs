@@ -14,7 +14,7 @@ macro_rules! fixture {
     };
 }
 
-pub const REQUIRED_FIXTURES: &[ExampleFixture] = &[
+pub const GENERATED_CORPUS: &[ExampleFixture] = &[
     fixture!("counter"),
     fixture!("counter_hold"),
     fixture!("interval"),
@@ -43,19 +43,17 @@ pub fn required_examples() -> &'static [&'static str] {
     boon_dd::REQUIRED_EXAMPLES
 }
 
-fn sha256_text(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-
-    let digest = Sha256::digest(text.as_bytes());
-    format!("{digest:x}")
-}
-
-pub fn scenario_actions_for_text(scenario_text: &str) -> Vec<boon_dd::SourceAction> {
+pub fn scenario_source_actions_for_text(scenario_text: &str) -> Vec<boon_dd::SourceAction> {
     boon_runtime_host::parse_scenario(scenario_text)
         .steps
-        .first()
-        .map(|step| step.actions.clone())
-        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|step| {
+            step.events.into_iter().filter_map(|event| match event {
+                boon_dd::ScenarioEvent::Source(action) => Some(action),
+                boon_dd::ScenarioEvent::Command(_) => None,
+            })
+        })
+        .collect()
 }
 
 pub fn scenario_steps_for_text(scenario_text: &str) -> Vec<boon_dd::ScenarioStep> {
@@ -232,114 +230,111 @@ pub fn run_generated_actions_at(
     Some(match index {
         0 => run_generated_fixture_actions!(
             "counter",
-            &REQUIRED_FIXTURES[0],
+            &GENERATED_CORPUS[0],
             generated_counter,
             actions
         ),
         1 => run_generated_fixture_actions!(
             "counter_hold",
-            &REQUIRED_FIXTURES[1],
+            &GENERATED_CORPUS[1],
             generated_counter_hold,
             actions
         ),
         2 => run_generated_fixture_actions!(
             "interval",
-            &REQUIRED_FIXTURES[2],
+            &GENERATED_CORPUS[2],
             generated_interval,
             actions
         ),
         3 => run_generated_fixture_actions!(
             "interval_hold",
-            &REQUIRED_FIXTURES[3],
+            &GENERATED_CORPUS[3],
             generated_interval_hold,
             actions
         ),
         4 => run_generated_fixture_actions!(
             "latest",
-            &REQUIRED_FIXTURES[4],
+            &GENERATED_CORPUS[4],
             generated_latest,
             actions
         ),
-        5 => run_generated_fixture_actions!("when", &REQUIRED_FIXTURES[5], generated_when, actions),
+        5 => run_generated_fixture_actions!("when", &GENERATED_CORPUS[5], generated_when, actions),
         6 => {
-            run_generated_fixture_actions!("while", &REQUIRED_FIXTURES[6], generated_while, actions)
+            run_generated_fixture_actions!("while", &GENERATED_CORPUS[6], generated_while, actions)
         }
-        7 => run_generated_fixture_actions!("then", &REQUIRED_FIXTURES[7], generated_then, actions),
+        7 => run_generated_fixture_actions!("then", &GENERATED_CORPUS[7], generated_then, actions),
         8 => run_generated_fixture_actions!(
             "list_map_block",
-            &REQUIRED_FIXTURES[8],
+            &GENERATED_CORPUS[8],
             generated_list_map_block,
             actions
         ),
         9 => run_generated_fixture_actions!(
             "list_map_external_dep",
-            &REQUIRED_FIXTURES[9],
+            &GENERATED_CORPUS[9],
             generated_list_map_external_dep,
             actions
         ),
         10 => run_generated_fixture_actions!(
             "list_object_state",
-            &REQUIRED_FIXTURES[10],
+            &GENERATED_CORPUS[10],
             generated_list_object_state,
             actions
         ),
         11 => run_generated_fixture_actions!(
             "list_retain_count",
-            &REQUIRED_FIXTURES[11],
+            &GENERATED_CORPUS[11],
             generated_list_retain_count,
             actions
         ),
         12 => run_generated_fixture_actions!(
             "list_retain_reactive",
-            &REQUIRED_FIXTURES[12],
+            &GENERATED_CORPUS[12],
             generated_list_retain_reactive,
             actions
         ),
         13 => run_generated_fixture_actions!(
             "list_retain_remove",
-            &REQUIRED_FIXTURES[13],
+            &GENERATED_CORPUS[13],
             generated_list_retain_remove,
             actions
         ),
         14 => run_generated_fixture_actions!(
             "shopping_list",
-            &REQUIRED_FIXTURES[14],
+            &GENERATED_CORPUS[14],
             generated_shopping_list,
             actions
         ),
         15 => run_generated_fixture_actions!(
             "todo_mvc",
-            &REQUIRED_FIXTURES[15],
+            &GENERATED_CORPUS[15],
             generated_todo_mvc,
             actions
         ),
         16 => {
-            run_generated_fixture_actions!("crud", &REQUIRED_FIXTURES[16], generated_crud, actions)
+            run_generated_fixture_actions!("crud", &GENERATED_CORPUS[16], generated_crud, actions)
         }
         17 => run_generated_fixture_actions!(
             "flight_booker",
-            &REQUIRED_FIXTURES[17],
+            &GENERATED_CORPUS[17],
             generated_flight_booker,
             actions
         ),
         18 => run_generated_fixture_actions!(
             "temperature_converter",
-            &REQUIRED_FIXTURES[18],
+            &GENERATED_CORPUS[18],
             generated_temperature_converter,
             actions
         ),
         19 => {
-            run_generated_fixture_actions!("pong", &REQUIRED_FIXTURES[19], generated_pong, actions)
+            run_generated_fixture_actions!("pong", &GENERATED_CORPUS[19], generated_pong, actions)
         }
-        20 => run_generated_fixture_actions!(
-            "cells",
-            &REQUIRED_FIXTURES[20],
-            generated_cells,
-            actions
-        ),
+        20 => {
+            run_generated_fixture_actions!("cells", &GENERATED_CORPUS[20], generated_cells, actions)
+        }
         21 => run_generated_fixture_actions!(
             "todo_mvc_physical",
-            &REQUIRED_FIXTURES[21],
+            &GENERATED_CORPUS[21],
             generated_todo_mvc_physical,
             actions
         ),
@@ -353,96 +348,96 @@ pub fn run_generated_steps_at(
 ) -> Option<(String, Vec<GeneratedScenarioStepOutput>)> {
     Some(match index {
         0 => {
-            run_generated_fixture_steps!("counter", &REQUIRED_FIXTURES[0], generated_counter, steps)
+            run_generated_fixture_steps!("counter", &GENERATED_CORPUS[0], generated_counter, steps)
         }
         1 => run_generated_fixture_steps!(
             "counter_hold",
-            &REQUIRED_FIXTURES[1],
+            &GENERATED_CORPUS[1],
             generated_counter_hold,
             steps
         ),
         2 => run_generated_fixture_steps!(
             "interval",
-            &REQUIRED_FIXTURES[2],
+            &GENERATED_CORPUS[2],
             generated_interval,
             steps
         ),
         3 => run_generated_fixture_steps!(
             "interval_hold",
-            &REQUIRED_FIXTURES[3],
+            &GENERATED_CORPUS[3],
             generated_interval_hold,
             steps
         ),
-        4 => run_generated_fixture_steps!("latest", &REQUIRED_FIXTURES[4], generated_latest, steps),
-        5 => run_generated_fixture_steps!("when", &REQUIRED_FIXTURES[5], generated_when, steps),
-        6 => run_generated_fixture_steps!("while", &REQUIRED_FIXTURES[6], generated_while, steps),
-        7 => run_generated_fixture_steps!("then", &REQUIRED_FIXTURES[7], generated_then, steps),
+        4 => run_generated_fixture_steps!("latest", &GENERATED_CORPUS[4], generated_latest, steps),
+        5 => run_generated_fixture_steps!("when", &GENERATED_CORPUS[5], generated_when, steps),
+        6 => run_generated_fixture_steps!("while", &GENERATED_CORPUS[6], generated_while, steps),
+        7 => run_generated_fixture_steps!("then", &GENERATED_CORPUS[7], generated_then, steps),
         8 => run_generated_fixture_steps!(
             "list_map_block",
-            &REQUIRED_FIXTURES[8],
+            &GENERATED_CORPUS[8],
             generated_list_map_block,
             steps
         ),
         9 => run_generated_fixture_steps!(
             "list_map_external_dep",
-            &REQUIRED_FIXTURES[9],
+            &GENERATED_CORPUS[9],
             generated_list_map_external_dep,
             steps
         ),
         10 => run_generated_fixture_steps!(
             "list_object_state",
-            &REQUIRED_FIXTURES[10],
+            &GENERATED_CORPUS[10],
             generated_list_object_state,
             steps
         ),
         11 => run_generated_fixture_steps!(
             "list_retain_count",
-            &REQUIRED_FIXTURES[11],
+            &GENERATED_CORPUS[11],
             generated_list_retain_count,
             steps
         ),
         12 => run_generated_fixture_steps!(
             "list_retain_reactive",
-            &REQUIRED_FIXTURES[12],
+            &GENERATED_CORPUS[12],
             generated_list_retain_reactive,
             steps
         ),
         13 => run_generated_fixture_steps!(
             "list_retain_remove",
-            &REQUIRED_FIXTURES[13],
+            &GENERATED_CORPUS[13],
             generated_list_retain_remove,
             steps
         ),
         14 => run_generated_fixture_steps!(
             "shopping_list",
-            &REQUIRED_FIXTURES[14],
+            &GENERATED_CORPUS[14],
             generated_shopping_list,
             steps
         ),
         15 => run_generated_fixture_steps!(
             "todo_mvc",
-            &REQUIRED_FIXTURES[15],
+            &GENERATED_CORPUS[15],
             generated_todo_mvc,
             steps
         ),
-        16 => run_generated_fixture_steps!("crud", &REQUIRED_FIXTURES[16], generated_crud, steps),
+        16 => run_generated_fixture_steps!("crud", &GENERATED_CORPUS[16], generated_crud, steps),
         17 => run_generated_fixture_steps!(
             "flight_booker",
-            &REQUIRED_FIXTURES[17],
+            &GENERATED_CORPUS[17],
             generated_flight_booker,
             steps
         ),
         18 => run_generated_fixture_steps!(
             "temperature_converter",
-            &REQUIRED_FIXTURES[18],
+            &GENERATED_CORPUS[18],
             generated_temperature_converter,
             steps
         ),
-        19 => run_generated_fixture_steps!("pong", &REQUIRED_FIXTURES[19], generated_pong, steps),
-        20 => run_generated_fixture_steps!("cells", &REQUIRED_FIXTURES[20], generated_cells, steps),
+        19 => run_generated_fixture_steps!("pong", &GENERATED_CORPUS[19], generated_pong, steps),
+        20 => run_generated_fixture_steps!("cells", &GENERATED_CORPUS[20], generated_cells, steps),
         21 => run_generated_fixture_steps!(
             "todo_mvc_physical",
-            &REQUIRED_FIXTURES[21],
+            &GENERATED_CORPUS[21],
             generated_todo_mvc_physical,
             steps
         ),
@@ -454,8 +449,15 @@ pub fn run_generated_scenario_at(
     index: usize,
     scenario_text: &str,
 ) -> Option<(String, boon_dd::SmokeOutput)> {
-    let actions = scenario_actions_for_text(scenario_text);
-    run_generated_actions_at(index, &actions)
+    let steps = scenario_steps_for_text(scenario_text);
+    run_generated_steps_at(index, &steps).map(|(name, steps)| {
+        let output = steps
+            .into_iter()
+            .last()
+            .map(|step| step.output)
+            .unwrap_or_else(empty_smoke_output);
+        (name, output)
+    })
 }
 
 pub fn run_generated_scenario_steps_at(
@@ -466,19 +468,46 @@ pub fn run_generated_scenario_steps_at(
     run_generated_steps_at(index, &steps)
 }
 
-pub fn run_generated_for_source(
+pub fn run_generated_for_checked_source(
     source_text: &str,
     scenario_text: &str,
 ) -> Option<(String, boon_dd::SmokeOutput)> {
-    let source_hash = sha256_text(source_text);
-    REQUIRED_FIXTURES
-        .iter()
-        .position(|fixture| sha256_text(fixture.source) == source_hash)
+    let plan = boon_compiler::compile_source("host/source.bn", source_text);
+    generated_index_for_graph_id(&plan.dd_graph_ir.graph_id)
         .and_then(|index| run_generated_scenario_at(index, scenario_text))
 }
 
+fn generated_index_for_graph_id(graph_id: &str) -> Option<usize> {
+    [
+        generated_counter::graph::graph_id(),
+        generated_counter_hold::graph::graph_id(),
+        generated_interval::graph::graph_id(),
+        generated_interval_hold::graph::graph_id(),
+        generated_latest::graph::graph_id(),
+        generated_when::graph::graph_id(),
+        generated_while::graph::graph_id(),
+        generated_then::graph::graph_id(),
+        generated_list_map_block::graph::graph_id(),
+        generated_list_map_external_dep::graph::graph_id(),
+        generated_list_object_state::graph::graph_id(),
+        generated_list_retain_count::graph::graph_id(),
+        generated_list_retain_reactive::graph::graph_id(),
+        generated_list_retain_remove::graph::graph_id(),
+        generated_shopping_list::graph::graph_id(),
+        generated_todo_mvc::graph::graph_id(),
+        generated_crud::graph::graph_id(),
+        generated_flight_booker::graph::graph_id(),
+        generated_temperature_converter::graph::graph_id(),
+        generated_pong::graph::graph_id(),
+        generated_cells::graph::graph_id(),
+        generated_todo_mvc_physical::graph::graph_id(),
+    ]
+    .iter()
+    .position(|candidate| *candidate == graph_id)
+}
+
 pub fn run_embedded_matrix() -> Vec<(String, boon_dd::SmokeOutput)> {
-    REQUIRED_FIXTURES
+    GENERATED_CORPUS
         .iter()
         .enumerate()
         .map(|(index, fixture)| {

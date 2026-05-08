@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+boon_compiler = { path = "../boon_compiler" }
 boon_dd = { path = "../boon_dd" }
 boon_runtime_host = { path = "../boon_runtime_host" }
 generated_cells = { path = "../../generated/cells" }

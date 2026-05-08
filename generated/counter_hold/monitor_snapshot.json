@@ -3,7 +3,7 @@
     "monitor": [
       {
         "NodeValue": {
-          "epoch": 1,
+          "epoch": 2,
           "node": "Counter",
           "owner": "Root",
           "value_preview": "1"
