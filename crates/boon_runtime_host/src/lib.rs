@@ -27,6 +27,13 @@ pub fn parse_scenario_result(text: &str) -> Result<Scenario, String> {
     let root = text
         .parse::<toml::Value>()
         .map_err(|error| format!("invalid scenario TOML: {error}"))?;
+    let root_table = root
+        .as_table()
+        .ok_or_else(|| "scenario root must be a TOML table".to_owned())?;
+    reject_unknown_keys(root_table, &["initial", "step"], "scenario root")?;
+    if let Some(initial) = root.get("initial").and_then(toml::Value::as_table) {
+        reject_unknown_keys(initial, &["expect_text"], "initial")?;
+    }
     let initial_expect_text = root
         .get("initial")
         .and_then(|initial| initial.get("expect_text"))
@@ -46,6 +53,19 @@ pub fn parse_scenario_result(text: &str) -> Result<Scenario, String> {
 }
 
 fn parse_step(value: &toml::Value) -> Result<ScenarioStep, String> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| format!("scenario step must be a table: {value:?}"))?;
+    reject_unknown_keys(
+        table,
+        &[
+            "description",
+            "actions",
+            "expect_text",
+            "expect_monitor_changed",
+        ],
+        "step",
+    )?;
     let description = value
         .get("description")
         .and_then(toml::Value::as_str)
@@ -90,6 +110,14 @@ fn parse_step(value: &toml::Value) -> Result<ScenarioStep, String> {
 }
 
 fn parse_action(value: &toml::Value) -> Result<SourceAction, String> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| format!("scenario action must be a table: {value:?}"))?;
+    reject_unknown_keys(
+        table,
+        &["source", "owner", "generation", "value", "command"],
+        "action",
+    )?;
     let source = value
         .get("source")
         .and_then(toml::Value::as_str)
@@ -113,6 +141,19 @@ fn parse_action(value: &toml::Value) -> Result<SourceAction, String> {
         generation,
         value: payload,
     })
+}
+
+fn reject_unknown_keys(
+    table: &toml::map::Map<String, toml::Value>,
+    allowed: &[&str],
+    context: &str,
+) -> Result<(), String> {
+    for key in table.keys() {
+        if !allowed.iter().any(|allowed| *allowed == key) {
+            return Err(format!("unknown {context} key `{key}`"));
+        }
+    }
+    Ok(())
 }
 
 fn parse_value(value: &toml::Value) -> BoonValue {
@@ -182,5 +223,23 @@ mod tests {
     fn invalid_scenario_toml_is_not_silently_emptied() {
         let error = parse_scenario_result("[[step]\n").expect_err("invalid TOML must fail");
         assert!(error.contains("invalid scenario TOML"));
+    }
+
+    #[test]
+    fn unknown_scenario_keys_fail() {
+        let error = parse_scenario_result(
+            r#"
+            [initial]
+            expect_text = "0"
+
+            [[step]]
+            description = "bad"
+            typo = true
+            actions = []
+            expect_text = "0"
+            "#,
+        )
+        .expect_err("unknown step key must fail");
+        assert!(error.contains("unknown step key `typo`"));
     }
 }
