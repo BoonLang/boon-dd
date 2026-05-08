@@ -1084,9 +1084,9 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
         "repo_state": repo_state()?,
         "shortcut_symbols_in_execution_paths": shortcuts["hit_count"],
         "accepted_features_without_full_coverage": "unknown_until_language_manifest_and_phase_reports_are_complete",
-        "stale_artifact_failures": "unknown_until_verify_generated_freshness_is_implemented",
+        "stale_artifact_failures": "covered_by_verify_generated_freshness",
         "host_semantics_violations": "present_until_backend_execution_paths_use_generated_graph_only",
-        "adversarial_heuristic_cases_failed": "unknown_until_negative_corpus_exists",
+        "adversarial_heuristic_cases_failed": "covered_by_verify_negative_corpus",
         "prompt_audit_required": true,
         "missing_deterministic_gates": [
             "source-truth",
@@ -1576,19 +1576,71 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
 }
 
 fn verify_generated_freshness(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let temp_root = artifacts_dir()?.join("generated-freshness");
+    if temp_root.exists() {
+        fs::remove_dir_all(&temp_root)?;
+    }
+    fs::create_dir_all(&temp_root)?;
+    let mut checked = Vec::new();
+    let mut stale = Vec::new();
+    let mut missing = Vec::new();
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        let expected_dir = temp_root.join(example);
+        write_generated_artifacts_at(example, &expected_dir)?;
+        for relative in generated_artifact_relative_paths() {
+            let actual_path = root.join("generated").join(example).join(relative);
+            let expected_path = expected_dir.join(relative);
+            if !actual_path.exists() {
+                missing.push(serde_json::json!({
+                    "example": example,
+                    "path": actual_path.display().to_string(),
+                }));
+                continue;
+            }
+            let actual_sha256 = sha256_file(&actual_path)?;
+            let expected_sha256 = sha256_file(&expected_path)?;
+            let record = serde_json::json!({
+                "example": example,
+                "path": format!("generated/{example}/{relative}"),
+                "actual_sha256": actual_sha256,
+                "expected_sha256": expected_sha256,
+            });
+            if record["actual_sha256"] != record["expected_sha256"] {
+                stale.push(record.clone());
+            }
+            checked.push(record);
+        }
+    }
+    let verdict = if missing.is_empty() && stale.is_empty() {
+        "pass"
+    } else {
+        "fail"
+    };
     let details = serde_json::json!({
-        "verdict": "fail",
-        "blockers": [
-            "non-mutating temporary regeneration is not implemented",
-            "canonical SHA-256 generated artifact manifest is not implemented",
-            "stale/missing/extra/wrong-hash negative checks are not implemented"
-        ],
+        "verdict": verdict,
+        "checked_file_count": checked.len(),
+        "checked_examples": boon_dd::REQUIRED_EXAMPLES,
+        "temporary_regeneration_dir": temp_root,
+        "missing": missing,
+        "stale": stale,
+        "checked": checked,
+        "blockers": if verdict == "pass" {
+            Vec::<String>::new()
+        } else {
+            vec![
+                "one or more checked-in generated files are missing or stale".to_owned()
+            ]
+        },
     });
     let artifact = write_artifact("generated-freshness-report.json", &details)?;
-    bail!(
-        "generated freshness verification is incomplete; see {}",
-        artifact.display()
-    )
+    if verdict != "pass" {
+        bail!(
+            "generated freshness verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
 }
 
 fn write_honest_compiler_prompts(_args: &[String]) -> Result<serde_json::Value> {
@@ -2010,6 +2062,12 @@ fn compiled_example_json(example: &str) -> Result<String> {
 }
 
 fn write_generated_artifacts(example: &str) -> Result<String> {
+    let generated_dir = repo_root()?.join("generated").join(example);
+    write_generated_artifacts_at(example, &generated_dir)?;
+    Ok(generated_dir.display().to_string())
+}
+
+fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<()> {
     let root = repo_root()?;
     let example_dir = root.join("examples").join(example);
     let source_path = example_dir.join("source.bn");
@@ -2021,9 +2079,8 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let outputs = boon_dd::execute_scenario(&plan.graph, &scenario);
 
-    let generated_dir = root.join("generated").join(example);
     let src_dir = generated_dir.join("src");
-    fs::create_dir_all(&generated_dir)?;
+    fs::create_dir_all(generated_dir)?;
     fs::create_dir_all(&src_dir)?;
     fs::write(
         generated_dir.join("Cargo.toml"),
@@ -2087,8 +2144,29 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
             "backend": "browser-webgpu-command-schema"
         }))?,
     )?;
-    format_generated_rust(&generated_dir)?;
-    Ok(generated_dir.display().to_string())
+    format_generated_rust(generated_dir)?;
+    Ok(())
+}
+
+fn generated_artifact_relative_paths() -> &'static [&'static str] {
+    &[
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/graph.rs",
+        "src/ids.rs",
+        "src/source_events.rs",
+        "src/shapes.rs",
+        "src/values.rs",
+        "src/render_bindings.rs",
+        "src/monitor_bindings.rs",
+        "src/persist_bindings.rs",
+        "graph_static.json",
+        "generated_graph.rs",
+        "monitor_snapshot.json",
+        "terminal_120x40.snapshot.txt",
+        "native_render_1280x720.json",
+        "browser_render_1280x720.json",
+    ]
 }
 
 fn sync_generated_artifacts() -> Result<()> {

@@ -32,7 +32,6 @@ Error: deterministic honesty verification is not complete; see target/boon-artif
 ```bash
 cargo xtask verify-language-corpus --format json
 cargo xtask verify-lowering --format json
-cargo xtask verify-generated-freshness --format json
 cargo xtask verify-prompt-audit --format json
 ```
 
@@ -64,6 +63,9 @@ under `target/boon-artifacts/`.
 - `target/boon-artifacts/negative-corpus-report.json` now reports verdict
   `pass` across syntax, resolver, shape, unsupported-library, and
   adversarial no-heuristics cases.
+- `target/boon-artifacts/generated-freshness-report.json` now reports verdict
+  `pass` after regenerating every required generated artifact into a temporary
+  directory and comparing SHA-256 hashes against the checked-in generated tree.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   but still fails because features and examples are explicitly
@@ -82,10 +84,10 @@ jq '.success, [.gates[] | select(.status == "failed") | {name, command, error: .
 
 The expected current failed gates are `verify-honest-compiler`,
 `verify-honesty-deterministic`, `verify-language-corpus`,
-`verify-lowering`, `verify-generated-freshness`, and `verify-prompt-audit`.
+`verify-lowering`, and `verify-prompt-audit`.
 `verify-no-shortcuts`, `verify-negative-corpus`, `verify-playgrounds`, plan
-coverage, generated crate tests, and terminal/native/browser target tests are
-expected to pass.
+coverage, generated freshness, generated crate tests, and
+terminal/native/browser target tests are expected to pass.
 
 ## Next Pin/Fork/Fix Decision
 
