@@ -2699,6 +2699,66 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
     ]
     .into_iter()
     .any(|ok| !ok);
+    let coverage_reports = [
+        ("parser", "syntax-corpus-report.json"),
+        ("resolver", "resolver-corpus-report.json"),
+        ("shape", "shape-corpus-report.json"),
+        ("semantic_ir", "semantic-ir-report.json"),
+        ("dd_lowering", "lowering-coverage-report.json"),
+        ("generated_runtime", "generated-crates.json"),
+        ("generated_freshness", "generated-freshness-report.json"),
+        ("no_shortcuts", "no-shortcuts-report.json"),
+    ]
+    .into_iter()
+    .map(|(coverage, artifact)| {
+        let artifact_json = read_artifact_json(artifact).unwrap_or_else(|error| {
+            serde_json::json!({
+                "read_error": format!("{error:#}"),
+            })
+        });
+        let missing = artifact_json
+            .get("missing")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        let verdict = artifact_json
+            .get("verdict")
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                artifact_json
+                    .get("gate")
+                    .and_then(|gate| gate.get("status"))
+                    .and_then(|value| value.as_str())
+            })
+            .unwrap_or("unknown");
+        serde_json::json!({
+            "coverage": coverage,
+            "artifact": format!("target/boon-artifacts/{artifact}"),
+            "missing": missing,
+            "verdict": verdict,
+        })
+    })
+    .collect::<Vec<_>>();
+    let coverage_report_failures = coverage_reports
+        .iter()
+        .filter(|report| {
+            report["missing"].as_bool().unwrap_or(false)
+                || !matches!(report["verdict"].as_str(), Some("pass" | "passed"))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut blockers = Vec::new();
+    if parsed_manifest.language.status != "accepted"
+        || !incomplete_features.is_empty()
+        || !incomplete_examples.is_empty()
+    {
+        blockers.push("manifest is still marked incomplete and examples/features are not accepted");
+    }
+    if !coverage_report_failures.is_empty() {
+        blockers.push("one or more required coverage reports are missing or failing");
+    }
+    if structural_errors {
+        blockers.push("language manifest has structural coverage errors");
+    }
     let details = serde_json::json!({
         "verdict": "fail",
         "manifest": LANGUAGE_MANIFEST,
@@ -2726,10 +2786,9 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         "incomplete_features": incomplete_features,
         "incomplete_examples": incomplete_examples,
         "structural_errors": structural_errors,
-        "blockers": [
-            "manifest is still marked incomplete and examples/features are not accepted",
-            "parser/resolver/shape/semantic IR/DD lowering coverage reports do not exist yet"
-        ],
+        "coverage_reports": coverage_reports,
+        "coverage_report_failures": coverage_report_failures,
+        "blockers": blockers,
     });
     let artifact = write_artifact("language-corpus-report.json", &details)?;
     bail!(
