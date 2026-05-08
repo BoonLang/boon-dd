@@ -36,7 +36,7 @@ pub fn check_module(module: &boon_hir::HirModule) -> ShapeReport {
         diagnostics: Vec::new(),
     };
     for definition in &module.definitions {
-        let shape = context.infer(&definition.expression);
+        let shape = context.shape_expr(&definition.expression);
         context.definitions.insert(definition.name.clone(), shape);
     }
     let sources = module
@@ -57,10 +57,10 @@ struct ShapeContext {
 }
 
 impl ShapeContext {
-    fn infer(&mut self, expression: &boon_syntax::Expr) -> Shape {
+    fn shape_expr(&mut self, expression: &boon_syntax::Expr) -> Shape {
         match expression {
             boon_syntax::Expr::Missing => Shape::Unknown,
-            boon_syntax::Expr::Path(path) => self.infer_path(path),
+            boon_syntax::Expr::Path(path) => self.path_shape(path),
             boon_syntax::Expr::Number(_) => Shape::Number,
             boon_syntax::Expr::Source => Shape::SourceMarker,
             boon_syntax::Expr::Skip => Shape::Skip,
@@ -70,7 +70,7 @@ impl ShapeContext {
                 Shape::Record(
                     fields
                         .iter()
-                        .map(|field| (field.name.clone(), self.infer(&field.value)))
+                        .map(|field| (field.name.clone(), self.shape_expr(&field.value)))
                         .collect(),
                 )
             }
@@ -78,14 +78,14 @@ impl ShapeContext {
             boon_syntax::Expr::Block(values)
             | boon_syntax::Expr::Latest(values)
             | boon_syntax::Expr::Then { body: values } => self.last_shape(values),
-            boon_syntax::Expr::Call { callee, args } => self.infer_call(callee, args),
+            boon_syntax::Expr::Call { callee, args } => self.call_shape(callee, args),
             boon_syntax::Expr::Pipe { input, stage } => {
-                let input_shape = self.infer(input);
-                self.infer_pipe(input_shape, stage)
+                let input_shape = self.shape_expr(input);
+                self.pipe_shape(input_shape, stage)
             }
             boon_syntax::Expr::Binary { op, left, right } => {
-                let left = self.infer(left);
-                let right = self.infer(right);
+                let left = self.shape_expr(left);
+                let right = self.shape_expr(right);
                 match op {
                     boon_syntax::BinaryOp::Add
                         if left == Shape::Number && right == Shape::Number =>
@@ -108,7 +108,7 @@ impl ShapeContext {
         }
     }
 
-    fn infer_path(&self, path: &str) -> Shape {
+    fn path_shape(&self, path: &str) -> Shape {
         let root = path.split('.').next().unwrap_or(path);
         self.definitions
             .get(root)
@@ -116,7 +116,7 @@ impl ShapeContext {
             .unwrap_or(Shape::Unknown)
     }
 
-    fn infer_pipe(&mut self, input: Shape, stage: &boon_syntax::Expr) -> Shape {
+    fn pipe_shape(&mut self, input: Shape, stage: &boon_syntax::Expr) -> Shape {
         match stage {
             boon_syntax::Expr::Then { body } => self.last_shape(body),
             boon_syntax::Expr::Hold { .. } => input,
@@ -124,17 +124,17 @@ impl ShapeContext {
                 let values = arms.iter().map(|arm| arm.value.clone()).collect::<Vec<_>>();
                 self.common_shape(&values)
             }
-            boon_syntax::Expr::Call { callee, args } => self.infer_call(callee, args),
-            _ => self.infer(stage),
+            boon_syntax::Expr::Call { callee, args } => self.call_shape(callee, args),
+            _ => self.shape_expr(stage),
         }
     }
 
-    fn infer_call(&mut self, callee: &str, args: &[boon_syntax::CallArg]) -> Shape {
+    fn call_shape(&mut self, callee: &str, args: &[boon_syntax::CallArg]) -> Shape {
         for arg in args {
             match arg {
                 boon_syntax::CallArg::Positional(value)
                 | boon_syntax::CallArg::Named { value, .. } => {
-                    self.infer(value);
+                    self.shape_expr(value);
                 }
             }
         }
@@ -149,8 +149,10 @@ impl ShapeContext {
             "List/append" | "List/remove" | "List/map" | "List/retain" => {
                 Shape::List(Box::new(Shape::Unknown))
             }
-            "Pong/initial" | "Pong/step" => Shape::Record(BTreeMap::new()),
             _ => {
+                if let Some(shape) = library_call_shape(callee) {
+                    return shape;
+                }
                 self.diagnostics.push(ShapeDiagnostic {
                     message: format!("unknown call `{callee}`"),
                 });
@@ -162,13 +164,13 @@ impl ShapeContext {
     fn last_shape(&mut self, values: &[boon_syntax::Expr]) -> Shape {
         values
             .iter()
-            .map(|value| self.infer(value))
+            .map(|value| self.shape_expr(value))
             .last()
             .unwrap_or(Shape::Unknown)
     }
 
     fn common_shape(&mut self, values: &[boon_syntax::Expr]) -> Shape {
-        let mut shapes = values.iter().map(|value| self.infer(value));
+        let mut shapes = values.iter().map(|value| self.shape_expr(value));
         let Some(first) = shapes.next() else {
             return Shape::Unknown;
         };
@@ -178,6 +180,14 @@ impl ShapeContext {
             }
         }
         first
+    }
+}
+
+fn library_call_shape(callee: &str) -> Option<Shape> {
+    let (library, function) = callee.split_once('/')?;
+    match (library, function) {
+        ("Pong", "initial" | "step") => Some(Shape::Record(BTreeMap::new())),
+        _ => None,
     }
 }
 

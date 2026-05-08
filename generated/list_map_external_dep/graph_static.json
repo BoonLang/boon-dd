@@ -50,8 +50,8 @@
   "monitor_node": "ListMapExternalDep",
   "render_node": "DocumentText",
   "initial_text": "A,B,C",
-  "text_behavior": {
-    "Constant": "A,B,C"
+  "dd_plan": {
+    "ConstantText": "A,B,C"
   },
   "physical_scene": false
 }

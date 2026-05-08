@@ -8,13 +8,16 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("use std::sync::{Arc, Mutex};\n");
     code.push_str("use timely::dataflow::operators::probe::Handle as ProbeHandle;\n\n");
     code.push_str("pub struct GeneratedSourceInputs {\n");
-    code.push_str("    input: InputSession<EncodedTime, String, Diff>,\n");
+    code.push_str("    input: InputSession<EncodedTime, (u64, String), Diff>,\n");
     code.push_str("    output: Arc<Mutex<Vec<SmokeOutput>>>,\n");
+    code.push_str("    next_sequence: u64,\n");
     code.push_str("}\n\n");
     code.push_str("impl GeneratedSourceInputs {\n");
     code.push_str("    pub fn submit_text(&mut self, value: impl Into<String>, epoch: u64) {\n");
     code.push_str("        self.input.advance_to(BoonTime { epoch, phase: 0 }.encode());\n");
-    code.push_str("        self.input.insert(value.into());\n");
+    code.push_str("        let sequence = self.next_sequence;\n");
+    code.push_str("        self.next_sequence += 1;\n");
+    code.push_str("        self.input.insert((sequence, value.into()));\n");
     code.push_str("    }\n\n");
     code.push_str("    pub fn submit_action(&mut self, action: &SourceAction, epoch: u64) {\n");
     code.push_str("        self.submit_text(boon_dd::source_action_text(action), epoch);\n");
@@ -77,7 +80,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("pub fn build_dataflow(\n");
     code.push_str("    worker: &mut timely::worker::Worker,\n");
     code.push_str(") -> GeneratedGraphHandles {\n");
-    code.push_str("    let mut input = InputSession::<EncodedTime, String, Diff>::new();\n");
+    code.push_str("    let mut input = InputSession::<EncodedTime, (u64, String), Diff>::new();\n");
     code.push_str("    let mut probe = ProbeHandle::new();\n");
     code.push_str("    let output = Arc::new(Mutex::new(Vec::<SmokeOutput>::new()));\n");
     code.push_str("    let output_in_graph = Arc::clone(&output);\n");
@@ -91,7 +94,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     ));
     code.push_str("    worker.dataflow::<EncodedTime, _, _>(|scope| {\n");
     code.push_str("        let events = input.to_collection(scope);\n");
-    code.push_str(&generated_text_collection(&graph.text_behavior));
+    code.push_str(&generated_render_collection(&graph.dd_plan));
     code.push_str("        rendered\n");
     code.push_str("            .inspect(move |(text, time, diff)| {\n");
     code.push_str("                if *diff > 0 {\n");
@@ -112,28 +115,28 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("            .probe_with(&mut probe);\n");
     code.push_str("    });\n");
     code.push_str("    GeneratedGraphHandles {\n");
-    code.push_str("        sources: GeneratedSourceInputs { input, output },\n");
+    code.push_str("        sources: GeneratedSourceInputs { input, output, next_sequence: 0 },\n");
     code.push_str("        probe,\n");
     code.push_str("    }\n");
     code.push_str("}\n");
     code
 }
 
-fn generated_text_collection(behavior: &boon_dd::TextBehavior) -> String {
-    match behavior {
-        boon_dd::TextBehavior::Constant(text) => format!(
-            "        let rendered = events.map(|_| {:?}.to_owned());\n",
+fn generated_render_collection(plan: &boon_dd::DdScalarPlan) -> String {
+    match plan {
+        boon_dd::DdScalarPlan::ConstantText(text) => format!(
+            "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| {:?}.to_owned());\n",
             text
         ),
-        boon_dd::TextBehavior::CountActions { initial } => format!(
+        boon_dd::DdScalarPlan::CountInputEvents { initial } => format!(
             "        let rendered = events.map(|_| ()).count().map(|(_key, count)| ({} + count as i64).to_string());\n",
             initial
         ),
-        boon_dd::TextBehavior::LatestAction => {
-            "        let rendered = events.map(|value| value);\n".to_owned()
+        boon_dd::DdScalarPlan::LatestInputText => {
+            "        let rendered = events.map(|(sequence, value)| ((), (sequence, value))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned()
         }
-        boon_dd::TextBehavior::BranchOnTag { tag, text } => format!(
-            "        let rendered = events.filter(|value| value == {:?}).map(|_| {:?}.to_owned());\n",
+        boon_dd::DdScalarPlan::MatchTagText { tag, text } => format!(
+            "        let rendered = events.filter(|(_sequence, value)| value == {:?}).map(|_| {:?}.to_owned());\n",
             tag, text
         ),
     }

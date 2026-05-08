@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -1038,8 +1038,8 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
-            "runtime still exposes TextBehavior/execute_static_graph/evaluate_text through boon_dd compatibility execution",
-            "generated code still uses generated_text_collection compatibility lowering",
+            "runtime still executes a compatibility scalar DD plan instead of generated semantic IR/DD graph artifacts",
+            "generated code still uses compatibility scalar rendering templates",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1171,7 +1171,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "blockers": [
             "semantic IR does not exist yet",
             "DD graph IR does not exist yet",
-            "codegen still selects dataflow from TextBehavior",
+            "codegen still selects dataflow from a compatibility scalar DD plan",
             "accepted semantic feature to DD lowering coverage is not measurable yet"
         ],
     });
@@ -1946,45 +1946,23 @@ user_pref("gfx.webrender.all", true);
 }
 
 fn launch_background_process(args: &[&str]) -> Result<String> {
-    run_capture("bash", &["-lc", "command -v cosmic-background-launch"])
+    let launcher = run_capture("bash", &["-lc", "command -v cosmic-background-launch"])
         .context("missing cosmic-background-launch")?;
-    let mut busctl_args = vec![
-        "--user",
-        "call",
-        "com.system76.CosmicComp.BackgroundLaunch",
-        "/com/system76/CosmicComp/BackgroundLaunch",
-        "com.system76.CosmicComp.BackgroundLaunch1",
-        "Launch",
-        "--",
-        "sassa{ss}",
-    ];
-    busctl_args.push(COSMIC_WORKSPACE);
-    let argc = args.len().to_string();
-    busctl_args.push(&argc);
-    busctl_args.extend_from_slice(args);
-    let cwd = repo_root()?;
-    let cwd_string = cwd.display().to_string();
-    busctl_args.push(&cwd_string);
-    busctl_args.push("0");
-
-    let output = Command::new("busctl")
-        .args(&busctl_args)
-        .output()
-        .context("failed to call COSMIC BackgroundLaunch D-Bus service")?;
-    if !output.status.success() {
-        bail!(
-            "COSMIC BackgroundLaunch D-Bus launch failed with {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    stdout
-        .split('"')
-        .nth(1)
-        .map(str::to_owned)
-        .context("COSMIC BackgroundLaunch did not return a launch id")
+    let child = Command::new(launcher.trim())
+        .args(["--workspace", COSMIC_WORKSPACE, "--"])
+        .args(args)
+        .current_dir(repo_root()?)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to launch window command with cosmic-background-launch --workspace {COSMIC_WORKSPACE} -- {}",
+                args.join(" ")
+            )
+        })?;
+    Ok(child.id().to_string())
 }
 
 fn serve_smoke_http(

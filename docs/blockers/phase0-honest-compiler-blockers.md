@@ -2,8 +2,10 @@
 
 This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
-machine-readable reports, but the actual compiler/runtime remains shortcut
-based.
+machine-readable reports, and the named shortcut execution symbols have been
+removed from Rust execution paths. The remaining compiler/runtime is still not
+honest enough to satisfy the full plan because it uses a compatibility scalar
+DD plan instead of a complete semantic IR and DD graph IR.
 
 ## Failing Commands
 
@@ -15,16 +17,6 @@ Result:
 
 ```text
 Error: honest compiler is not implemented yet; see target/boon-artifacts/honest-compiler-report.json
-```
-
-```bash
-cargo xtask verify-no-shortcuts --format json
-```
-
-Result:
-
-```text
-Error: shortcut execution patterns are still present; see target/boon-artifacts/no-shortcuts-report.json
 ```
 
 ```bash
@@ -50,20 +42,26 @@ under `target/boon-artifacts/`.
 
 ## Current Evidence
 
-- `target/boon-artifacts/no-shortcuts-report.json` reports `35` shortcut
-  pattern hits in execution paths and generated code.
+- `cargo xtask verify all --format json` exits with status `1` and writes
+  `target/boon-artifacts/verify-report.json` plus `success.json` with
+  `"success": false`.
+- `target/boon-artifacts/no-shortcuts-report.json` now reports verdict `pass`
+  with `0` shortcut pattern hits in Rust execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction but real semantic IR
   and DD graph IR are not implemented,
-  `TextBehavior`/`execute_static_graph` compatibility runtime semantics remain,
-  generated code still uses compatibility lowering,
+  runtime still executes a compatibility scalar DD plan instead of generated
+  semantic IR/DD graph artifacts, generated code still uses compatibility scalar
+  rendering templates,
   scenario parsing now models command actions but runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates as missing.
+- `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
+  and no missing required generated artifact paths.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
   prompt pack hashes.
 
@@ -71,13 +69,17 @@ under `target/boon-artifacts/`.
 
 ```bash
 cargo check -p xtask
-cargo xtask verify-no-shortcuts --format json
-jq '.shortcut_symbols_in_execution_paths, .scan.hits[:12]' target/boon-artifacts/no-shortcuts-report.json
+cargo xtask verify all --format json
+jq '.success, [.gates[] | select(.status == "failed") | {name, command, error: .details.error}]' \
+  target/boon-artifacts/verify-report.json
 ```
 
-The first hits are in `crates/boon_codegen_rust/src/lib.rs`, where generated
-dataflow is still selected through `TextBehavior` and
-`generated_text_collection`.
+The expected current failed gates are `verify-honest-compiler`,
+`verify-honesty-deterministic`, `verify-language-corpus`,
+`verify-negative-corpus`, `verify-lowering`, `verify-generated-freshness`, and
+`verify-prompt-audit`. `verify-no-shortcuts`, `verify-playgrounds`, plan
+coverage, generated crate tests, and terminal/native/browser target tests are
+expected to pass.
 
 ## Next Pin/Fork/Fix Decision
 
@@ -87,10 +89,10 @@ Continue with the remaining Phase 2 and Phase 3 work in
 1. Finish resolver diagnostics and name/source resolution.
 2. Expand shape/type checking from initial reports into full accepted-language
    coverage.
-3. Replace the compatibility `StaticGraph`/`TextBehavior` path with semantic IR,
-   DD graph IR, and generated-only runtime execution.
-4. Keep `verify-no-shortcuts` failing until the execution paths no longer use
-   text heuristics, smoke runtime semantics, or host-side Boon behavior.
+3. Replace the compatibility scalar DD plan path with semantic IR, DD graph IR,
+   and generated-only runtime execution.
+4. Keep `verify-no-shortcuts` passing while broadening the deterministic gates
+   so renamed or newly introduced shortcuts cannot slip through.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.

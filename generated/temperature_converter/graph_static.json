@@ -43,8 +43,8 @@
   "monitor_node": "TemperatureConverter",
   "render_node": "DocumentText",
   "initial_text": "68 F",
-  "text_behavior": {
-    "Constant": "68 F"
+  "dd_plan": {
+    "ConstantText": "68 F"
   },
   "physical_scene": false
 }

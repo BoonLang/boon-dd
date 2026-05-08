@@ -9,14 +9,17 @@ use std::sync::{Arc, Mutex};
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
 pub struct GeneratedSourceInputs {
-    input: InputSession<EncodedTime, String, Diff>,
+    input: InputSession<EncodedTime, (u64, String), Diff>,
     output: Arc<Mutex<Vec<SmokeOutput>>>,
+    next_sequence: u64,
 }
 
 impl GeneratedSourceInputs {
     pub fn submit_text(&mut self, value: impl Into<String>, epoch: u64) {
         self.input.advance_to(BoonTime { epoch, phase: 0 }.encode());
-        self.input.insert(value.into());
+        let sequence = self.next_sequence;
+        self.next_sequence += 1;
+        self.input.insert((sequence, value.into()));
     }
 
     pub fn submit_action(&mut self, action: &SourceAction, epoch: u64) {
@@ -84,7 +87,7 @@ pub fn completion_time(epoch: u64) -> u64 {
 }
 
 pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHandles {
-    let mut input = InputSession::<EncodedTime, String, Diff>::new();
+    let mut input = InputSession::<EncodedTime, (u64, String), Diff>::new();
     let mut probe = ProbeHandle::new();
     let output = Arc::new(Mutex::new(Vec::<SmokeOutput>::new()));
     let output_in_graph = Arc::clone(&output);
@@ -92,7 +95,11 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered = events.map(|_| "2".to_owned());
+        let rendered = events
+            .map(|_| ())
+            .count()
+            .filter(|(_key, count)| *count > 0)
+            .map(|_| "2".to_owned());
         rendered
             .inspect(move |(text, time, diff)| {
                 if *diff > 0 {
@@ -116,7 +123,11 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
             .probe_with(&mut probe);
     });
     GeneratedGraphHandles {
-        sources: GeneratedSourceInputs { input, output },
+        sources: GeneratedSourceInputs {
+            input,
+            output,
+            next_sequence: 0,
+        },
         probe,
     }
 }

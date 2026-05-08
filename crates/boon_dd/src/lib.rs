@@ -154,11 +154,11 @@ pub struct GraphOperator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TextBehavior {
-    Constant(String),
-    CountActions { initial: i64 },
-    LatestAction,
-    BranchOnTag { tag: String, text: String },
+pub enum DdScalarPlan {
+    ConstantText(String),
+    CountInputEvents { initial: i64 },
+    LatestInputText,
+    MatchTagText { tag: String, text: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,7 +172,7 @@ pub struct StaticGraph {
     pub monitor_node: NodeId,
     pub render_node: NodeId,
     pub initial_text: String,
-    pub text_behavior: TextBehavior,
+    pub dd_plan: DdScalarPlan,
     pub physical_scene: bool,
 }
 
@@ -205,33 +205,12 @@ pub struct Scenario {
     pub steps: Vec<ScenarioStep>,
 }
 
-pub fn execute_static_graph(graph: &StaticGraph, actions: &[SourceAction]) -> SmokeOutput {
-    let text = evaluate_text(graph, actions);
-    emit_text_through_timely(graph, text)
-}
-
 pub fn execute_scenario(graph: &StaticGraph, scenario: &Scenario) -> Vec<SmokeOutput> {
     scenario
         .steps
         .iter()
-        .map(|step| execute_static_graph(graph, &step.actions))
+        .map(|step| run_static_dd_graph(graph, &step.actions))
         .collect()
-}
-
-fn evaluate_text(graph: &StaticGraph, actions: &[SourceAction]) -> String {
-    match &graph.text_behavior {
-        TextBehavior::Constant(text) => text.clone(),
-        TextBehavior::CountActions { initial } => (initial + actions.len() as i64).to_string(),
-        TextBehavior::LatestAction => actions
-            .last()
-            .map(|action| value_to_text(&action.value))
-            .unwrap_or_default(),
-        TextBehavior::BranchOnTag { tag, text } => actions
-            .iter()
-            .any(|action| value_to_text(&action.value) == *tag)
-            .then(|| text.clone())
-            .unwrap_or_default(),
-    }
 }
 
 pub fn value_to_text(value: &BoonValue) -> String {
@@ -257,7 +236,7 @@ pub fn source_action_text(action: &SourceAction) -> String {
     value_to_text(&action.value)
 }
 
-fn emit_text_through_timely(graph: &StaticGraph, text: String) -> SmokeOutput {
+pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> SmokeOutput {
     let output = Arc::new(Mutex::new(SmokeOutput {
         monitor: Vec::new(),
         render: Vec::new(),
@@ -271,12 +250,46 @@ fn emit_text_through_timely(graph: &StaticGraph, text: String) -> SmokeOutput {
     let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
 
     {
-        let mut input = InputSession::<EncodedTime, String, Diff>::new();
+        let mut input = InputSession::<EncodedTime, (u64, String), Diff>::new();
         let mut probe = ProbeHandle::new();
 
         worker.dataflow::<EncodedTime, _, _>(|scope| {
-            let values = input.to_collection(scope);
-            values
+            let events = input.to_collection(scope);
+            let rendered = match &graph.dd_plan {
+                DdScalarPlan::ConstantText(text) => {
+                    let text = text.clone();
+                    events
+                        .map(|_| ())
+                        .count()
+                        .filter(|(_key, count)| *count > 0)
+                        .map(move |_| text.clone())
+                }
+                DdScalarPlan::CountInputEvents { initial } => {
+                    let initial = *initial;
+                    events
+                        .map(|_| ())
+                        .count()
+                        .map(move |(_key, count)| (initial + count as i64).to_string())
+                }
+                DdScalarPlan::LatestInputText => events
+                    .map(|(sequence, value)| ((), (sequence, value)))
+                    .reduce(|_, inputs, output| {
+                        if let Some(((_sequence, value), _diff)) =
+                            inputs.iter().max_by_key(|((sequence, _), _)| *sequence)
+                        {
+                            output.push((value.clone(), 1));
+                        }
+                    })
+                    .map(|(_key, value)| value),
+                DdScalarPlan::MatchTagText { tag, text } => {
+                    let tag = tag.clone();
+                    let text = text.clone();
+                    events
+                        .filter(move |(_sequence, value)| value == &tag)
+                        .map(move |_| text.clone())
+                }
+            };
+            rendered
                 .inspect(move |(value, time, diff)| {
                     if *diff > 0 {
                         let epoch = BoonTime::decode(*time).epoch;
@@ -298,7 +311,12 @@ fn emit_text_through_timely(graph: &StaticGraph, text: String) -> SmokeOutput {
 
         let command_time = BoonTime { epoch: 1, phase: 3 }.encode();
         input.advance_to(command_time);
-        input.insert(text);
+        for (sequence, action) in actions.iter().enumerate() {
+            input.insert((sequence as u64, source_action_text(action)));
+        }
+        if actions.is_empty() && matches!(graph.dd_plan, DdScalarPlan::ConstantText(_)) {
+            input.insert((0, String::new()));
+        }
         input.advance_to(command_time + 1);
         input.flush();
 
@@ -446,10 +464,10 @@ mod tests {
             monitor_node: NodeId("ThenValue".to_owned()),
             render_node: NodeId("DocumentText".to_owned()),
             initial_text: "0".to_owned(),
-            text_behavior: TextBehavior::CountActions { initial: 0 },
+            dd_plan: DdScalarPlan::CountInputEvents { initial: 0 },
             physical_scene: false,
         };
-        let output = execute_static_graph(
+        let output = run_static_dd_graph(
             &graph,
             &[SourceAction {
                 source: "press".to_owned(),

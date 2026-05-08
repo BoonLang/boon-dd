@@ -63,8 +63,8 @@
   "monitor_node": "FlightBooker",
   "render_node": "DocumentText",
   "initial_text": "booked",
-  "text_behavior": {
-    "Constant": "booked"
+  "dd_plan": {
+    "ConstantText": "booked"
   },
   "physical_scene": false
 }

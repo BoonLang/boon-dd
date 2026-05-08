@@ -70,8 +70,8 @@
   "monitor_node": "IntervalCounter",
   "render_node": "DocumentText",
   "initial_text": "0",
-  "text_behavior": {
-    "CountActions": {
+  "dd_plan": {
+    "CountInputEvents": {
       "initial": 0
     }
   },

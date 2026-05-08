@@ -63,8 +63,8 @@
   "monitor_node": "WhenEnter",
   "render_node": "DocumentText",
   "initial_text": "",
-  "text_behavior": {
-    "BranchOnTag": {
+  "dd_plan": {
+    "MatchTagText": {
       "tag": "Enter",
       "text": "accepted"
     }

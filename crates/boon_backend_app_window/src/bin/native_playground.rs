@@ -345,7 +345,7 @@ fn build_playground_examples() -> Vec<PlaygroundExample> {
             )
             .graph;
             let scenario = boon_runtime_host::parse_scenario(fixture.scenario);
-            let output = boon_dd::execute_static_graph(&graph, &[]);
+            let output = boon_dd::run_static_dd_graph(&graph, &[]);
             PlaygroundExample {
                 name: fixture.name.to_owned(),
                 graph,
@@ -464,7 +464,7 @@ fn trigger_example_action(example: &mut PlaygroundExample) {
 }
 
 fn refresh_example_output(example: &mut PlaygroundExample) {
-    example.output = boon_dd::execute_static_graph(&example.graph, &example.actions);
+    example.output = boon_dd::run_static_dd_graph(&example.graph, &example.actions);
 }
 
 fn render_frame(

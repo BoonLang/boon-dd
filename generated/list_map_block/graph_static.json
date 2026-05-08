@@ -50,8 +50,8 @@
   "monitor_node": "ListMapBlock",
   "render_node": "DocumentText",
   "initial_text": "a,b,c",
-  "text_behavior": {
-    "Constant": "a,b,c"
+  "dd_plan": {
+    "ConstantText": "a,b,c"
   },
   "physical_scene": false
 }

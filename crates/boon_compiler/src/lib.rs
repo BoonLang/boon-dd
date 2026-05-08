@@ -1,6 +1,6 @@
 use boon_dd::{
-    GraphNode, GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
-    TextBehavior,
+    DdScalarPlan, GraphNode, GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId,
+    StaticGraph,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
@@ -52,7 +52,7 @@ fn build_static_graph(
     ));
     let render_node = NodeId("DocumentText".to_owned());
     let initial_text = initial_text(document_expr, semantic_expr, hir);
-    let text_behavior = output_behavior(document_expr, semantic_expr, hir, &initial_text);
+    let dd_plan = output_dd_plan(document_expr, semantic_expr, hir, &initial_text);
     let mut nodes = Vec::new();
     nodes.push(GraphNode {
         node: render_node.clone(),
@@ -83,7 +83,7 @@ fn build_static_graph(
         monitor_node,
         render_node,
         initial_text,
-        text_behavior,
+        dd_plan,
         physical_scene: hir
             .definitions
             .iter()
@@ -430,33 +430,33 @@ fn initial_text(
     }
 }
 
-fn output_behavior(
+fn output_dd_plan(
     document_expr: Option<&boon_syntax::Expr>,
     semantic_expr: Option<&boon_syntax::Expr>,
     hir: &boon_hir::HirModule,
     initial_text: &str,
-) -> TextBehavior {
+) -> DdScalarPlan {
     if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
-        return TextBehavior::Constant(text);
+        return DdScalarPlan::ConstantText(text);
     }
     let Some(expr) = semantic_expr else {
-        return TextBehavior::Constant(String::new());
+        return DdScalarPlan::ConstantText(String::new());
     };
     if expression_has_latest(expr) {
-        TextBehavior::LatestAction
+        DdScalarPlan::LatestInputText
     } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::When) {
-        TextBehavior::BranchOnTag { tag, text }
+        DdScalarPlan::MatchTagText { tag, text }
     } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::While) {
-        TextBehavior::BranchOnTag { tag, text }
+        DdScalarPlan::MatchTagText { tag, text }
     } else if expression_has_call(expr, "Math/sum")
         || expression_has_hold(expr)
         || expression_has_then(expr)
     {
-        TextBehavior::CountActions {
+        DdScalarPlan::CountInputEvents {
             initial: initial_text.parse().unwrap_or(0),
         }
     } else {
-        TextBehavior::Constant(constant_text(expr, hir).unwrap_or_default())
+        DdScalarPlan::ConstantText(constant_text(expr, hir).unwrap_or_default())
     }
 }
 
