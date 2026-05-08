@@ -1595,11 +1595,58 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                         .map(|step| step.commands.len())
                         .sum::<usize>();
                     command_count += commands;
+                    let generated_index = boon_examples::REQUIRED_FIXTURES
+                        .iter()
+                        .position(|fixture| fixture.name == example.id);
+                    let execution = generated_index.and_then(|index| {
+                        boon_examples::run_generated_scenario_steps_at(index, &text)
+                    });
+                    let execution_steps = execution
+                        .as_ref()
+                        .map(|(_name, steps)| {
+                            steps
+                                .iter()
+                                .map(|step| {
+                                    let actual_text = smoke_render_text(&step.output);
+                                    let matches_expected = actual_text == step.expected_text;
+                                    if !matches_expected {
+                                        failures.push(serde_json::json!({
+                                            "example": example.id,
+                                            "step_index": step.step_index,
+                                            "description": step.description.clone(),
+                                            "expected_text": step.expected_text.clone(),
+                                            "actual_text": actual_text.clone(),
+                                            "commands": step.commands.iter().map(|command| command.command.clone()).collect::<Vec<_>>(),
+                                            "error": "generated scenario step output does not match expected text",
+                                        }));
+                                    }
+                                    serde_json::json!({
+                                        "step_index": step.step_index,
+                                        "description": step.description.clone(),
+                                        "action_count": step.action_count,
+                                        "commands": step.commands.iter().map(|command| command.command.clone()).collect::<Vec<_>>(),
+                                        "expected_text": step.expected_text.clone(),
+                                        "actual_text": actual_text,
+                                        "matches_expected": matches_expected,
+                                        "render_command_count": step.output.render.len(),
+                                        "monitor_record_count": step.output.monitor.len(),
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_else(|| {
+                            failures.push(serde_json::json!({
+                                "example": example.id,
+                                "error": "manifest example has no generated fixture execution path",
+                            }));
+                            Vec::new()
+                        });
                     cases.push(serde_json::json!({
                         "example": example.id,
                         "steps": scenario.steps.len(),
                         "actions": scenario.steps.iter().map(|step| step.actions.len()).sum::<usize>(),
                         "commands": commands,
+                        "generated_execution_steps": execution_steps,
                     }));
                 }
                 Err(error) => failures.push(serde_json::json!({
@@ -1625,11 +1672,22 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
             "command_count": command_count,
             "parser_strict": true,
             "blockers": [
-                "scenario parser is strict and preserves command actions, but command/effect/persistence execution is incomplete",
+                "scenario parser is strict and preserves command actions, and generated graphs execute every parsed step in order",
+                "command/effect/persistence execution remains incomplete; command actions are preserved in evidence but not yet applied to generated graph state",
                 "no fault-injection check proves command actions cannot be skipped by runtime execution"
             ],
         }),
     }
+}
+
+fn smoke_render_text(output: &boon_dd::SmokeOutput) -> String {
+    output
+        .render
+        .first()
+        .map(|command| match command {
+            boon_dd::RenderCommand::PatchText { text, .. } => text.clone(),
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Deserialize)]

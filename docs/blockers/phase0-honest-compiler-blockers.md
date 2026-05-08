@@ -95,23 +95,27 @@ under `target/boon-artifacts/`.
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are
   current-corpus evidence, not full accepted-language completion.
-- `verify-generated-crates` now runs each generated crate's own Timely/DD graph
-  against the first checked scenario step for that example and compares the
-  final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
+- `verify-generated-crates` still runs each generated crate's own Timely/DD
+  graph against the first checked scenario step for that example and compares
+  the final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
   stronger than the earlier "emitted something" smoke test, but it is still not
-  full multi-step command/effect execution.
+  the full multi-step command/effect assertion.
 - `boon_examples::run_embedded_matrix`, backend smoke APIs, xtask example-output
   comparison, and the native/terminal playgrounds now dispatch the generated
   Timely/DD crates directly for the canonical examples instead of compiling
   source through `RuntimeHost`. The old `RuntimeHost::compile_and_run_scenario`
   execution API has been removed; the deterministic generated-only runtime gate
   now passes with 22 generated fixture outputs and zero forbidden runtime helper
-  hits. Remaining runtime blockers are the transitional output-template lowerer,
-  one-step action injection, and incomplete command/effect/persistence
-  execution.
+  hits. Remaining runtime blockers are the transitional output-template lowerer
+  and incomplete command/effect/persistence execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
-  scenario and reports preserved command actions. It still fails because
-  command/effect/persistence execution and skip-fault self-tests are incomplete.
+  scenario, preserves command actions, and runs every parsed scenario step
+  through the generated Timely/DD graph. It still fails because command/effect/
+  persistence execution and skip-fault self-tests are incomplete. The current
+  minimized mismatch is `examples/counter_hold/scenario.toml` step 2: the
+  preserved commands are `enable_persistence` and `reload`, the generated graph
+  executes the step in epoch 2, and the actual render text is `2` while the
+  scenario expects `1`.
 - The current deterministic honesty report has 0 stale artifact failures, 0
   shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
   features without full coverage, and 1 host-semantics violation.

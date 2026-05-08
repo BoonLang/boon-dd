@@ -58,6 +58,27 @@ pub fn scenario_actions_for_text(scenario_text: &str) -> Vec<boon_dd::SourceActi
         .unwrap_or_default()
 }
 
+pub fn scenario_steps_for_text(scenario_text: &str) -> Vec<boon_dd::ScenarioStep> {
+    boon_runtime_host::parse_scenario(scenario_text).steps
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GeneratedScenarioStepOutput {
+    pub step_index: usize,
+    pub description: String,
+    pub action_count: usize,
+    pub commands: Vec<boon_dd::ScenarioCommand>,
+    pub expected_text: String,
+    pub output: boon_dd::SmokeOutput,
+}
+
+fn empty_smoke_output() -> boon_dd::SmokeOutput {
+    boon_dd::SmokeOutput {
+        monitor: Vec::new(),
+        render: Vec::new(),
+    }
+}
+
 macro_rules! run_generated_fixture_actions {
     ($expected_name:literal, $fixture:expr, $crate_name:ident, $actions:expr) => {{
         assert_eq!(
@@ -97,11 +118,58 @@ macro_rules! run_generated_fixture_actions {
             .outputs()
             .into_iter()
             .last()
-            .unwrap_or_else(|| boon_dd::SmokeOutput {
-                monitor: Vec::new(),
-                render: Vec::new(),
-            });
+            .unwrap_or_else(empty_smoke_output);
         ($fixture.name.to_owned(), output)
+    }};
+}
+
+macro_rules! run_generated_fixture_steps {
+    ($expected_name:literal, $fixture:expr, $crate_name:ident, $steps:expr) => {{
+        assert_eq!(
+            $fixture.name, $expected_name,
+            "generated fixture registry order drifted"
+        );
+        let allocator = timely::communication::Allocator::Thread(
+            timely::communication::allocator::Thread::default(),
+        );
+        let mut worker =
+            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+        let mut graph = $crate_name::graph::build_dataflow(&mut worker);
+        let mut outputs = Vec::new();
+        for (step_index, step) in $steps.iter().enumerate() {
+            let epoch = step_index as u64 + 1;
+            for action in &step.actions {
+                graph.sources.submit_action(action, epoch);
+            }
+            graph.sources.close_epoch(epoch);
+            let target = $crate_name::graph::completion_time(epoch) + 1;
+            let mut worker_steps = 0_usize;
+            while graph.probe.less_than(&target) {
+                if worker_steps == 1024 {
+                    panic!(
+                        "generated fixture {} step {} probe stalled at {target} after {worker_steps} steps",
+                        $fixture.name, step_index
+                    );
+                }
+                worker.step();
+                worker_steps += 1;
+            }
+            let output = graph
+                .sources
+                .outputs()
+                .into_iter()
+                .last()
+                .unwrap_or_else(empty_smoke_output);
+            outputs.push(GeneratedScenarioStepOutput {
+                step_index,
+                description: step.description.clone(),
+                action_count: step.actions.len(),
+                commands: step.commands.clone(),
+                expected_text: step.expect_text.clone(),
+                output,
+            });
+        }
+        ($fixture.name.to_owned(), outputs)
     }};
 }
 
@@ -227,12 +295,123 @@ pub fn run_generated_actions_at(
     })
 }
 
+pub fn run_generated_steps_at(
+    index: usize,
+    steps: &[boon_dd::ScenarioStep],
+) -> Option<(String, Vec<GeneratedScenarioStepOutput>)> {
+    Some(match index {
+        0 => {
+            run_generated_fixture_steps!("counter", &REQUIRED_FIXTURES[0], generated_counter, steps)
+        }
+        1 => run_generated_fixture_steps!(
+            "counter_hold",
+            &REQUIRED_FIXTURES[1],
+            generated_counter_hold,
+            steps
+        ),
+        2 => run_generated_fixture_steps!(
+            "interval",
+            &REQUIRED_FIXTURES[2],
+            generated_interval,
+            steps
+        ),
+        3 => run_generated_fixture_steps!(
+            "interval_hold",
+            &REQUIRED_FIXTURES[3],
+            generated_interval_hold,
+            steps
+        ),
+        4 => run_generated_fixture_steps!("latest", &REQUIRED_FIXTURES[4], generated_latest, steps),
+        5 => run_generated_fixture_steps!("when", &REQUIRED_FIXTURES[5], generated_when, steps),
+        6 => run_generated_fixture_steps!("while", &REQUIRED_FIXTURES[6], generated_while, steps),
+        7 => run_generated_fixture_steps!("then", &REQUIRED_FIXTURES[7], generated_then, steps),
+        8 => run_generated_fixture_steps!(
+            "list_map_block",
+            &REQUIRED_FIXTURES[8],
+            generated_list_map_block,
+            steps
+        ),
+        9 => run_generated_fixture_steps!(
+            "list_map_external_dep",
+            &REQUIRED_FIXTURES[9],
+            generated_list_map_external_dep,
+            steps
+        ),
+        10 => run_generated_fixture_steps!(
+            "list_object_state",
+            &REQUIRED_FIXTURES[10],
+            generated_list_object_state,
+            steps
+        ),
+        11 => run_generated_fixture_steps!(
+            "list_retain_count",
+            &REQUIRED_FIXTURES[11],
+            generated_list_retain_count,
+            steps
+        ),
+        12 => run_generated_fixture_steps!(
+            "list_retain_reactive",
+            &REQUIRED_FIXTURES[12],
+            generated_list_retain_reactive,
+            steps
+        ),
+        13 => run_generated_fixture_steps!(
+            "list_retain_remove",
+            &REQUIRED_FIXTURES[13],
+            generated_list_retain_remove,
+            steps
+        ),
+        14 => run_generated_fixture_steps!(
+            "shopping_list",
+            &REQUIRED_FIXTURES[14],
+            generated_shopping_list,
+            steps
+        ),
+        15 => run_generated_fixture_steps!(
+            "todo_mvc",
+            &REQUIRED_FIXTURES[15],
+            generated_todo_mvc,
+            steps
+        ),
+        16 => run_generated_fixture_steps!("crud", &REQUIRED_FIXTURES[16], generated_crud, steps),
+        17 => run_generated_fixture_steps!(
+            "flight_booker",
+            &REQUIRED_FIXTURES[17],
+            generated_flight_booker,
+            steps
+        ),
+        18 => run_generated_fixture_steps!(
+            "temperature_converter",
+            &REQUIRED_FIXTURES[18],
+            generated_temperature_converter,
+            steps
+        ),
+        19 => run_generated_fixture_steps!("pong", &REQUIRED_FIXTURES[19], generated_pong, steps),
+        20 => run_generated_fixture_steps!("cells", &REQUIRED_FIXTURES[20], generated_cells, steps),
+        21 => run_generated_fixture_steps!(
+            "todo_mvc_physical",
+            &REQUIRED_FIXTURES[21],
+            generated_todo_mvc_physical,
+            steps
+        ),
+        _ => return None,
+    })
+}
+
 pub fn run_generated_scenario_at(
     index: usize,
     scenario_text: &str,
 ) -> Option<(String, boon_dd::SmokeOutput)> {
     let actions = scenario_actions_for_text(scenario_text);
     run_generated_actions_at(index, &actions)
+}
+
+pub fn run_generated_scenario_steps_at(
+    index: usize,
+    scenario_text: &str,
+) -> Option<(String, Vec<GeneratedScenarioStepOutput>)> {
+    let steps = scenario_steps_for_text(scenario_text);
+    run_generated_steps_at(index, &steps)
 }
 
 pub fn run_generated_for_source(
