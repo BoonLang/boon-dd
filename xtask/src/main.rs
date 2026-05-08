@@ -747,6 +747,26 @@ fn verify(args: &[String]) -> Result<()> {
         verify_plan_coverage,
     ));
     gates.push(capture_simple_gate(
+        "verify-syntax-corpus",
+        "cargo xtask verify-syntax-corpus --format json",
+        || verify_syntax_corpus(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-resolver-corpus",
+        "cargo xtask verify-resolver-corpus --format json",
+        || verify_resolver_corpus(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-shape-corpus",
+        "cargo xtask verify-shape-corpus --format json",
+        || verify_shape_corpus(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-semantic-ir",
+        "cargo xtask verify-semantic-ir --format json",
+        || verify_semantic_ir(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
         "verify-honest-compiler",
         "cargo xtask verify-honest-compiler --format json",
         || verify_honest_compiler(&["--format".to_owned(), "json".to_owned()]),
