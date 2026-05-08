@@ -38,7 +38,78 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "a,b,c"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Pipe": {
+                "input": {
+                  "Pipe": {
+                    "input": {
+                      "List": [
+                        {
+                          "Text": "a"
+                        },
+                        {
+                          "Text": "b"
+                        },
+                        {
+                          "Text": "c"
+                        }
+                      ]
+                    },
+                    "stage": {
+                      "Call": {
+                        "callee": "List/map",
+                        "args": [
+                          {
+                            "Positional": {
+                              "Path": "item"
+                            }
+                          },
+                          {
+                            "Named": {
+                              "name": "new",
+                              "value": {
+                                "Block": [
+                                  {
+                                    "Path": "item"
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "stage": {
+                  "Call": {
+                    "callee": "Text/join",
+                    "args": [
+                      {
+                        "Named": {
+                          "name": "separator",
+                          "value": {
+                            "Text": ","
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

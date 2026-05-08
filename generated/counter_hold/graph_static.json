@@ -90,6 +90,6 @@
   ],
   "monitor_node": "Counter",
   "render_node": "DocumentText",
-  "initial_text": "0",
+  "initial_text": "",
   "physical_scene": false
 }

@@ -62,6 +62,6 @@
   ],
   "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
-  "initial_text": "saved",
+  "initial_text": "",
   "physical_scene": false
 }

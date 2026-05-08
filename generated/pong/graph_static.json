@@ -76,6 +76,6 @@
   ],
   "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
-  "initial_text": "frame 1",
+  "initial_text": "",
   "physical_scene": false
 }

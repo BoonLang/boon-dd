@@ -42,6 +42,6 @@
   ],
   "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
-  "initial_text": "68 F",
+  "initial_text": "",
   "physical_scene": false
 }

@@ -31,7 +31,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "68 F"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "68 F"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

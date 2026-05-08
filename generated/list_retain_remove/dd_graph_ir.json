@@ -38,7 +38,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "removed"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "removed"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

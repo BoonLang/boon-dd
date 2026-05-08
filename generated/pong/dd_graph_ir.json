@@ -52,7 +52,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "frame 1"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "frame 1"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

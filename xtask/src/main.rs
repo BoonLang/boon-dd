@@ -1112,7 +1112,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code and backend smoke paths execute generated Timely/DD crates, but the compiler still has constant/render shortcut evaluation and the lowerer still emits scalar render programs",
+            "generated code and backend smoke paths execute generated Timely/DD crates from render-expression IR, but the lowerer still emits scalar render programs instead of complete render/effect/persistence protocols",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],

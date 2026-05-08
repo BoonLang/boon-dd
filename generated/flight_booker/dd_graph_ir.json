@@ -38,7 +38,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "booked"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "booked"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

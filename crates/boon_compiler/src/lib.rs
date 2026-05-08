@@ -1,4 +1,5 @@
 use boon_dd::{
+    DdRenderArg, DdRenderExpr, DdRenderField, DdRenderMatchArm, DdRenderMatchKind,
     DdRenderOperation, DdRenderProgram, DdRenderProgramSource, GraphNode, GraphOperator,
     GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
 };
@@ -368,36 +369,33 @@ fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) ->
         semantic_path: target_path.clone(),
         output_node: graph.render_node.clone(),
     };
-    let operation = if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
-        DdRenderOperation::ConstantText(text)
-    } else if let Some(expr) = semantic_expr {
-        dd_render_operation_from_expr(expr, hir, &graph.initial_text)
-    } else {
-        DdRenderOperation::ConstantText(String::new())
-    };
+    let operation = semantic_expr
+        .map(|expr| render_operation_from_syntax(expr, hir))
+        .unwrap_or_else(|| DdRenderOperation::StaticText {
+            expr: DdRenderExpr::Text(String::new()),
+        });
     DdRenderProgram { source, operation }
 }
 
-fn dd_render_operation_from_expr(
+fn render_operation_from_syntax(
     expr: &boon_syntax::Expr,
     hir: &boon_hir::HirModule,
-    initial_text: &str,
 ) -> DdRenderOperation {
-    if expression_has_latest(expr) {
+    if tree_has_latest(expr) {
         DdRenderOperation::LatestInputText
-    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::When) {
-        DdRenderOperation::MatchTagText { tag, text }
-    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::While) {
-        DdRenderOperation::MatchTagText { tag, text }
-    } else if expression_has_call(expr, "Math/sum")
-        || expression_has_hold(expr)
-        || expression_has_then(expr)
+    } else if let Some((tag, value)) = first_match_branch(expr, boon_syntax::MatchKind::When, hir) {
+        DdRenderOperation::MatchTagText { tag, expr: value }
+    } else if let Some((tag, value)) = first_match_branch(expr, boon_syntax::MatchKind::While, hir)
     {
+        DdRenderOperation::MatchTagText { tag, expr: value }
+    } else if tree_has_callee(expr, "Math/sum") || tree_has_hold(expr) || tree_has_then(expr) {
         DdRenderOperation::CountInputEvents {
-            initial: initial_text.parse().unwrap_or(0),
+            initial: counter_seed(expr),
         }
     } else {
-        DdRenderOperation::ConstantText(constant_text(expr, hir).unwrap_or_default())
+        DdRenderOperation::StaticText {
+            expr: render_expr_from_syntax(expr, hir),
+        }
     }
 }
 
@@ -433,15 +431,10 @@ fn build_static_graph(
         .find(|definition| definition.name == "document");
     let document_expr = document.map(|definition| &definition.expression);
     let target_path = document_expr.and_then(document_target_path);
-    let target_expr = target_path
-        .as_deref()
-        .and_then(|path| target_expression(path, hir));
-    let semantic_expr = target_expr.or(document_expr);
     let operators = graph_operators(hir);
     let source_bindings = source_bindings(hir, shapes);
     let monitor_node = NodeId(document_output_node_name(target_path.as_deref()));
     let render_node = NodeId("DocumentText".to_owned());
-    let initial_text = initial_text(document_expr, semantic_expr, hir);
     let mut nodes = Vec::new();
     nodes.push(GraphNode {
         node: render_node.clone(),
@@ -471,11 +464,11 @@ fn build_static_graph(
         operators,
         monitor_node,
         render_node,
-        initial_text,
+        initial_text: String::new(),
         physical_scene: hir
             .definitions
             .iter()
-            .any(|definition| expression_has_call(&definition.expression, "Scene/new")),
+            .any(|definition| tree_has_callee(&definition.expression, "Scene/new")),
     }
 }
 
@@ -735,296 +728,143 @@ fn record_field<'a>(
     }
 }
 
-fn initial_text(
-    document_expr: Option<&boon_syntax::Expr>,
-    semantic_expr: Option<&boon_syntax::Expr>,
-    hir: &boon_hir::HirModule,
-) -> String {
-    if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
-        return text;
-    }
-    let Some(expr) = semantic_expr else {
-        return String::new();
-    };
-    if expression_has_call(expr, "Math/sum")
-        || expression_has_hold(expr)
-        || expression_has_then(expr)
-    {
-        "0".to_owned()
-    } else if expression_has_latest(expr)
-        || expression_has_match(expr, boon_syntax::MatchKind::When)
-        || expression_has_match(expr, boon_syntax::MatchKind::While)
-    {
-        String::new()
-    } else {
-        constant_text(expr, hir).unwrap_or_default()
-    }
-}
-
-fn constant_text(expression: &boon_syntax::Expr, hir: &boon_hir::HirModule) -> Option<String> {
-    match constant_value(expression, hir)? {
-        ConstantValue::Text(text) => Some(text),
-        ConstantValue::Number(number) => Some(number.to_string()),
-        ConstantValue::List(values) => Some(
-            values
-                .into_iter()
-                .filter_map(|value| match value {
-                    ConstantValue::Text(text) => Some(text),
-                    ConstantValue::Number(number) => Some(number.to_string()),
-                    ConstantValue::Record(_) | ConstantValue::List(_) | ConstantValue::Tag(_) => {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(","),
-        ),
-        ConstantValue::Tag(tag) => Some(tag),
-        ConstantValue::Record(_) => None,
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum ConstantValue {
-    Text(String),
-    Number(i64),
-    Tag(String),
-    List(Vec<ConstantValue>),
-    Record(Vec<(String, ConstantValue)>),
-}
-
-fn constant_value(
+fn render_expr_from_syntax(
     expression: &boon_syntax::Expr,
     hir: &boon_hir::HirModule,
-) -> Option<ConstantValue> {
+) -> DdRenderExpr {
     match expression {
-        boon_syntax::Expr::Text(text) => Some(ConstantValue::Text(text.clone())),
-        boon_syntax::Expr::Number(number) => number.parse::<i64>().ok().map(ConstantValue::Number),
-        boon_syntax::Expr::Tag(tag) => Some(ConstantValue::Tag(tag.clone())),
-        boon_syntax::Expr::Path(path) => {
-            target_expression(path, hir).and_then(|expression| constant_value(expression, hir))
-        }
-        boon_syntax::Expr::Record(fields) => Some(ConstantValue::Record(
-            fields
+        boon_syntax::Expr::Missing => DdRenderExpr::Missing,
+        boon_syntax::Expr::Path(path) => target_expression(path, hir)
+            .map(|expr| render_expr_from_syntax(expr, hir))
+            .unwrap_or_else(|| DdRenderExpr::Path(path.clone())),
+        boon_syntax::Expr::Number(number) => DdRenderExpr::Number(number.clone()),
+        boon_syntax::Expr::Source => DdRenderExpr::Source,
+        boon_syntax::Expr::Skip => DdRenderExpr::Skip,
+        boon_syntax::Expr::Tag(tag) => DdRenderExpr::Tag(tag.clone()),
+        boon_syntax::Expr::Text(text) => DdRenderExpr::Text(text.clone()),
+        boon_syntax::Expr::Record(fields) => DdRenderExpr::Record(render_fields(fields, hir)),
+        boon_syntax::Expr::List(values) => DdRenderExpr::List(render_exprs(values, hir)),
+        boon_syntax::Expr::Block(values) => DdRenderExpr::Block(render_exprs(values, hir)),
+        boon_syntax::Expr::Latest(values) => DdRenderExpr::Latest(render_exprs(values, hir)),
+        boon_syntax::Expr::Call { callee, args } => DdRenderExpr::Call {
+            callee: callee.clone(),
+            args: render_args(args, hir),
+        },
+        boon_syntax::Expr::Constructor { callee, fields } => DdRenderExpr::Constructor {
+            callee: callee.clone(),
+            fields: render_fields(fields, hir),
+        },
+        boon_syntax::Expr::Pipe { input, stage } => DdRenderExpr::Pipe {
+            input: Box::new(render_expr_from_syntax(input, hir)),
+            stage: Box::new(render_expr_from_syntax(stage, hir)),
+        },
+        boon_syntax::Expr::Binary { op, left, right } => match op {
+            boon_syntax::BinaryOp::Add => DdRenderExpr::BinaryAdd {
+                left: Box::new(render_expr_from_syntax(left, hir)),
+                right: Box::new(render_expr_from_syntax(right, hir)),
+            },
+        },
+        boon_syntax::Expr::Then { body } => DdRenderExpr::Then {
+            body: render_exprs(body, hir),
+        },
+        boon_syntax::Expr::Hold { binder, body } => DdRenderExpr::Hold {
+            binder: binder.clone(),
+            body: render_exprs(body, hir),
+        },
+        boon_syntax::Expr::Match { kind, arms } => DdRenderExpr::Match {
+            kind: match kind {
+                boon_syntax::MatchKind::When => DdRenderMatchKind::When,
+                boon_syntax::MatchKind::While => DdRenderMatchKind::While,
+            },
+            arms: arms
                 .iter()
-                .filter_map(|field| {
-                    constant_value(&field.value, hir).map(|value| (field.name.clone(), value))
+                .map(|arm| DdRenderMatchArm {
+                    pattern: arm.pattern.clone(),
+                    value: render_expr_from_syntax(&arm.value, hir),
                 })
                 .collect(),
-        )),
-        boon_syntax::Expr::List(values) => Some(ConstantValue::List(
-            values
-                .iter()
-                .filter_map(|value| constant_value(value, hir))
-                .collect(),
-        )),
-        boon_syntax::Expr::Pipe { input, stage } => {
-            let input_value = constant_value(input, hir);
-            pipe_constant(input_value, stage, hir)
-        }
-        boon_syntax::Expr::Call { callee, args } => call_constant(callee, None, args, hir),
-        boon_syntax::Expr::Binary { op, left, right } => match op {
-            boon_syntax::BinaryOp::Add => {
-                match (constant_value(left, hir)?, constant_value(right, hir)?) {
-                    (ConstantValue::Number(left), ConstantValue::Number(right)) => {
-                        Some(ConstantValue::Number(left + right))
-                    }
-                    _ => None,
-                }
-            }
         },
-        boon_syntax::Expr::Constructor { .. }
-        | boon_syntax::Expr::Block(_)
-        | boon_syntax::Expr::Latest(_)
-        | boon_syntax::Expr::Then { .. }
-        | boon_syntax::Expr::Hold { .. }
-        | boon_syntax::Expr::Match { .. }
-        | boon_syntax::Expr::Missing
-        | boon_syntax::Expr::Source
-        | boon_syntax::Expr::Skip => None,
     }
 }
 
-fn pipe_constant(
-    input: Option<ConstantValue>,
-    stage: &boon_syntax::Expr,
+fn render_exprs(expressions: &[boon_syntax::Expr], hir: &boon_hir::HirModule) -> Vec<DdRenderExpr> {
+    expressions
+        .iter()
+        .map(|expr| render_expr_from_syntax(expr, hir))
+        .collect()
+}
+
+fn render_fields(
+    fields: &[boon_syntax::RecordField],
     hir: &boon_hir::HirModule,
-) -> Option<ConstantValue> {
-    match stage {
-        boon_syntax::Expr::Call { callee, args } => call_constant(callee, input, args, hir),
-        _ => constant_value(stage, hir),
-    }
+) -> Vec<DdRenderField> {
+    fields
+        .iter()
+        .map(|field| DdRenderField {
+            name: field.name.clone(),
+            value: render_expr_from_syntax(&field.value, hir),
+        })
+        .collect()
 }
 
-fn call_constant(
-    callee: &str,
-    input: Option<ConstantValue>,
-    args: &[boon_syntax::CallArg],
-    hir: &boon_hir::HirModule,
-) -> Option<ConstantValue> {
-    match callee {
-        "Document/new" | "Text/from_number" => input,
-        "Text/append" => {
-            let input = text_of(input?)?;
-            let suffix = args.iter().find_map(|arg| match arg {
-                boon_syntax::CallArg::Positional(value)
-                | boon_syntax::CallArg::Named { value, .. } => constant_text(value, hir),
-            })?;
-            Some(ConstantValue::Text(format!("{input}{suffix}")))
-        }
-        "Text/join" => {
-            let separator =
-                named_text_arg(args, "separator", hir).unwrap_or_else(|| ",".to_owned());
-            match input? {
-                ConstantValue::List(values) => Some(ConstantValue::Text(
-                    values
-                        .into_iter()
-                        .filter_map(text_of)
-                        .collect::<Vec<_>>()
-                        .join(&separator),
-                )),
-                _ => None,
+fn render_args(args: &[boon_syntax::CallArg], hir: &boon_hir::HirModule) -> Vec<DdRenderArg> {
+    args.iter()
+        .map(|arg| match arg {
+            boon_syntax::CallArg::Positional(value) => {
+                DdRenderArg::Positional(render_expr_from_syntax(value, hir))
             }
-        }
-        "Text/uppercase" => Some(ConstantValue::Text(text_of(input?)?.to_uppercase())),
-        "List/append" => match input? {
-            ConstantValue::List(mut values) => {
-                if let Some(item) = named_value_arg(args, "item", hir) {
-                    values.push(item);
-                }
-                Some(ConstantValue::List(values))
-            }
-            _ => None,
-        },
-        "List/map" => match input? {
-            ConstantValue::List(values) => {
-                let uppercase = named_expr_arg(args, "new")
-                    .is_some_and(|expr| expression_has_call(expr, "Text/uppercase"));
-                Some(ConstantValue::List(
-                    values
-                        .into_iter()
-                        .filter_map(|value| {
-                            if uppercase {
-                                text_of(value).map(|text| ConstantValue::Text(text.to_uppercase()))
-                            } else {
-                                Some(value)
-                            }
-                        })
-                        .collect(),
-                ))
-            }
-            _ => None,
-        },
-        "List/retain" => match input? {
-            ConstantValue::List(values) => Some(ConstantValue::List(
-                values.into_iter().filter(record_is_incomplete).collect(),
-            )),
-            _ => None,
-        },
-        "List/count" => match input? {
-            ConstantValue::List(values) => {
-                let count = if args.iter().any(|arg| match arg {
-                    boon_syntax::CallArg::Named { name, .. } => name == "if",
-                    _ => false,
-                }) {
-                    values.into_iter().filter(record_is_incomplete).count()
-                } else {
-                    values.len()
-                };
-                Some(ConstantValue::Number(count as i64))
-            }
-            _ => None,
-        },
-        "Temperature/c_to_f" => match input? {
-            ConstantValue::Number(celsius) => Some(ConstantValue::Number(celsius * 9 / 5 + 32)),
-            _ => None,
-        },
-        _ => None,
-    }
+            boon_syntax::CallArg::Named { name, value } => DdRenderArg::Named {
+                name: name.clone(),
+                value: render_expr_from_syntax(value, hir),
+            },
+        })
+        .collect()
 }
 
-fn text_of(value: ConstantValue) -> Option<String> {
-    match value {
-        ConstantValue::Text(text) => Some(text),
-        ConstantValue::Number(number) => Some(number.to_string()),
-        ConstantValue::Tag(tag) => Some(tag),
-        ConstantValue::List(_) | ConstantValue::Record(_) => None,
-    }
-}
-
-fn named_text_arg(
-    args: &[boon_syntax::CallArg],
-    name: &str,
-    hir: &boon_hir::HirModule,
-) -> Option<String> {
-    named_expr_arg(args, name).and_then(|expr| constant_text(expr, hir))
-}
-
-fn named_value_arg(
-    args: &[boon_syntax::CallArg],
-    name: &str,
-    hir: &boon_hir::HirModule,
-) -> Option<ConstantValue> {
-    named_expr_arg(args, name).and_then(|expr| constant_value(expr, hir))
-}
-
-fn named_expr_arg<'a>(
-    args: &'a [boon_syntax::CallArg],
-    name: &str,
-) -> Option<&'a boon_syntax::Expr> {
-    args.iter().find_map(|arg| match arg {
-        boon_syntax::CallArg::Named {
-            name: arg_name,
-            value,
-        } if arg_name == name => Some(value),
-        _ => None,
-    })
-}
-
-fn record_is_incomplete(value: &ConstantValue) -> bool {
-    match value {
-        ConstantValue::Record(fields) => fields.iter().any(|(name, value)| {
-            name == "completed" && matches!(value, ConstantValue::Tag(tag) if tag == "False")
-        }),
-        _ => true,
-    }
-}
-
-fn expression_has_call(expression: &boon_syntax::Expr, callee: &str) -> bool {
+fn tree_has_callee(expression: &boon_syntax::Expr, callee: &str) -> bool {
     walk_any(
         expression,
         &mut |expr| matches!(expr, boon_syntax::Expr::Call { callee: found, .. } if found == callee),
     )
 }
 
-fn expression_has_then(expression: &boon_syntax::Expr) -> bool {
+fn tree_has_then(expression: &boon_syntax::Expr) -> bool {
     walk_any(expression, &mut |expr| {
         matches!(expr, boon_syntax::Expr::Then { .. })
     })
 }
 
-fn expression_has_hold(expression: &boon_syntax::Expr) -> bool {
+fn tree_has_hold(expression: &boon_syntax::Expr) -> bool {
     walk_any(expression, &mut |expr| {
         matches!(expr, boon_syntax::Expr::Hold { .. })
     })
 }
 
-fn expression_has_latest(expression: &boon_syntax::Expr) -> bool {
+fn tree_has_latest(expression: &boon_syntax::Expr) -> bool {
     walk_any(expression, &mut |expr| {
         matches!(expr, boon_syntax::Expr::Latest(_))
     })
 }
 
-fn expression_has_match(expression: &boon_syntax::Expr, kind: boon_syntax::MatchKind) -> bool {
-    walk_any(
-        expression,
-        &mut |expr| matches!(expr, boon_syntax::Expr::Match { kind: found, .. } if *found == kind),
-    )
+fn counter_seed(expression: &boon_syntax::Expr) -> i64 {
+    match expression {
+        boon_syntax::Expr::Pipe { input, stage }
+            if matches!(stage.as_ref(), boon_syntax::Expr::Hold { .. }) =>
+        {
+            if let boon_syntax::Expr::Number(number) = input.as_ref() {
+                return number.parse().unwrap_or(0);
+            }
+            0
+        }
+        _ => 0,
+    }
 }
 
-fn match_branch_text(
+fn first_match_branch(
     expression: &boon_syntax::Expr,
     kind: boon_syntax::MatchKind,
-) -> Option<(String, String)> {
+    hir: &boon_hir::HirModule,
+) -> Option<(String, DdRenderExpr)> {
     let mut result = None;
     walk(expression, &mut |expr| {
         if result.is_some() {
@@ -1032,32 +872,16 @@ fn match_branch_text(
         }
         if let boon_syntax::Expr::Match { kind: found, arms } = expr {
             if *found == kind {
-                result = arms
-                    .iter()
-                    .find(|arm| arm.pattern != "__")
-                    .and_then(|arm| constant_text(&arm.value, &empty_hir()))
-                    .map(|text| {
-                        let tag = arms
-                            .iter()
-                            .find(|arm| arm.pattern != "__")
-                            .map(|arm| arm.pattern.clone())
-                            .unwrap_or_default();
-                        (tag, text)
-                    });
+                result = arms.iter().find(|arm| arm.pattern != "__").map(|arm| {
+                    (
+                        arm.pattern.clone(),
+                        render_expr_from_syntax(&arm.value, hir),
+                    )
+                });
             }
         }
     });
     result
-}
-
-fn empty_hir() -> boon_hir::HirModule {
-    boon_hir::HirModule {
-        source_path: String::new(),
-        definitions: Vec::new(),
-        definition_names: Default::default(),
-        sources: Vec::new(),
-        diagnostics: Vec::new(),
-    }
 }
 
 fn walk_any<F>(expression: &boon_syntax::Expr, predicate: &mut F) -> bool
@@ -1181,11 +1005,14 @@ mod tests {
     }
 
     #[test]
-    fn todo_document_constant_comes_from_ast_text_literal() {
+    fn todo_document_render_is_lowered_as_expression_ir() {
         let plan = compile_source(
             "examples/todo_mvc/source.bn",
             include_str!("../../../examples/todo_mvc/source.bn"),
         );
-        assert_eq!(plan.graph.initial_text, "2 todos");
+        assert!(matches!(
+            plan.dd_graph_ir.render_program.operation,
+            DdRenderOperation::StaticText { .. }
+        ));
     }
 }

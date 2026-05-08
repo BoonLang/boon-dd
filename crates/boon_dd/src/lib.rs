@@ -185,10 +185,76 @@ pub struct DdRenderProgramSource {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DdRenderOperation {
-    ConstantText(String),
+    StaticText { expr: DdRenderExpr },
     CountInputEvents { initial: i64 },
     LatestInputText,
-    MatchTagText { tag: String, text: String },
+    MatchTagText { tag: String, expr: DdRenderExpr },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderExpr {
+    Missing,
+    Path(String),
+    Number(String),
+    Source,
+    Skip,
+    Tag(String),
+    Text(String),
+    Record(Vec<DdRenderField>),
+    List(Vec<DdRenderExpr>),
+    Block(Vec<DdRenderExpr>),
+    Latest(Vec<DdRenderExpr>),
+    Call {
+        callee: String,
+        args: Vec<DdRenderArg>,
+    },
+    Constructor {
+        callee: String,
+        fields: Vec<DdRenderField>,
+    },
+    Pipe {
+        input: Box<DdRenderExpr>,
+        stage: Box<DdRenderExpr>,
+    },
+    BinaryAdd {
+        left: Box<DdRenderExpr>,
+        right: Box<DdRenderExpr>,
+    },
+    Then {
+        body: Vec<DdRenderExpr>,
+    },
+    Hold {
+        binder: String,
+        body: Vec<DdRenderExpr>,
+    },
+    Match {
+        kind: DdRenderMatchKind,
+        arms: Vec<DdRenderMatchArm>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderField {
+    pub name: String,
+    pub value: DdRenderExpr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderArg {
+    Positional(DdRenderExpr),
+    Named { name: String, value: DdRenderExpr },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderMatchKind {
+    When,
+    While,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderMatchArm {
+    pub pattern: String,
+    pub value: DdRenderExpr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

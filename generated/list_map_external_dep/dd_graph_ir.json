@@ -38,7 +38,93 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "A,B,C"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Pipe": {
+                "input": {
+                  "Pipe": {
+                    "input": {
+                      "List": [
+                        {
+                          "Text": "a"
+                        },
+                        {
+                          "Text": "b"
+                        },
+                        {
+                          "Text": "c"
+                        }
+                      ]
+                    },
+                    "stage": {
+                      "Call": {
+                        "callee": "List/map",
+                        "args": [
+                          {
+                            "Positional": {
+                              "Path": "item"
+                            }
+                          },
+                          {
+                            "Named": {
+                              "name": "new",
+                              "value": {
+                                "Pipe": {
+                                  "input": {
+                                    "Path": "item"
+                                  },
+                                  "stage": {
+                                    "Call": {
+                                      "callee": "Text/uppercase",
+                                      "args": [
+                                        {
+                                          "Named": {
+                                            "name": "if",
+                                            "value": {
+                                              "Tag": "True"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "stage": {
+                  "Call": {
+                    "callee": "Text/join",
+                    "args": [
+                      {
+                        "Named": {
+                          "name": "separator",
+                          "value": {
+                            "Text": ","
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

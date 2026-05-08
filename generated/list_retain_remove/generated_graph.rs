@@ -8,6 +8,65 @@ use differential_dataflow::input::InputSession;
 use std::sync::{Arc, Mutex};
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+enum GeneratedValue {
+    Empty,
+    Text(String),
+    Number(i64),
+    Tag(String),
+    List(Vec<GeneratedValue>),
+    Record(Vec<(String, GeneratedValue)>),
+}
+
+#[allow(dead_code)]
+impl GeneratedValue {
+    fn text(self) -> String {
+        match self {
+            GeneratedValue::Empty => String::new(),
+            GeneratedValue::Text(text) => text,
+            GeneratedValue::Number(number) => number.to_string(),
+            GeneratedValue::Tag(tag) => tag,
+            GeneratedValue::List(values) => values
+                .into_iter()
+                .map(GeneratedValue::text)
+                .collect::<Vec<_>>()
+                .join(","),
+            GeneratedValue::Record(_) => String::new(),
+        }
+    }
+
+    fn number(self) -> i64 {
+        match self {
+            GeneratedValue::Number(number) => number,
+            GeneratedValue::Text(text) => text.parse().unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    fn field(self, name: &str) -> GeneratedValue {
+        match self {
+            GeneratedValue::Record(fields) => fields
+                .into_iter()
+                .find(|(field, _)| field == name)
+                .map(|(_, value)| value)
+                .unwrap_or(GeneratedValue::Empty),
+            _ => GeneratedValue::Empty,
+        }
+    }
+
+    fn truthy(self) -> bool {
+        match self {
+            GeneratedValue::Tag(tag) => tag == "True",
+            GeneratedValue::Text(text) => !text.is_empty(),
+            GeneratedValue::Number(number) => number != 0,
+            GeneratedValue::List(values) => !values.is_empty(),
+            GeneratedValue::Record(fields) => !fields.is_empty(),
+            GeneratedValue::Empty => false,
+        }
+    }
+}
+
 pub struct GeneratedSourceInputs {
     input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
     output: Arc<Mutex<Vec<SmokeOutput>>>,
@@ -138,7 +197,7 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
             .map(|_| ())
             .count()
             .filter(|(_key, count)| *count > 0)
-            .map(|_| "removed".to_owned());
+            .map(|_| (GeneratedValue::Text("removed".to_owned())).text());
         rendered
             .inspect(move |(text, time, diff)| {
                 if *diff > 0 {

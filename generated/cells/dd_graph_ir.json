@@ -31,7 +31,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "A1=1"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "A1=1"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

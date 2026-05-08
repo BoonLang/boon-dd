@@ -38,7 +38,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "2 todos"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "2 todos"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

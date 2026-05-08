@@ -38,7 +38,63 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "milk,bread"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Pipe": {
+                "input": {
+                  "Pipe": {
+                    "input": {
+                      "List": [
+                        {
+                          "Text": "milk"
+                        }
+                      ]
+                    },
+                    "stage": {
+                      "Call": {
+                        "callee": "List/append",
+                        "args": [
+                          {
+                            "Named": {
+                              "name": "item",
+                              "value": {
+                                "Text": "bread"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "stage": {
+                  "Call": {
+                    "callee": "Text/join",
+                    "args": [
+                      {
+                        "Named": {
+                          "name": "separator",
+                          "value": {
+                            "Text": ","
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

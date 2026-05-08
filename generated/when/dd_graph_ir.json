@@ -40,7 +40,9 @@
     "operation": {
       "MatchTagText": {
         "tag": "Enter",
-        "text": "accepted"
+        "expr": {
+          "Text": "accepted"
+        }
       }
     }
   }

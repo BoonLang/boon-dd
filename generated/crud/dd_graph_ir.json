@@ -38,7 +38,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "saved"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "saved"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

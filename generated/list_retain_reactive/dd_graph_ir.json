@@ -40,7 +40,9 @@
     "operation": {
       "MatchTagText": {
         "tag": "Active",
-        "text": "active"
+        "expr": {
+          "Text": "active"
+        }
       }
     }
   }

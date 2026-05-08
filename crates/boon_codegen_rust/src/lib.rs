@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     let graph = &plan.graph;
     let dd_graph_ir = &plan.dd_graph_ir;
@@ -8,6 +10,12 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("use boon_dd::{BoonTime, Diff, EncodedTime, GeneratedSourceEvent, GeneratedSourceEventPayload, MonitorRecord, NodeId, OwnerKey, RenderCommand, SmokeOutput, SourceAction, SourceFamilyId, SourceId};\n");
     code.push_str("use std::sync::{Arc, Mutex};\n");
     code.push_str("use timely::dataflow::operators::probe::Handle as ProbeHandle;\n\n");
+    code.push_str(
+        "#[allow(dead_code)]\n#[derive(Clone, Debug)]\nenum GeneratedValue {\n    Empty,\n    Text(String),\n    Number(i64),\n    Tag(String),\n    List(Vec<GeneratedValue>),\n    Record(Vec<(String, GeneratedValue)>),\n}\n\n",
+    );
+    code.push_str(
+        "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Empty => String::new(),\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Record(_) => String::new(),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse().unwrap_or(0),\n            _ => 0,\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or(GeneratedValue::Empty),\n            _ => GeneratedValue::Empty,\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => false,\n        }\n    }\n}\n\n",
+    );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
     code.push_str("    output: Arc<Mutex<Vec<SmokeOutput>>>,\n");
@@ -165,10 +173,13 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
 
 fn render_collection_from_program(program: &boon_dd::DdRenderProgram) -> String {
     match &program.operation {
-        boon_dd::DdRenderOperation::ConstantText(text) => format!(
-            "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| {:?}.to_owned());\n",
-            text
-        ),
+        boon_dd::DdRenderOperation::StaticText { expr } => {
+            let value = value_expr_code(expr, &BTreeMap::new());
+            format!(
+                "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| ({}).text());\n",
+                value
+            )
+        }
         boon_dd::DdRenderOperation::CountInputEvents { initial } => format!(
             "        let rendered = events.map(|_| ()).count().map(|(_key, count)| ({} + count as i64).to_string());\n",
             initial
@@ -176,9 +187,240 @@ fn render_collection_from_program(program: &boon_dd::DdRenderProgram) -> String 
         boon_dd::DdRenderOperation::LatestInputText => {
             "        let rendered = events.map(|(sequence, event)| ((), (sequence, boon_dd::generated_source_event_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned()
         }
-        boon_dd::DdRenderOperation::MatchTagText { tag, text } => format!(
-            "        let rendered = events.filter(|(_sequence, event)| boon_dd::generated_source_event_text(event) == {:?}).map(|_| {:?}.to_owned());\n",
-            tag, text
-        ),
+        boon_dd::DdRenderOperation::MatchTagText { tag, expr } => {
+            let value = value_expr_code(expr, &BTreeMap::new());
+            format!(
+                "        let rendered = events.filter(|(_sequence, event)| boon_dd::generated_source_event_text(event) == {:?}).map(|_| ({}).text());\n",
+                tag, value
+            )
+        }
     }
+}
+
+fn value_expr_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>) -> String {
+    match expr {
+        boon_dd::DdRenderExpr::Missing
+        | boon_dd::DdRenderExpr::Source
+        | boon_dd::DdRenderExpr::Skip => "GeneratedValue::Empty".to_owned(),
+        boon_dd::DdRenderExpr::Path(path) => path_expr_code(path, env),
+        boon_dd::DdRenderExpr::Number(number) => {
+            format!(
+                "GeneratedValue::Number({}.parse::<i64>().unwrap_or(0))",
+                quote(number)
+            )
+        }
+        boon_dd::DdRenderExpr::Tag(tag) => {
+            format!("GeneratedValue::Tag({}.to_owned())", quote(tag))
+        }
+        boon_dd::DdRenderExpr::Text(text) => {
+            format!("GeneratedValue::Text({}.to_owned())", quote(text))
+        }
+        boon_dd::DdRenderExpr::Record(fields)
+        | boon_dd::DdRenderExpr::Constructor { fields, .. } => {
+            let fields = fields
+                .iter()
+                .map(|field| {
+                    format!(
+                        "({}.to_owned(), {})",
+                        quote(&field.name),
+                        value_expr_code(&field.value, env)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("GeneratedValue::Record(vec![{}])", fields)
+        }
+        boon_dd::DdRenderExpr::List(values) => {
+            let values = values
+                .iter()
+                .map(|value| value_expr_code(value, env))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("GeneratedValue::List(vec![{}])", values)
+        }
+        boon_dd::DdRenderExpr::Block(values)
+        | boon_dd::DdRenderExpr::Latest(values)
+        | boon_dd::DdRenderExpr::Then { body: values }
+        | boon_dd::DdRenderExpr::Hold { body: values, .. } => values
+            .last()
+            .map(|value| value_expr_code(value, env))
+            .unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+        boon_dd::DdRenderExpr::Call { callee, args } => call_value_code(callee, None, args, env),
+        boon_dd::DdRenderExpr::Pipe { input, stage } => {
+            let input = value_expr_code(input, env);
+            stage_value_code(stage, Some(input), env)
+        }
+        boon_dd::DdRenderExpr::BinaryAdd { left, right } => format!(
+            "GeneratedValue::Number(({}).number() + ({}).number())",
+            value_expr_code(left, env),
+            value_expr_code(right, env)
+        ),
+        boon_dd::DdRenderExpr::Match { arms, .. } => arms
+            .iter()
+            .find(|arm| arm.pattern != "__")
+            .map(|arm| value_expr_code(&arm.value, env))
+            .unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+    }
+}
+
+fn stage_value_code(
+    stage: &boon_dd::DdRenderExpr,
+    input: Option<String>,
+    env: &BTreeMap<String, String>,
+) -> String {
+    match stage {
+        boon_dd::DdRenderExpr::Call { callee, args } => call_value_code(callee, input, args, env),
+        _ => value_expr_code(stage, env),
+    }
+}
+
+fn call_value_code(
+    callee: &str,
+    input: Option<String>,
+    args: &[boon_dd::DdRenderArg],
+    env: &BTreeMap<String, String>,
+) -> String {
+    match callee {
+        "Document/new" | "Scene/new" => input.unwrap_or_else(|| {
+            named_arg_code(args, "root", env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned())
+        }),
+        "Element/button" => {
+            named_arg_code(args, "label", env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned())
+        }
+        "Text/from_number" => input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+        "Text/append" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let suffix =
+                first_arg_code(args, env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            format!(
+                "GeneratedValue::Text(format!(\"{{}}{{}}\", ({}).text(), ({}).text()))",
+                input, suffix
+            )
+        }
+        "Text/join" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let separator = named_arg_code(args, "separator", env)
+                .unwrap_or_else(|| "GeneratedValue::Text(\",\".to_owned())".to_owned());
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::Text(values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(&({}).text())), other => GeneratedValue::Text(other.text()) }}",
+                input, separator
+            )
+        }
+        "Text/uppercase" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            format!("GeneratedValue::Text(({}).text().to_uppercase())", input)
+        }
+        "List/append" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let item = named_arg_code(args, "item", env)
+                .or_else(|| first_arg_code(args, env))
+                .unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            format!(
+                "match {} {{ GeneratedValue::List(mut values) => {{ values.push({}); GeneratedValue::List(values) }}, other => other }}",
+                input, item
+            )
+        }
+        "List/map" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let Some(new_expr) = named_arg_expr(args, "new") else {
+                return input;
+            };
+            let mut nested_env = env.clone();
+            nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
+            let mapped = value_expr_code(new_expr, &nested_env);
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::List(values.into_iter().map(|item_value| {}).collect()), other => other }}",
+                input, mapped
+            )
+        }
+        "List/retain" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let predicate = named_arg_expr(args, "if")
+                .map(|expr| {
+                    let mut nested_env = env.clone();
+                    nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
+                    format!("({}).truthy()", value_expr_code(expr, &nested_env))
+                })
+                .unwrap_or_else(|| "true".to_owned());
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::List(values.into_iter().filter(|item_value| {{ let item_value = (*item_value).clone(); {} }}).collect()), other => other }}",
+                input, predicate
+            )
+        }
+        "List/count" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            if let Some(expr) = named_arg_expr(args, "if") {
+                let mut nested_env = env.clone();
+                nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
+                let predicate = format!("({}).truthy()", value_expr_code(expr, &nested_env));
+                format!(
+                    "match {} {{ GeneratedValue::List(values) => GeneratedValue::Number(values.into_iter().filter(|item_value| {{ let item_value = (*item_value).clone(); {} }}).count() as i64), _ => GeneratedValue::Number(0) }}",
+                    input, predicate
+                )
+            } else {
+                format!(
+                    "match {} {{ GeneratedValue::List(values) => GeneratedValue::Number(values.len() as i64), _ => GeneratedValue::Number(0) }}",
+                    input
+                )
+            }
+        }
+        "Temperature/c_to_f" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            format!("GeneratedValue::Number(({}).number() * 9 / 5 + 32)", input)
+        }
+        "Bool/not" => {
+            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            format!(
+                "GeneratedValue::Tag((if ({}).truthy() {{ \"False\" }} else {{ \"True\" }}).to_owned())",
+                input
+            )
+        }
+        _ => input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+    }
+}
+
+fn path_expr_code(path: &str, env: &BTreeMap<String, String>) -> String {
+    let mut parts = path.split('.');
+    let Some(root) = parts.next() else {
+        return "GeneratedValue::Empty".to_owned();
+    };
+    let Some(mut code) = env.get(root).cloned() else {
+        return "GeneratedValue::Empty".to_owned();
+    };
+    for part in parts {
+        code = format!("({}).field({})", code, quote(part));
+    }
+    code
+}
+
+fn first_arg_code(args: &[boon_dd::DdRenderArg], env: &BTreeMap<String, String>) -> Option<String> {
+    args.iter().find_map(|arg| match arg {
+        boon_dd::DdRenderArg::Positional(value) => Some(value_expr_code(value, env)),
+        boon_dd::DdRenderArg::Named { .. } => None,
+    })
+}
+
+fn named_arg_code(
+    args: &[boon_dd::DdRenderArg],
+    name: &str,
+    env: &BTreeMap<String, String>,
+) -> Option<String> {
+    named_arg_expr(args, name).map(|expr| value_expr_code(expr, env))
+}
+
+fn named_arg_expr<'a>(
+    args: &'a [boon_dd::DdRenderArg],
+    name: &str,
+) -> Option<&'a boon_dd::DdRenderExpr> {
+    args.iter().find_map(|arg| match arg {
+        boon_dd::DdRenderArg::Named {
+            name: arg_name,
+            value,
+        } if arg_name == name => Some(value),
+        _ => None,
+    })
+}
+
+fn quote(value: &str) -> String {
+    format!("{value:?}")
 }

@@ -49,6 +49,6 @@
   ],
   "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
-  "initial_text": "removed",
+  "initial_text": "",
   "physical_scene": false
 }

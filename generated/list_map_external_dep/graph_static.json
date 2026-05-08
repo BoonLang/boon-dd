@@ -49,6 +49,6 @@
   ],
   "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
-  "initial_text": "A,B,C",
+  "initial_text": "",
   "physical_scene": false
 }

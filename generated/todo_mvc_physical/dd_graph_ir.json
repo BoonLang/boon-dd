@@ -31,7 +31,21 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "physical ready"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Text": "physical ready"
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

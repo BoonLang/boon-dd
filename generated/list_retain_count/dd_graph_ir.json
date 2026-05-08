@@ -38,7 +38,124 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "ConstantText": "2"
+      "StaticText": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Pipe": {
+                "input": {
+                  "Pipe": {
+                    "input": {
+                      "Pipe": {
+                        "input": {
+                          "List": [
+                            {
+                              "Record": [
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "Text": "milk"
+                                  }
+                                },
+                                {
+                                  "name": "completed",
+                                  "value": {
+                                    "Tag": "False"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "Record": [
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "Text": "bread"
+                                  }
+                                },
+                                {
+                                  "name": "completed",
+                                  "value": {
+                                    "Tag": "False"
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "Record": [
+                                {
+                                  "name": "title",
+                                  "value": {
+                                    "Text": "done"
+                                  }
+                                },
+                                {
+                                  "name": "completed",
+                                  "value": {
+                                    "Tag": "True"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "stage": {
+                          "Call": {
+                            "callee": "List/retain",
+                            "args": [
+                              {
+                                "Positional": {
+                                  "Path": "item"
+                                }
+                              },
+                              {
+                                "Named": {
+                                  "name": "if",
+                                  "value": {
+                                    "Pipe": {
+                                      "input": {
+                                        "Path": "item.completed"
+                                      },
+                                      "stage": {
+                                        "Call": {
+                                          "callee": "Bool/not",
+                                          "args": []
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "stage": {
+                      "Call": {
+                        "callee": "List/count",
+                        "args": []
+                      }
+                    }
+                  }
+                },
+                "stage": {
+                  "Call": {
+                    "callee": "Text/from_number",
+                    "args": []
+                  }
+                }
+              }
+            },
+            "stage": {
+              "Call": {
+                "callee": "Document/new",
+                "args": []
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
