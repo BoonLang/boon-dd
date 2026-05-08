@@ -9,3 +9,4 @@ rust-version.workspace = true
 boon_compiler = { path = "../boon_compiler" }
 boon_dd = { path = "../boon_dd" }
 serde.workspace = true
+toml.workspace = true

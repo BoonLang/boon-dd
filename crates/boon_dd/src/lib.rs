@@ -184,10 +184,17 @@ pub struct SourceAction {
     pub value: BoonValue,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScenarioCommand {
+    pub command: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScenarioStep {
     pub description: String,
     pub actions: Vec<SourceAction>,
+    #[serde(default)]
+    pub commands: Vec<ScenarioCommand>,
     pub expect_text: String,
     pub expect_monitor_changed: Vec<NodeId>,
 }

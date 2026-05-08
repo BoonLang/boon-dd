@@ -1,6 +1,8 @@
 use boon_dd::{
-    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioStep, SmokeOutput, SourceAction,
+    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioCommand, ScenarioStep, SmokeOutput,
+    SourceAction,
 };
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub struct RuntimeHost;
@@ -19,179 +21,164 @@ impl RuntimeHost {
 }
 
 pub fn parse_scenario(text: &str) -> Scenario {
-    let mut initial_expect_text = String::new();
-    let mut steps = Vec::new();
-    let mut current: Option<ScenarioStep> = None;
-    let mut in_actions = false;
-
-    for raw_line in text.lines() {
-        let line = raw_line.trim();
-        if line == "[initial]" {
-            continue;
-        }
-        if line == "[[step]]" {
-            if let Some(step) = current.take() {
-                steps.push(step);
-            }
-            current = Some(ScenarioStep {
-                description: String::new(),
-                actions: Vec::new(),
-                expect_text: String::new(),
-                expect_monitor_changed: Vec::new(),
-            });
-            in_actions = false;
-            continue;
-        }
-        if let Some(value) = quoted_assignment(line, "expect_text") {
-            if let Some(step) = current.as_mut() {
-                step.expect_text = value;
-            } else {
-                initial_expect_text = value;
-            }
-            continue;
-        }
-        if let Some(value) = quoted_assignment(line, "description") {
-            if let Some(step) = current.as_mut() {
-                step.description = value;
-            }
-            continue;
-        }
-        if line.starts_with("actions = [") {
-            in_actions = true;
-            continue;
-        }
-        if in_actions && line.starts_with(']') {
-            in_actions = false;
-            continue;
-        }
-        if in_actions && line.starts_with('{') {
-            if let Some(action) = parse_action(line) {
-                if let Some(step) = current.as_mut() {
-                    step.actions.push(action);
-                }
-            }
-            continue;
-        }
-        if let Some(values) = array_assignment(line, "expect_monitor_changed") {
-            if let Some(step) = current.as_mut() {
-                step.expect_monitor_changed = values.into_iter().map(NodeId).collect();
-            }
-        }
-    }
-
-    if let Some(step) = current.take() {
-        steps.push(step);
-    }
-
-    Scenario {
-        initial_expect_text,
-        steps,
-    }
-}
-
-fn quoted_assignment(line: &str, key: &str) -> Option<String> {
-    let prefix = format!("{key} = ");
-    let value = line.strip_prefix(&prefix)?;
-    quoted(value)
-}
-
-fn array_assignment(line: &str, key: &str) -> Option<Vec<String>> {
-    let prefix = format!("{key} = [");
-    let value = line.strip_prefix(&prefix)?.trim_end_matches(']');
-    Some(
-        value
-            .split(',')
-            .filter_map(|part| quoted(part.trim()))
-            .collect(),
-    )
-}
-
-fn parse_action(line: &str) -> Option<SourceAction> {
-    if line.contains("command =") {
-        return None;
-    }
-    let source = field_value(line, "source").and_then(|value| quoted(&value))?;
-    let owner = field_value(line, "owner").and_then(|value| quoted(&value).map(OwnerKey));
-    let generation = field_value(line, "generation").and_then(|value| value.parse::<u32>().ok());
-    let value = field_value(line, "value")
-        .map(|value| parse_value(value.trim().trim_end_matches('}').trim()))
-        .unwrap_or(BoonValue::EmptyRecord);
-    Some(SourceAction {
-        source,
-        owner,
-        generation,
-        value,
+    parse_scenario_result(text).unwrap_or_else(|_| Scenario {
+        initial_expect_text: String::new(),
+        steps: Vec::new(),
     })
 }
 
-fn field_value(line: &str, key: &str) -> Option<String> {
-    let needle = format!("{key} = ");
-    let start = line.find(&needle)? + needle.len();
-    let rest = &line[start..];
-    let mut value = String::new();
-    let mut bracket_depth = 0_i32;
-    let mut brace_depth = 0_i32;
-    let mut in_string = false;
-    for ch in rest.chars() {
-        match ch {
-            '"' => {
-                in_string = !in_string;
-                value.push(ch);
-            }
-            '[' if !in_string => {
-                bracket_depth += 1;
-                value.push(ch);
-            }
-            ']' if !in_string => {
-                bracket_depth -= 1;
-                value.push(ch);
-            }
-            '{' if !in_string => {
-                brace_depth += 1;
-                value.push(ch);
-            }
-            '}' if !in_string && bracket_depth == 0 && brace_depth == 0 => break,
-            '}' if !in_string => {
-                brace_depth -= 1;
-                value.push(ch);
-            }
-            ',' if !in_string && bracket_depth == 0 && brace_depth == 0 => break,
-            _ => value.push(ch),
+pub fn parse_scenario_result(text: &str) -> Result<Scenario, String> {
+    let root = text
+        .parse::<toml::Value>()
+        .map_err(|error| format!("invalid scenario TOML: {error}"))?;
+    let initial_expect_text = root
+        .get("initial")
+        .and_then(|initial| initial.get("expect_text"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let steps = root
+        .get("step")
+        .and_then(toml::Value::as_array)
+        .map(|steps| steps.iter().map(parse_step).collect::<Result<Vec<_>, _>>())
+        .transpose()?
+        .unwrap_or_default();
+    Ok(Scenario {
+        initial_expect_text,
+        steps,
+    })
+}
+
+fn parse_step(value: &toml::Value) -> Result<ScenarioStep, String> {
+    let description = value
+        .get("description")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let expect_text = value
+        .get("expect_text")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let expect_monitor_changed = value
+        .get("expect_monitor_changed")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(toml::Value::as_str)
+        .map(|node| NodeId(node.to_owned()))
+        .collect();
+    let mut actions = Vec::new();
+    let mut commands = Vec::new();
+    for action in value
+        .get("actions")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(command) = action.get("command").and_then(toml::Value::as_str) {
+            commands.push(ScenarioCommand {
+                command: command.to_owned(),
+            });
+        } else {
+            actions.push(parse_action(action)?);
         }
     }
-    Some(value.trim().to_owned())
+    Ok(ScenarioStep {
+        description,
+        actions,
+        commands,
+        expect_text,
+        expect_monitor_changed,
+    })
 }
 
-fn quoted(value: &str) -> Option<String> {
-    let value = value.trim().trim_end_matches(',').trim();
-    Some(value.strip_prefix('"')?.strip_suffix('"')?.to_owned())
+fn parse_action(value: &toml::Value) -> Result<SourceAction, String> {
+    let source = value
+        .get("source")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| format!("scenario action missing source: {value:?}"))?
+        .to_owned();
+    let owner = value
+        .get("owner")
+        .and_then(toml::Value::as_str)
+        .map(|owner| OwnerKey(owner.to_owned()));
+    let generation = value
+        .get("generation")
+        .and_then(toml::Value::as_integer)
+        .and_then(|generation| u32::try_from(generation).ok());
+    let payload = value
+        .get("value")
+        .map(parse_value)
+        .unwrap_or(BoonValue::EmptyRecord);
+    Ok(SourceAction {
+        source,
+        owner,
+        generation,
+        value: payload,
+    })
 }
 
-fn parse_value(value: &str) -> BoonValue {
-    if value == "[]" {
-        BoonValue::EmptyRecord
-    } else if let Some(text) = quoted(value) {
-        match text.as_str() {
-            "True" | "False" | "Enter" | "Escape" | "Active" | "Completed" => BoonValue::Tag {
-                name: boon_dd::TagName(text),
-                payload: None,
-            },
-            _ => BoonValue::Text(text),
+fn parse_value(value: &toml::Value) -> BoonValue {
+    match value {
+        toml::Value::String(text) => text_to_value(text),
+        toml::Value::Integer(number) => BoonValue::Number(BoonNumber::Int(*number)),
+        toml::Value::Float(number) => BoonValue::Number(BoonNumber::Float(*number)),
+        toml::Value::Boolean(value) => BoonValue::Tag {
+            name: boon_dd::TagName(if *value { "True" } else { "False" }.to_owned()),
+            payload: None,
+        },
+        toml::Value::Array(values) if values.is_empty() => BoonValue::EmptyRecord,
+        toml::Value::Array(values) => {
+            BoonValue::List(values.iter().map(parse_value).collect::<Vec<_>>())
         }
-    } else if value.starts_with('[') {
-        let inner = value.trim_start_matches('[').trim_end_matches(']');
-        BoonValue::List(
-            inner
-                .split(',')
-                .filter_map(|part| quoted(part.trim()))
-                .map(BoonValue::Text)
-                .collect(),
-        )
-    } else if value.starts_with('{') {
-        BoonValue::Record(Default::default())
-    } else if let Ok(number) = value.parse::<i64>() {
-        BoonValue::Number(BoonNumber::Int(number))
-    } else {
-        BoonValue::Text(value.to_owned())
+        toml::Value::Table(table) => BoonValue::Record(
+            table
+                .iter()
+                .map(|(key, value)| (key.clone(), parse_value(value)))
+                .collect::<BTreeMap<_, _>>(),
+        ),
+        toml::Value::Datetime(value) => BoonValue::Text(value.to_string()),
+    }
+}
+
+fn text_to_value(text: &str) -> BoonValue {
+    match text {
+        "True" | "False" | "Enter" | "Escape" | "Active" | "Completed" => BoonValue::Tag {
+            name: boon_dd::TagName(text.to_owned()),
+            payload: None,
+        },
+        _ => BoonValue::Text(text.to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_commands_without_dropping_them() {
+        let scenario = parse_scenario(include_str!("../../../examples/counter_hold/scenario.toml"));
+        assert!(
+            scenario
+                .steps
+                .iter()
+                .flat_map(|step| step.commands.iter())
+                .any(|command| command.command == "enable_persistence")
+        );
+    }
+
+    #[test]
+    fn parses_source_actions_structurally() {
+        let scenario = parse_scenario(include_str!("../../../examples/when/scenario.toml"));
+        let action = &scenario.steps[0].actions[0];
+        assert_eq!(action.source, "key_down.key");
+        assert!(matches!(
+            action.value,
+            BoonValue::Tag {
+                ref name,
+                payload: None
+            } if name.0 == "Enter"
+        ));
     }
 }

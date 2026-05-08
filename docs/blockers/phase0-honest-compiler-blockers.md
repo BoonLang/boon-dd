@@ -50,7 +50,7 @@ under `target/boon-artifacts/`.
 
 ## Current Evidence
 
-- `target/boon-artifacts/no-shortcuts-report.json` reports `118` shortcut
+- `target/boon-artifacts/no-shortcuts-report.json` reports `117` shortcut
   pattern hits in execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
@@ -58,8 +58,9 @@ under `target/boon-artifacts/`.
   now consumes AST/HIR for compatibility graph construction but real semantic IR
   and DD graph IR are not implemented,
   `TextBehavior` runtime semantics remain, smoke codegen remains,
-  command-dropping scenario parsing remains, and deterministic/prompt audit
-  verification remains incomplete.
+  scenario parsing now models command actions but runtime command/effect
+  execution remains incomplete, and deterministic/prompt audit verification
+  remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates as missing.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in

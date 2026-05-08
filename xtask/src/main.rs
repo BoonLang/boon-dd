@@ -1040,7 +1040,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
             "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
             "generated code still uses smoke_input_text/generated_text_collection",
-            "scenario parser still drops command actions",
+            "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
         "shortcut_scan": shortcuts,
