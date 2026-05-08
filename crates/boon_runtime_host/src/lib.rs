@@ -1,5 +1,6 @@
 use boon_dd::{
-    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioCommand, ScenarioStep, SourceAction,
+    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioCommand, ScenarioEvent,
+    ScenarioStep, SourceAction,
 };
 use std::collections::BTreeMap;
 
@@ -70,6 +71,7 @@ fn parse_step(value: &toml::Value) -> Result<ScenarioStep, String> {
         .collect();
     let mut actions = Vec::new();
     let mut commands = Vec::new();
+    let mut events = Vec::new();
     for action in value
         .get("actions")
         .and_then(toml::Value::as_array)
@@ -77,15 +79,20 @@ fn parse_step(value: &toml::Value) -> Result<ScenarioStep, String> {
         .flatten()
     {
         if let Some(command) = action.get("command").and_then(toml::Value::as_str) {
-            commands.push(ScenarioCommand {
+            let command = ScenarioCommand {
                 command: command.to_owned(),
-            });
+            };
+            events.push(ScenarioEvent::Command(command.clone()));
+            commands.push(command);
         } else {
-            actions.push(parse_action(action)?);
+            let action = parse_action(action)?;
+            events.push(ScenarioEvent::Source(action.clone()));
+            actions.push(action);
         }
     }
     Ok(ScenarioStep {
         description,
+        events,
         actions,
         commands,
         expect_text,
@@ -180,13 +187,18 @@ mod tests {
     #[test]
     fn parses_commands_without_dropping_them() {
         let scenario = parse_scenario(include_str!("../../../examples/counter_hold/scenario.toml"));
+        let events = &scenario.steps[1].events;
+        assert!(matches!(
+            &events[0],
+            ScenarioEvent::Command(command) if command.command == "enable_persistence"
+        ));
         assert!(
-            scenario
-                .steps
-                .iter()
-                .flat_map(|step| step.commands.iter())
-                .any(|command| command.command == "enable_persistence")
+            matches!(&events[1], ScenarioEvent::Source(action) if action.source == "store.sources.increment_button.event.press")
         );
+        assert!(matches!(
+            &events[2],
+            ScenarioEvent::Command(command) if command.command == "reload"
+        ));
     }
 
     #[test]

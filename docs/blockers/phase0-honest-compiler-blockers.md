@@ -124,13 +124,14 @@ under `target/boon-artifacts/`.
   hits. Remaining runtime blockers are the transitional output-template lowerer
   and incomplete command/effect/persistence execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
-  scenario, preserves command actions, and runs every parsed scenario step
-  through the generated Timely/DD graph. It still fails because command/effect/
-  persistence execution and skip-fault self-tests are incomplete. The current
-  minimized mismatch is `examples/counter_hold/scenario.toml` step 2: the
-  preserved commands are `enable_persistence` and `reload`, the generated graph
-  executes the step in epoch 2, and the actual render text is `2` while the
-  scenario expects `1`.
+  scenario, preserves ordered source/command events, and runs every parsed
+  scenario step through the generated Timely/DD graph. It still fails because
+  command/effect/persistence execution is incomplete. The current minimized
+  mismatch is `examples/counter_hold/scenario.toml` step 2: the preserved event
+  order is `command:enable_persistence`,
+  `source:store.sources.increment_button.event.press`, `command:reload`; the
+  generated graph executes the step in epoch 2, and the actual render text is
+  `2` while the scenario expects `1`.
 - The current deterministic honesty report has 0 stale artifact failures, 0
   shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
   features without full coverage, and 0 host-semantics violations.

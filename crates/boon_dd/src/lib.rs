@@ -190,8 +190,16 @@ pub struct ScenarioCommand {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ScenarioEvent {
+    Source(SourceAction),
+    Command(ScenarioCommand),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ScenarioStep {
     pub description: String,
+    #[serde(default)]
+    pub events: Vec<ScenarioEvent>,
     pub actions: Vec<SourceAction>,
     #[serde(default)]
     pub commands: Vec<ScenarioCommand>,

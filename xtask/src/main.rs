@@ -1464,7 +1464,24 @@ fn deterministic_verification_harness_self_test_gate_result(
         .iter()
         .filter(|step| !step.commands.is_empty())
         .count();
-    let first_step_only_detected = all_steps > 1 && command_steps > 0;
+    let ordered_command_step_detected = counter_hold_scenario.steps.iter().any(|step| {
+        step.events
+            .iter()
+            .map(|event| match event {
+                boon_dd::ScenarioEvent::Source(action) => format!("source:{}", action.source),
+                boon_dd::ScenarioEvent::Command(command) => {
+                    format!("command:{}", command.command)
+                }
+            })
+            .collect::<Vec<_>>()
+            == [
+                "command:enable_persistence",
+                "source:store.sources.increment_button.event.press",
+                "command:reload",
+            ]
+    });
+    let first_step_only_detected =
+        all_steps > 1 && command_steps > 0 && ordered_command_step_detected;
     record_check(
         "skipped-scenario-steps",
         "synthetic runner executes only the first step of a multi-step command scenario",
@@ -1473,6 +1490,7 @@ fn deterministic_verification_harness_self_test_gate_result(
             "scenario": "examples/counter_hold/scenario.toml",
             "all_steps": all_steps,
             "command_steps": command_steps,
+            "ordered_command_step_detected": ordered_command_step_detected,
             "first_step_runner_steps": usize::from(all_steps > 0),
         }),
     );
@@ -1989,6 +2007,8 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                     serde_json::json!({
                                         "step_index": step.step_index,
                                         "description": step.description.clone(),
+                                        "event_count": step.event_count,
+                                        "event_order": step.event_order.clone(),
                                         "action_count": step.action_count,
                                         "commands": step.commands.iter().map(|command| command.command.clone()).collect::<Vec<_>>(),
                                         "expected_text": step.expected_text.clone(),

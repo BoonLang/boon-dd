@@ -66,6 +66,8 @@ pub fn scenario_steps_for_text(scenario_text: &str) -> Vec<boon_dd::ScenarioStep
 pub struct GeneratedScenarioStepOutput {
     pub step_index: usize,
     pub description: String,
+    pub event_count: usize,
+    pub event_order: Vec<String>,
     pub action_count: usize,
     pub commands: Vec<boon_dd::ScenarioCommand>,
     pub expected_text: String,
@@ -163,6 +165,19 @@ macro_rules! run_generated_fixture_steps {
             outputs.push(GeneratedScenarioStepOutput {
                 step_index,
                 description: step.description.clone(),
+                event_count: step.events.len(),
+                event_order: step
+                    .events
+                    .iter()
+                    .map(|event| match event {
+                        boon_dd::ScenarioEvent::Source(action) => {
+                            format!("source:{}", action.source)
+                        }
+                        boon_dd::ScenarioEvent::Command(command) => {
+                            format!("command:{}", command.command)
+                        }
+                    })
+                    .collect(),
                 action_count: step.actions.len(),
                 commands: step.commands.clone(),
                 expected_text: step.expect_text.clone(),
