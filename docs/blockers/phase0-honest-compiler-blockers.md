@@ -77,7 +77,12 @@ under `target/boon-artifacts/`.
   but still fails because features and examples are explicitly
   `accepted-incomplete`.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
-  prompt pack hashes.
+  prompt pack hashes, repo-state hash, and deterministic-report hash.
+- `target/boon-artifacts/prompt-audit-report.json` now validates the required
+  seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
+  deterministic-report hash, verdict, and critical findings. It still fails
+  because no audit outputs have been produced under
+  `target/boon-artifacts/prompt-audit/`.
 
 ## Minimized Repro
 

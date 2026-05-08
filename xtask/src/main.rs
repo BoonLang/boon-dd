@@ -984,6 +984,31 @@ fn sha256_file(path: &Path) -> Result<String> {
         .with_context(|| format!("sha256sum output was empty for {}", path.display()))
 }
 
+fn sha256_text(text: &str) -> Result<String> {
+    let mut child = Command::new("sha256sum")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("failed to spawn sha256sum")?;
+    child
+        .stdin
+        .as_mut()
+        .context("sha256sum stdin unavailable")?
+        .write_all(text.as_bytes())?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        bail!(
+            "sha256sum over text failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .map(str::to_owned)
+        .context("sha256sum text output was empty")
+}
+
 fn repo_state() -> Result<serde_json::Value> {
     let root = repo_root()?;
     let status = run_capture("git", &["status", "--short"])?;
@@ -995,6 +1020,10 @@ fn repo_state() -> Result<serde_json::Value> {
         "plan_path": HONEST_COMPILER_PLAN,
         "plan_sha256": sha256_file(&plan).unwrap_or_else(|error| format!("unavailable: {error:#}")),
     }))
+}
+
+fn repo_state_hash() -> Result<String> {
+    sha256_text(&serde_json::to_string(&repo_state()?)?)
 }
 
 fn scan_honest_shortcuts() -> Result<serde_json::Value> {
@@ -2063,13 +2092,18 @@ fn write_honest_compiler_prompts(_args: &[String]) -> Result<serde_json::Value> 
             })
         })
         .collect::<Vec<_>>();
+    let deterministic_report_sha256 = deterministic_report
+        .exists()
+        .then(|| sha256_file(&deterministic_report))
+        .transpose()?;
     let details = serde_json::json!({
         "verdict": "pass",
         "repo_state": repo_state()?,
+        "repo_state_hash": repo_state_hash()?,
         "manifest": LANGUAGE_MANIFEST,
         "manifest_sha256": manifest.exists().then(|| sha256_file(&manifest).unwrap_or_else(|error| format!("unavailable: {error:#}"))),
         "deterministic_report": "target/boon-artifacts/honesty-deterministic-report.json",
-        "deterministic_report_sha256": deterministic_report.exists().then(|| sha256_file(&deterministic_report).unwrap_or_else(|error| format!("unavailable: {error:#}"))),
+        "deterministic_report_sha256": deterministic_report_sha256,
         "audits_required": [
             "01_shortcut_and_fallback_audit",
             "01_shortcut_and_fallback_audit_second_independent_auditor",
@@ -2087,30 +2121,189 @@ fn write_honest_compiler_prompts(_args: &[String]) -> Result<serde_json::Value> 
 }
 
 fn verify_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let prompt_dir = root.join("docs/prompts/honest-compiler");
+    let deterministic_report = artifacts_dir()?.join("honesty-deterministic-report.json");
+    let current_repo_state_hash = repo_state_hash()?;
+    let current_deterministic_report_hash = deterministic_report
+        .exists()
+        .then(|| sha256_file(&deterministic_report))
+        .transpose()?;
+    let required_prompt_counts = [
+        ("01_shortcut_and_fallback_audit", 2_usize),
+        ("02_language_completeness_audit", 1),
+        ("03_runtime_boundary_audit", 1),
+        ("04_verifier_fake_pass_audit", 2),
+        ("05_cross_repo_semantics_audit", 1),
+    ];
+    let mut prompt_hashes = std::collections::BTreeMap::new();
+    for (prompt_id, _count) in required_prompt_counts {
+        let path = prompt_dir.join(format!("{prompt_id}.md"));
+        prompt_hashes.insert(
+            prompt_id.to_owned(),
+            path.exists().then(|| sha256_file(&path)).transpose()?,
+        );
+    }
     let audit_dir = artifacts_dir()?.join("prompt-audit");
-    let audit_count = if audit_dir.exists() {
+    let audit_files = if audit_dir.exists() {
         fs::read_dir(&audit_dir)?
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
-            .count()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .collect::<Vec<_>>()
     } else {
-        0
+        Vec::new()
+    };
+    let mut audit_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut audits = Vec::new();
+    let mut schema_errors = Vec::new();
+    let mut critical_findings_open = 0_usize;
+    let mut inconclusive_audits = 0_usize;
+    let mut hash_mismatches = 0_usize;
+    let mut audits_passed = 0_usize;
+    for path in audit_files {
+        match validate_prompt_audit_file(
+            &path,
+            &prompt_hashes,
+            &current_repo_state_hash,
+            current_deterministic_report_hash.as_deref(),
+        ) {
+            Ok(audit) => {
+                let prompt_id = audit["prompt_id"].as_str().unwrap_or_default().to_owned();
+                *audit_counts.entry(prompt_id).or_default() += 1;
+                critical_findings_open +=
+                    audit["critical_findings_open"].as_u64().unwrap_or_default() as usize;
+                inconclusive_audits += (audit["verdict"].as_str() == Some("inconclusive")) as usize;
+                hash_mismatches += audit["hash_mismatches"].as_u64().unwrap_or_default() as usize;
+                if audit["accepted"].as_bool() == Some(true) {
+                    audits_passed += 1;
+                }
+                audits.push(audit);
+            }
+            Err(error) => schema_errors.push(serde_json::json!({
+                "path": path.display().to_string(),
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    let missing_required = required_prompt_counts
+        .iter()
+        .filter_map(|(prompt_id, required_count)| {
+            let found = audit_counts.get(*prompt_id).copied().unwrap_or_default();
+            (found < *required_count).then(|| {
+                serde_json::json!({
+                    "prompt_id": prompt_id,
+                    "required": required_count,
+                    "found": found,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let audits_required = required_prompt_counts
+        .iter()
+        .map(|(_prompt_id, count)| *count)
+        .sum::<usize>();
+    let verdict = if audits_passed == audits_required
+        && missing_required.is_empty()
+        && schema_errors.is_empty()
+        && critical_findings_open == 0
+        && inconclusive_audits == 0
+        && hash_mismatches == 0
+    {
+        "pass"
+    } else {
+        "fail"
     };
     let details = serde_json::json!({
-        "verdict": "fail",
-        "audits_required": 7,
-        "audits_passed": 0,
-        "audit_json_files_found": audit_count,
-        "critical_findings_open": "unknown",
-        "inconclusive_audits": "unknown",
-        "hash_mismatches": "unknown",
-        "blockers": [
-            "prompt audits have not been run against the deterministic report",
-            "audit outputs with prompt/repo/deterministic-report hashes are missing"
-        ],
+        "verdict": verdict,
+        "audits_required": audits_required,
+        "audits_passed": audits_passed,
+        "audit_json_files_found": audits.len() + schema_errors.len(),
+        "required_prompt_counts": required_prompt_counts,
+        "missing_required": missing_required,
+        "critical_findings_open": critical_findings_open,
+        "inconclusive_audits": inconclusive_audits,
+        "hash_mismatches": hash_mismatches,
+        "schema_errors": schema_errors,
+        "current_repo_state_hash": current_repo_state_hash,
+        "current_deterministic_report_hash": current_deterministic_report_hash,
+        "prompt_hashes": prompt_hashes,
+        "audits": audits,
+        "blockers": if verdict == "pass" {
+            Vec::<String>::new()
+        } else {
+            vec![
+                "prompt audit outputs are missing, stale, inconclusive, failing, or schema-invalid".to_owned()
+            ]
+        },
     });
     let artifact = write_artifact("prompt-audit-report.json", &details)?;
-    bail!("prompt audit is incomplete; see {}", artifact.display())
+    if verdict != "pass" {
+        bail!("prompt audit is incomplete; see {}", artifact.display());
+    }
+    Ok(details)
+}
+
+fn validate_prompt_audit_file(
+    path: &Path,
+    prompt_hashes: &std::collections::BTreeMap<String, Option<String>>,
+    current_repo_state_hash: &str,
+    current_deterministic_report_hash: Option<&str>,
+) -> Result<serde_json::Value> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("missing audit {}", path.display()))?;
+    let audit: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("invalid JSON {}", path.display()))?;
+    let prompt_id = audit
+        .get("prompt_id")
+        .and_then(|value| value.as_str())
+        .context("audit missing prompt_id")?;
+    let prompt_hash = audit
+        .get("prompt_hash")
+        .and_then(|value| value.as_str())
+        .context("audit missing prompt_hash")?;
+    let repo_state_hash = audit
+        .get("repo_state_hash")
+        .and_then(|value| value.as_str())
+        .context("audit missing repo_state_hash")?;
+    let deterministic_report_hash = audit
+        .get("deterministic_report_hash")
+        .and_then(|value| value.as_str())
+        .context("audit missing deterministic_report_hash")?;
+    let verdict = audit
+        .get("verdict")
+        .and_then(|value| value.as_str())
+        .context("audit missing verdict")?;
+    let critical_findings = audit
+        .get("critical_findings")
+        .and_then(|value| value.as_array())
+        .context("audit missing critical_findings array")?;
+    for field in ["reviewed_files", "reviewed_artifacts", "commands_reviewed"] {
+        audit
+            .get(field)
+            .and_then(|value| value.as_array())
+            .with_context(|| format!("audit missing {field} array"))?;
+    }
+    let expected_prompt_hash = prompt_hashes
+        .get(prompt_id)
+        .and_then(|hash| hash.as_deref());
+    let hash_mismatches = [
+        expected_prompt_hash != Some(prompt_hash),
+        repo_state_hash != current_repo_state_hash,
+        Some(deterministic_report_hash) != current_deterministic_report_hash,
+    ]
+    .into_iter()
+    .filter(|mismatch| *mismatch)
+    .count();
+    let accepted = verdict == "pass" && critical_findings.is_empty() && hash_mismatches == 0;
+    Ok(serde_json::json!({
+        "path": path.display().to_string(),
+        "prompt_id": prompt_id,
+        "verdict": verdict,
+        "accepted": accepted,
+        "critical_findings_open": critical_findings.len(),
+        "hash_mismatches": hash_mismatches,
+    }))
 }
 
 fn verify_example_matrix() -> Result<serde_json::Value> {
