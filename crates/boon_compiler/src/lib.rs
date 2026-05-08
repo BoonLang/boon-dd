@@ -8,7 +8,71 @@ use sha2::{Digest, Sha256};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompilePlan {
     pub source_path: String,
+    pub semantic_ir: SemanticIr,
+    pub dd_graph_ir: DdGraphIr,
     pub graph: StaticGraph,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticIr {
+    pub source_path: String,
+    pub nodes: Vec<SemanticNode>,
+    pub outputs: SemanticOutputs,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticNode {
+    pub node: NodeId,
+    pub kind: SemanticNodeKind,
+    pub shape: String,
+    pub source_span: String,
+    pub dependencies: Vec<NodeId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SemanticNodeKind {
+    SourceLeaf,
+    ConstantText,
+    ConstantNumber,
+    Tag,
+    Record,
+    List,
+    BinaryAdd,
+    Pipe,
+    Then,
+    Hold,
+    Latest,
+    When,
+    While,
+    LibraryCall,
+    RenderSink,
+    MonitorTap,
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticOutputs {
+    pub monitor_node: NodeId,
+    pub render_node: NodeId,
+    pub physical_scene: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdGraphIr {
+    pub graph_id: String,
+    pub source_hash: String,
+    pub nodes: Vec<DdGraphNode>,
+    pub unsupported_semantic_nodes: Vec<NodeId>,
+    pub compatibility_scalar_plan: DdScalarPlan,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdGraphNode {
+    pub node: NodeId,
+    pub operator: GraphOperatorKind,
+    pub inputs: Vec<NodeId>,
+    pub output: NodeId,
+    pub order: u32,
 }
 
 pub fn compile_source(path: impl Into<String>, text: impl Into<String>) -> CompilePlan {
@@ -18,10 +82,284 @@ pub fn compile_source(path: impl Into<String>, text: impl Into<String>) -> Compi
     let hir = boon_hir::lower(&parsed);
     let shapes = boon_shape::check_module(&hir);
     let graph = build_static_graph(&parsed, &hir, &shapes);
+    let semantic_ir = build_semantic_ir(&hir, &shapes, &graph);
+    let dd_graph_ir = lower_semantic_to_dd(&semantic_ir, &graph);
     CompilePlan {
         source_path: hir.source_path,
+        semantic_ir,
+        dd_graph_ir,
         graph,
     }
+}
+
+fn build_semantic_ir(
+    hir: &boon_hir::HirModule,
+    shapes: &boon_shape::ShapeReport,
+    graph: &StaticGraph,
+) -> SemanticIr {
+    let mut builder = SemanticBuilder {
+        hir,
+        shapes,
+        nodes: Vec::new(),
+        next_id: 0,
+    };
+    for definition in &hir.definitions {
+        builder.visit_definition(definition);
+    }
+    builder.nodes.push(SemanticNode {
+        node: graph.render_node.clone(),
+        kind: SemanticNodeKind::RenderSink,
+        shape: "Document".to_owned(),
+        source_span: format!("{}:document", hir.source_path),
+        dependencies: Vec::new(),
+    });
+    builder.nodes.push(SemanticNode {
+        node: graph.monitor_node.clone(),
+        kind: SemanticNodeKind::MonitorTap,
+        shape: "Text".to_owned(),
+        source_span: format!("{}:document", hir.source_path),
+        dependencies: Vec::new(),
+    });
+    SemanticIr {
+        source_path: hir.source_path.clone(),
+        nodes: builder.nodes,
+        outputs: SemanticOutputs {
+            monitor_node: graph.monitor_node.clone(),
+            render_node: graph.render_node.clone(),
+            physical_scene: graph.physical_scene,
+        },
+    }
+}
+
+struct SemanticBuilder<'a> {
+    hir: &'a boon_hir::HirModule,
+    shapes: &'a boon_shape::ShapeReport,
+    nodes: Vec<SemanticNode>,
+    next_id: usize,
+}
+
+impl SemanticBuilder<'_> {
+    fn visit_definition(&mut self, definition: &boon_hir::HirDefinition) -> NodeId {
+        self.visit_expr(
+            &definition.expression,
+            &definition.name,
+            format!(
+                "{}:{}..{}",
+                self.hir.source_path, definition.span.start, definition.span.end
+            ),
+        )
+    }
+
+    fn visit_expr(
+        &mut self,
+        expression: &boon_syntax::Expr,
+        label: &str,
+        source_span: String,
+    ) -> NodeId {
+        let child_span = source_span.clone();
+        let mut dependencies = Vec::new();
+        match expression {
+            boon_syntax::Expr::Record(fields) | boon_syntax::Expr::Constructor { fields, .. } => {
+                for field in fields {
+                    dependencies.push(self.visit_expr(
+                        &field.value,
+                        &format!("{label}.{}", field.name),
+                        child_span.clone(),
+                    ));
+                }
+            }
+            boon_syntax::Expr::List(values)
+            | boon_syntax::Expr::Block(values)
+            | boon_syntax::Expr::Latest(values)
+            | boon_syntax::Expr::Then { body: values } => {
+                for (index, value) in values.iter().enumerate() {
+                    dependencies.push(self.visit_expr(
+                        value,
+                        &format!("{label}.{index}"),
+                        child_span.clone(),
+                    ));
+                }
+            }
+            boon_syntax::Expr::Call { args, .. } => {
+                for (index, arg) in args.iter().enumerate() {
+                    let (arg_label, value) = match arg {
+                        boon_syntax::CallArg::Positional(value) => (index.to_string(), value),
+                        boon_syntax::CallArg::Named { name, value } => (name.clone(), value),
+                    };
+                    dependencies.push(self.visit_expr(
+                        value,
+                        &format!("{label}.{arg_label}"),
+                        child_span.clone(),
+                    ));
+                }
+            }
+            boon_syntax::Expr::Pipe { input, stage } => {
+                dependencies.push(self.visit_expr(
+                    input,
+                    &format!("{label}.input"),
+                    child_span.clone(),
+                ));
+                dependencies.push(self.visit_expr(
+                    stage,
+                    &format!("{label}.stage"),
+                    child_span.clone(),
+                ));
+            }
+            boon_syntax::Expr::Binary { left, right, .. } => {
+                dependencies.push(self.visit_expr(
+                    left,
+                    &format!("{label}.left"),
+                    child_span.clone(),
+                ));
+                dependencies.push(self.visit_expr(
+                    right,
+                    &format!("{label}.right"),
+                    child_span.clone(),
+                ));
+            }
+            boon_syntax::Expr::Hold { body, .. } => {
+                for (index, value) in body.iter().enumerate() {
+                    dependencies.push(self.visit_expr(
+                        value,
+                        &format!("{label}.hold.{index}"),
+                        child_span.clone(),
+                    ));
+                }
+            }
+            boon_syntax::Expr::Match { arms, .. } => {
+                for arm in arms {
+                    dependencies.push(self.visit_expr(
+                        &arm.value,
+                        &format!("{label}.arm.{}", arm.pattern),
+                        child_span.clone(),
+                    ));
+                }
+            }
+            boon_syntax::Expr::Missing
+            | boon_syntax::Expr::Path(_)
+            | boon_syntax::Expr::Number(_)
+            | boon_syntax::Expr::Source
+            | boon_syntax::Expr::Skip
+            | boon_syntax::Expr::Tag(_)
+            | boon_syntax::Expr::Text(_) => {}
+        }
+
+        let node = self.next_node(label);
+        self.nodes.push(SemanticNode {
+            node: node.clone(),
+            kind: semantic_kind(expression),
+            shape: self.shape_for(label),
+            source_span,
+            dependencies,
+        });
+        node
+    }
+
+    fn next_node(&mut self, label: &str) -> NodeId {
+        self.next_id += 1;
+        NodeId(format!(
+            "Semantic{}{}",
+            self.next_id,
+            to_pascal_identifier(label)
+        ))
+    }
+
+    fn shape_for(&self, label: &str) -> String {
+        let definition = label.split('.').next().unwrap_or(label);
+        self.shapes
+            .definitions
+            .get(definition)
+            .map(|shape| format!("{shape:?}"))
+            .unwrap_or_else(|| "Unknown".to_owned())
+    }
+}
+
+fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
+    match expression {
+        boon_syntax::Expr::Missing => SemanticNodeKind::Unknown,
+        boon_syntax::Expr::Path(_) | boon_syntax::Expr::Skip => SemanticNodeKind::Unknown,
+        boon_syntax::Expr::Number(_) => SemanticNodeKind::ConstantNumber,
+        boon_syntax::Expr::Source => SemanticNodeKind::SourceLeaf,
+        boon_syntax::Expr::Tag(_) => SemanticNodeKind::Tag,
+        boon_syntax::Expr::Text(_) => SemanticNodeKind::ConstantText,
+        boon_syntax::Expr::Record(_) | boon_syntax::Expr::Constructor { .. } => {
+            SemanticNodeKind::Record
+        }
+        boon_syntax::Expr::List(_) | boon_syntax::Expr::Block(_) => SemanticNodeKind::List,
+        boon_syntax::Expr::Latest(_) => SemanticNodeKind::Latest,
+        boon_syntax::Expr::Call { .. } => SemanticNodeKind::LibraryCall,
+        boon_syntax::Expr::Pipe { .. } => SemanticNodeKind::Pipe,
+        boon_syntax::Expr::Binary { .. } => SemanticNodeKind::BinaryAdd,
+        boon_syntax::Expr::Then { .. } => SemanticNodeKind::Then,
+        boon_syntax::Expr::Hold { .. } => SemanticNodeKind::Hold,
+        boon_syntax::Expr::Match {
+            kind: boon_syntax::MatchKind::When,
+            ..
+        } => SemanticNodeKind::When,
+        boon_syntax::Expr::Match {
+            kind: boon_syntax::MatchKind::While,
+            ..
+        } => SemanticNodeKind::While,
+    }
+}
+
+fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGraphIr {
+    let lowered_kinds = graph
+        .operators
+        .iter()
+        .filter_map(|operator| semantic_kind_for_operator(&operator.kind))
+        .collect::<std::collections::BTreeSet<_>>();
+    let unsupported_semantic_nodes = semantic_ir
+        .nodes
+        .iter()
+        .filter(|node| {
+            !matches!(
+                node.kind,
+                SemanticNodeKind::ConstantText
+                    | SemanticNodeKind::ConstantNumber
+                    | SemanticNodeKind::Tag
+                    | SemanticNodeKind::Record
+                    | SemanticNodeKind::List
+            ) && !lowered_kinds.contains(&node.kind)
+        })
+        .map(|node| node.node.clone())
+        .collect();
+    DdGraphIr {
+        graph_id: graph.graph_id.clone(),
+        source_hash: graph.source_hash.clone(),
+        nodes: graph
+            .operators
+            .iter()
+            .map(|operator| DdGraphNode {
+                node: operator.node.clone(),
+                operator: operator.kind.clone(),
+                inputs: operator.inputs.clone(),
+                output: operator.output.clone(),
+                order: operator.order,
+            })
+            .collect(),
+        unsupported_semantic_nodes,
+        compatibility_scalar_plan: graph.dd_plan.clone(),
+    }
+}
+
+fn semantic_kind_for_operator(kind: &GraphOperatorKind) -> Option<SemanticNodeKind> {
+    Some(match kind {
+        GraphOperatorKind::SourceLeaf => SemanticNodeKind::SourceLeaf,
+        GraphOperatorKind::Then | GraphOperatorKind::ThenConst => SemanticNodeKind::Then,
+        GraphOperatorKind::When => SemanticNodeKind::When,
+        GraphOperatorKind::WhileSwitch => SemanticNodeKind::While,
+        GraphOperatorKind::Latest => SemanticNodeKind::Latest,
+        GraphOperatorKind::Hold | GraphOperatorKind::KeyedHold => SemanticNodeKind::Hold,
+        GraphOperatorKind::ListAppend
+        | GraphOperatorKind::ListRemove
+        | GraphOperatorKind::ListMap
+        | GraphOperatorKind::ListRetain => SemanticNodeKind::LibraryCall,
+        GraphOperatorKind::RenderSink => SemanticNodeKind::RenderSink,
+        GraphOperatorKind::EffectSink | GraphOperatorKind::PersistTap => return None,
+        GraphOperatorKind::MonitorTap => SemanticNodeKind::MonitorTap,
+        GraphOperatorKind::LibraryCall => SemanticNodeKind::LibraryCall,
+    })
 }
 
 fn build_static_graph(

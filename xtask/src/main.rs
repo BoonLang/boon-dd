@@ -1558,14 +1558,50 @@ fn require_message<'a>(
 
 fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let shortcuts = scan_honest_shortcuts()?;
+    let root = repo_root()?;
+    let mut examples = Vec::new();
+    let mut unsupported_total = 0_usize;
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        let source_path = root.join("examples").join(example).join("source.bn");
+        let source_text = fs::read_to_string(&source_path)
+            .with_context(|| format!("missing source {}", source_path.display()))?;
+        let plan =
+            boon_compiler::compile_source(format!("examples/{example}/source.bn"), source_text);
+        let semantic_kinds = plan
+            .semantic_ir
+            .nodes
+            .iter()
+            .map(|node| format!("{:?}", node.kind))
+            .collect::<std::collections::BTreeSet<_>>();
+        let dd_operators = plan
+            .dd_graph_ir
+            .nodes
+            .iter()
+            .map(|node| format!("{:?}", node.operator))
+            .collect::<std::collections::BTreeSet<_>>();
+        unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
+        examples.push(serde_json::json!({
+            "example": example,
+            "source_path": format!("examples/{example}/source.bn"),
+            "source_sha256": plan.dd_graph_ir.source_hash,
+            "semantic_node_count": plan.semantic_ir.nodes.len(),
+            "semantic_kinds": semantic_kinds,
+            "dd_graph_node_count": plan.dd_graph_ir.nodes.len(),
+            "dd_operators": dd_operators,
+            "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
+            "compatibility_scalar_plan": plan.dd_graph_ir.compatibility_scalar_plan,
+        }));
+    }
     let details = serde_json::json!({
         "verdict": "fail",
         "shortcut_scan": shortcuts,
+        "examples_checked": examples.len(),
+        "unsupported_semantic_node_count": unsupported_total,
+        "examples": examples,
         "blockers": [
-            "semantic IR does not exist yet",
-            "DD graph IR does not exist yet",
             "codegen still selects dataflow from a compatibility scalar DD plan",
-            "accepted semantic feature to DD lowering coverage is not measurable yet"
+            "semantic IR and DD graph IR are now reportable, but accepted semantic nodes are not fully lowered",
+            "generated Rust still consumes compatibility_scalar_plan instead of DD graph IR templates"
         ],
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
