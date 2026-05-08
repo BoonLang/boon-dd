@@ -7,4 +7,4 @@ actions = [
   { source = "list", value = ["a", "b", "c"] }
 ]
 expect_text = "a,b,c"
-expect_monitor_changed = ["ListMapBlock", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

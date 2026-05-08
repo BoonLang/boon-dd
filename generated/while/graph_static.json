@@ -1,5 +1,5 @@
 {
-  "graph_id": "while",
+  "graph_id": "module_8b7fd25b6f0ba628",
   "source_path": "examples/while/source.bn",
   "source_hash": "8b7fd25b6f0ba628b0467ff9a70397511ff04be7947e730f4cc04d217fc07738",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/while/source.bn:document"
     },
     {
-      "node": "WhileFilter",
+      "node": "Visible",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/while/source.bn:document"
@@ -60,7 +60,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "WhileFilter",
+  "monitor_node": "Visible",
   "render_node": "DocumentText",
   "initial_text": "",
   "physical_scene": false

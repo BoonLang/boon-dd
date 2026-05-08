@@ -7,4 +7,4 @@ actions = [
   { source = "tick", value = [] }
 ]
 expect_text = "1"
-expect_monitor_changed = ["TimerInterval", "IntervalCounter", "DocumentText"]
+expect_monitor_changed = ["TimerInterval", "Counter", "DocumentText"]

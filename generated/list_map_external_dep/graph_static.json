@@ -1,5 +1,5 @@
 {
-  "graph_id": "list_map_external_dep",
+  "graph_id": "module_4c01ae60dd9edb81",
   "source_path": "examples/list_map_external_dep/source.bn",
   "source_hash": "4c01ae60dd9edb812b5e35c5b7aadbe5a989abb56ea6cc53e3a37e3614d7f605",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/list_map_external_dep/source.bn:document"
     },
     {
-      "node": "ListMapExternalDep",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_map_external_dep/source.bn:document"
@@ -47,7 +47,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ListMapExternalDep",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "A,B,C",
   "physical_scene": false

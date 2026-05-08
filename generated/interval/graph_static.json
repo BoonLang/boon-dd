@@ -1,5 +1,5 @@
 {
-  "graph_id": "interval",
+  "graph_id": "module_c51db24b3b3e254d",
   "source_path": "examples/interval/source.bn",
   "source_hash": "c51db24b3b3e254d25e471bbb2eeb921481abda1a6c5758da0ab93a8c5b6b978",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/interval/source.bn:document"
     },
     {
-      "node": "IntervalCounter",
+      "node": "Counter",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/interval/source.bn:document"
@@ -67,7 +67,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "IntervalCounter",
+  "monitor_node": "Counter",
   "render_node": "DocumentText",
   "initial_text": "0",
   "physical_scene": false

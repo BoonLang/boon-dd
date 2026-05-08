@@ -1,1 +1,20 @@
-{"monitor":[{"NodeValue":{"epoch":1,"node":"ListMapBlock","owner":"Root","value_preview":"a,b,c"}}],"render":[{"PatchText":{"node":"DocumentText","text":"a,b,c"}}]}
+{
+  "monitor": [
+    {
+      "NodeValue": {
+        "epoch": 1,
+        "node": "DocumentOutput",
+        "owner": "Root",
+        "value_preview": "a,b,c"
+      }
+    }
+  ],
+  "render": [
+    {
+      "PatchText": {
+        "node": "DocumentText",
+        "text": "a,b,c"
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "graph_id": "list_map_block",
+  "graph_id": "module_bc19a6b6023254c6",
   "source_path": "examples/list_map_block/source.bn",
   "source_hash": "bc19a6b6023254c67910bd8e4d67e75abdcd9a6144aa4396c8479fa905c9c513",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/list_map_block/source.bn:document"
     },
     {
-      "node": "ListMapBlock",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_map_block/source.bn:document"
@@ -47,7 +47,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ListMapBlock",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "a,b,c",
   "physical_scene": false

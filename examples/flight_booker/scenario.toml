@@ -7,4 +7,4 @@ actions = [
   { source = "book_button.event.press", value = [] }
 ]
 expect_text = "booked"
-expect_monitor_changed = ["FlightBooker", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

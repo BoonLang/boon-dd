@@ -1,1 +1,20 @@
-{"monitor":[{"NodeValue":{"epoch":1,"node":"WhileFilter","owner":"Root","value_preview":"visible"}}],"render":[{"PatchText":{"node":"DocumentText","text":"visible"}}]}
+{
+  "monitor": [
+    {
+      "NodeValue": {
+        "epoch": 1,
+        "node": "Visible",
+        "owner": "Root",
+        "value_preview": "visible"
+      }
+    }
+  ],
+  "render": [
+    {
+      "PatchText": {
+        "node": "DocumentText",
+        "text": "visible"
+      }
+    }
+  ]
+}

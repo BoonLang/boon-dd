@@ -1,5 +1,5 @@
 {
-  "graph_id": "counter_hold",
+  "graph_id": "module_95bff9fa06b9e74b",
   "source_path": "examples/counter_hold/source.bn",
   "source_hash": "95bff9fa06b9e74b54ed29f113093777aa31a33886e0c389b70733970ae53ea2",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/counter_hold/source.bn:document"
     },
     {
-      "node": "CounterHold",
+      "node": "Counter",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/counter_hold/source.bn:document"
@@ -88,7 +88,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "CounterHold",
+  "monitor_node": "Counter",
   "render_node": "DocumentText",
   "initial_text": "0",
   "physical_scene": false

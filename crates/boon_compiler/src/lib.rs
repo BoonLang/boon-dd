@@ -413,7 +413,7 @@ fn build_static_graph(
     hir: &boon_hir::HirModule,
     shapes: &boon_shape::ShapeReport,
 ) -> StaticGraph {
-    let graph_id = graph_id_from_path(&hir.source_path);
+    let graph_id = graph_id_from_source_hash(&parsed.source.text);
     let document = hir
         .definitions
         .iter()
@@ -426,13 +426,7 @@ fn build_static_graph(
     let semantic_expr = target_expr.or(document_expr);
     let operators = graph_operators(hir);
     let source_bindings = source_bindings(hir, shapes);
-    let monitor_node = NodeId(monitor_node_name(
-        &graph_id,
-        target_path.as_deref(),
-        semantic_expr,
-        hir,
-        &operators,
-    ));
+    let monitor_node = NodeId(document_output_node_name(target_path.as_deref()));
     let render_node = NodeId("DocumentText".to_owned());
     let initial_text = initial_text(document_expr, semantic_expr, hir);
     let mut nodes = Vec::new();
@@ -472,12 +466,8 @@ fn build_static_graph(
     }
 }
 
-fn graph_id_from_path(path: &str) -> String {
-    path.strip_prefix("examples/")
-        .unwrap_or(path)
-        .strip_suffix("/source.bn")
-        .unwrap_or(path.strip_prefix("examples/").unwrap_or(path))
-        .replace('/', "_")
+fn graph_id_from_source_hash(source: &str) -> String {
+    format!("module_{}", &sha256_text(source)[..16])
 }
 
 fn graph_operators(hir: &boon_hir::HirModule) -> Vec<GraphOperator> {
@@ -638,7 +628,7 @@ fn source_bindings(
         .map(|source| SourceBinding {
             source_id: SourceId(to_pascal_identifier(&source.path)),
             shape: source_shape(&source.path, shapes),
-            dynamic: source.path.starts_with("item."),
+            dynamic: false,
             path: source.path.clone(),
         })
         .collect::<Vec<_>>();
@@ -651,13 +641,14 @@ fn source_shape(path: &str, shapes: &boon_shape::ShapeReport) -> String {
     if let Some(shape) = shapes.sources.get(path) {
         return format!("{shape:?}");
     }
-    if path.ends_with(".text") || path == "text" {
-        "Text".to_owned()
-    } else if path.ends_with(".key") || path == "selected_filter" {
-        "TagSet".to_owned()
-    } else {
-        "EmptyRecord".to_owned()
-    }
+    "Unknown".to_owned()
+}
+
+fn document_output_node_name(target_path: Option<&str>) -> String {
+    target_path
+        .and_then(|path| path.rsplit('.').next())
+        .map(to_pascal_identifier)
+        .unwrap_or_else(|| "DocumentOutput".to_owned())
 }
 
 fn document_target_path(expression: &boon_syntax::Expr) -> Option<String> {
@@ -729,62 +720,6 @@ fn record_field<'a>(
             .map(|field| &field.value),
         _ => None,
     }
-}
-
-fn monitor_node_name(
-    graph_id: &str,
-    target_path: Option<&str>,
-    semantic_expr: Option<&boon_syntax::Expr>,
-    hir: &boon_hir::HirModule,
-    operators: &[GraphOperator],
-) -> String {
-    let target_name = target_path
-        .and_then(|path| path.rsplit('.').next())
-        .map(to_pascal_identifier);
-    if semantic_expr.is_some_and(|expr| {
-        expression_has_call(expr, "Math/sum")
-            && expression_or_ref_has_call(expr, "Timer/interval", hir)
-    }) {
-        return "IntervalCounter".to_owned();
-    }
-    if semantic_expr.is_some_and(|expr| {
-        expression_has_hold(expr) && expression_or_ref_has_call(expr, "Timer/interval", hir)
-    }) {
-        return "IntervalHoldCounter".to_owned();
-    }
-    if operators
-        .iter()
-        .any(|op| op.kind == GraphOperatorKind::Latest)
-        && semantic_expr.is_some_and(expression_has_latest)
-    {
-        return "LatestValue".to_owned();
-    }
-    if operators
-        .iter()
-        .any(|op| op.kind == GraphOperatorKind::When)
-        && semantic_expr
-            .is_some_and(|expr| expression_has_match(expr, boon_syntax::MatchKind::When))
-    {
-        return "WhenEnter".to_owned();
-    }
-    if operators
-        .iter()
-        .any(|op| op.kind == GraphOperatorKind::WhileSwitch)
-        && semantic_expr
-            .is_some_and(|expr| expression_has_match(expr, boon_syntax::MatchKind::While))
-    {
-        return "WhileFilter".to_owned();
-    }
-    if semantic_expr.is_some_and(expression_has_hold) {
-        return format!("{}Hold", target_name.unwrap_or_else(|| "Value".to_owned()));
-    }
-    if semantic_expr.is_some_and(|expr| expression_has_call(expr, "Math/sum")) {
-        return target_name.unwrap_or_else(|| "Sum".to_owned());
-    }
-    if semantic_expr.is_some_and(expression_has_then) {
-        return format!("Then{}", target_name.unwrap_or_else(|| "Value".to_owned()));
-    }
-    to_pascal_identifier(graph_id)
 }
 
 fn initial_text(
@@ -1048,27 +983,6 @@ fn expression_has_call(expression: &boon_syntax::Expr, callee: &str) -> bool {
     )
 }
 
-fn expression_or_ref_has_call(
-    expression: &boon_syntax::Expr,
-    callee: &str,
-    hir: &boon_hir::HirModule,
-) -> bool {
-    if expression_has_call(expression, callee) {
-        return true;
-    }
-    let mut found = false;
-    walk(expression, &mut |expr| {
-        if found {
-            return;
-        }
-        if let boon_syntax::Expr::Path(path) = expr {
-            found = target_expression(path, hir)
-                .is_some_and(|target| expression_has_call(target, callee));
-        }
-    });
-    found
-}
-
 fn expression_has_then(expression: &boon_syntax::Expr) -> bool {
     walk_any(expression, &mut |expr| {
         matches!(expr, boon_syntax::Expr::Then { .. })
@@ -1238,7 +1152,7 @@ mod tests {
             "examples/counter/source.bn",
             include_str!("../../../examples/counter/source.bn"),
         );
-        assert_eq!(plan.graph.graph_id, "counter");
+        assert!(plan.graph.graph_id.starts_with("module_"));
         assert!(
             plan.graph
                 .operators

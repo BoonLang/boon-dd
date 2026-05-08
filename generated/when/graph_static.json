@@ -1,5 +1,5 @@
 {
-  "graph_id": "when",
+  "graph_id": "module_f8883b1c8f4a4dfb",
   "source_path": "examples/when/source.bn",
   "source_hash": "f8883b1c8f4a4dfb67dbb790cc130ed9ded87d8d77bf10a68cd93e5ff95412ba",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/when/source.bn:document"
     },
     {
-      "node": "WhenEnter",
+      "node": "Accepted",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/when/source.bn:document"
@@ -60,7 +60,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "WhenEnter",
+  "monitor_node": "Accepted",
   "render_node": "DocumentText",
   "initial_text": "",
   "physical_scene": false

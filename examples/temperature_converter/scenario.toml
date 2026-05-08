@@ -7,4 +7,4 @@ actions = [
   { source = "celsius_input.text", value = "20" }
 ]
 expect_text = "68 F"
-expect_monitor_changed = ["TemperatureConverter", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

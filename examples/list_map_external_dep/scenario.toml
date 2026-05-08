@@ -7,4 +7,4 @@ actions = [
   { source = "uppercase", value = "True" }
 ]
 expect_text = "A,B,C"
-expect_monitor_changed = ["ListMapExternalDep", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

@@ -1,5 +1,5 @@
 {
-  "graph_id": "latest",
+  "graph_id": "module_03a354802943c2b6",
   "source_path": "examples/latest/source.bn",
   "source_hash": "03a354802943c2b640b6017e3de2a57c989a9c332d13d1494fd8e30b2575d925",
   "source_bindings": [
@@ -24,7 +24,7 @@
       "source_span": "examples/latest/source.bn:document"
     },
     {
-      "node": "LatestValue",
+      "node": "Value",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/latest/source.bn:document"
@@ -72,7 +72,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "LatestValue",
+  "monitor_node": "Value",
   "render_node": "DocumentText",
   "initial_text": "",
   "physical_scene": false

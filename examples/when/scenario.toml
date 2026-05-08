@@ -7,4 +7,4 @@ actions = [
   { source = "key_down.key", value = "Enter" }
 ]
 expect_text = "accepted"
-expect_monitor_changed = ["WhenEnter", "DocumentText"]
+expect_monitor_changed = ["Accepted", "DocumentText"]

@@ -1,5 +1,5 @@
 {
-  "graph_id": "interval_hold",
+  "graph_id": "module_f3dcfc6bf5fd0c81",
   "source_path": "examples/interval_hold/source.bn",
   "source_hash": "f3dcfc6bf5fd0c81bb94ca1904e3452aefd12775ed052cffae4d235b3f5fd274",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/interval_hold/source.bn:document"
     },
     {
-      "node": "IntervalHoldCounter",
+      "node": "Counter",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/interval_hold/source.bn:document"
@@ -81,7 +81,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "IntervalHoldCounter",
+  "monitor_node": "Counter",
   "render_node": "DocumentText",
   "initial_text": "0",
   "physical_scene": false

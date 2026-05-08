@@ -70,7 +70,7 @@ impl GeneratedGraphHandles {
 }
 
 pub fn graph_id() -> &'static str {
-    "list_map_external_dep"
+    "module_4c01ae60dd9edb81"
 }
 
 pub fn build_dataflow_description() -> &'static [(&'static str, &'static str)] {
@@ -91,7 +91,7 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let mut probe = ProbeHandle::new();
     let output = Arc::new(Mutex::new(Vec::<SmokeOutput>::new()));
     let output_in_graph = Arc::clone(&output);
-    let monitor_node = NodeId("ListMapExternalDep".to_owned());
+    let monitor_node = NodeId("DocumentOutput".to_owned());
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);

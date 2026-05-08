@@ -1,5 +1,5 @@
 {
-  "graph_id": "list_retain_remove",
+  "graph_id": "module_02ef4c67dcce12f9",
   "source_path": "examples/list_retain_remove/source.bn",
   "source_hash": "02ef4c67dcce12f97aee49bba2db778b12d8c842fc0bfaafbd3722d0da2d6089",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/list_retain_remove/source.bn:document"
     },
     {
-      "node": "ListRetainRemove",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_retain_remove/source.bn:document"
@@ -47,7 +47,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ListRetainRemove",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "removed",
   "physical_scene": false

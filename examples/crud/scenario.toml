@@ -7,4 +7,4 @@ actions = [
   { source = "save_button.event.press", value = [] }
 ]
 expect_text = "saved"
-expect_monitor_changed = ["Crud", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

@@ -7,4 +7,4 @@ actions = [
   { source = "filter", value = "Active" }
 ]
 expect_text = "2"
-expect_monitor_changed = ["ListRetainCount", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

@@ -1,5 +1,5 @@
 pub fn render_root() -> &'static str {
-    "shopping_list"
+    "module_6abdc5068f907d02"
 }
 pub fn render_node() -> &'static str {
     "DocumentText"

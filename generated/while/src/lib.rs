@@ -11,7 +11,7 @@ pub mod values;
 mod tests {
     #[test]
     fn generated_graph_matches_checked_scenario_output() {
-        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\"monitor\":[{\"NodeValue\":{\"epoch\":1,\"node\":\"WhileFilter\",\"owner\":\"Root\",\"value_preview\":\"visible\"}}],\"render\":[{\"PatchText\":{\"node\":\"DocumentText\",\"text\":\"visible\"}}]}")
+        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"Visible\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"visible\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"visible\"\n      }\n    }\n  ]\n}")
             .expect("checked expected render JSON should deserialize");
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),

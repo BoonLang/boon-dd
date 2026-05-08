@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "ListRetainCount",
+          "node": "DocumentOutput",
           "owner": "Root",
           "value_preview": "2"
         }

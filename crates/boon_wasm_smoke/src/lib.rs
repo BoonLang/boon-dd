@@ -8,15 +8,36 @@ macro_rules! run_generated {
         let mut worker =
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = $crate_name::graph::build_dataflow(&mut worker);
-        let mut outputs = Vec::new();
-        for (epoch, value) in [(1, "event"), (2, "Enter"), (3, "Active")] {
-            outputs = graph
-                .submit_text_and_drain(&mut worker, value, epoch, 1024)
-                .expect("generated browser WASM graph should drain");
-            if outputs.iter().any(|output| !output.render.is_empty()) {
-                break;
+        let scenario = boon_runtime_host::parse_scenario(include_str!(concat!(
+            "../../../examples/",
+            $name,
+            "/scenario.toml"
+        )));
+        let epoch = 1_u64;
+        let mut submitted = false;
+        if let Some(step) = scenario.steps.first() {
+            for action in &step.actions {
+                graph.sources.submit_action(action, epoch);
+                submitted = true;
             }
         }
+        if !submitted {
+            graph.sources.submit_text("", epoch);
+        }
+        graph.sources.close_epoch(epoch);
+        let target = $crate_name::graph::completion_time(epoch) + 1;
+        let mut steps = 0_usize;
+        while graph.probe.less_than(&target) {
+            if steps == 1024 {
+                panic!(
+                    "generated browser WASM graph {} probe stalled at {target} after {steps} steps",
+                    $name
+                );
+            }
+            worker.step();
+            steps += 1;
+        }
+        let outputs = graph.sources.outputs();
         (
             $name,
             outputs

@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "WhenEnter",
+          "node": "Accepted",
           "owner": "Root",
           "value_preview": "accepted"
         }

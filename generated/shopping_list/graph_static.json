@@ -1,5 +1,5 @@
 {
-  "graph_id": "shopping_list",
+  "graph_id": "module_6abdc5068f907d02",
   "source_path": "examples/shopping_list/source.bn",
   "source_hash": "6abdc5068f907d026016b35a6beec362d978fe79a9fcc42153b5f3a64cb05a4f",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/shopping_list/source.bn:document"
     },
     {
-      "node": "ShoppingList",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/shopping_list/source.bn:document"
@@ -47,7 +47,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ShoppingList",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "milk,bread",
   "physical_scene": false

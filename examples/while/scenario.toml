@@ -7,4 +7,4 @@ actions = [
   { source = "selected_filter", value = "Active" }
 ]
 expect_text = "visible"
-expect_monitor_changed = ["WhileFilter", "DocumentText"]
+expect_monitor_changed = ["Visible", "DocumentText"]

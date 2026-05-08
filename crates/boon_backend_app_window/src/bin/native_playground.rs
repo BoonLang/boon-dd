@@ -1323,12 +1323,18 @@ fn write_per_example_screenshots(
         let pixels = rasterize_vertices(WIDTH, HEIGHT, &vertices);
         let screenshot = screenshots_dir.join(format!("{:02}-{}.png", index + 1, example.name));
         write_png_rgb(&screenshot, WIDTH, HEIGHT, &pixels)?;
+        let generated_output = boon_examples::run_generated_actions_at(
+            example.fixture_index,
+            &example.scenario_actions,
+        )
+        .map(|(_name, output)| output);
         entries.push(serde_json::json!({
             "example": &example.name,
             "selected_index": index,
             "scene_kind": scene.evidence.scene_kind,
             "native_widgets": scene.evidence.native_widgets,
             "rendered_vertices": vertices.len(),
+            "generated_output": generated_output,
             "screenshot": screenshot,
         }));
     }

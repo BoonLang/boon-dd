@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "CounterHold",
+          "node": "Counter",
           "owner": "Root",
           "value_preview": "1"
         }

@@ -1,5 +1,5 @@
 pub fn render_root() -> &'static str {
-    "temperature_converter"
+    "module_b50788f0f4b02652"
 }
 pub fn render_node() -> &'static str {
     "DocumentText"

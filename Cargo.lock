@@ -714,6 +714,7 @@ name = "boon_wasm_smoke"
 version = "0.1.0"
 dependencies = [
  "boon_dd",
+ "boon_runtime_host",
  "generated_cells",
  "generated_counter",
  "generated_counter_hold",

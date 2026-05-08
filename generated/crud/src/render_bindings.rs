@@ -1,5 +1,5 @@
 pub fn render_root() -> &'static str {
-    "crud"
+    "module_f760154427ea497f"
 }
 pub fn render_node() -> &'static str {
     "DocumentText"

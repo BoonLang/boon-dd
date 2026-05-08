@@ -7,4 +7,4 @@ actions = [
   { source = "store.sources.frame", value = { delta = 16, now = 16 } }
 ]
 expect_text = "frame 1"
-expect_monitor_changed = ["Pong", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

@@ -1,1 +1,20 @@
-{"monitor":[{"NodeValue":{"epoch":1,"node":"IntervalHoldCounter","owner":"Root","value_preview":"1"}}],"render":[{"PatchText":{"node":"DocumentText","text":"1"}}]}
+{
+  "monitor": [
+    {
+      "NodeValue": {
+        "epoch": 1,
+        "node": "Counter",
+        "owner": "Root",
+        "value_preview": "1"
+      }
+    }
+  ],
+  "render": [
+    {
+      "PatchText": {
+        "node": "DocumentText",
+        "text": "1"
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "Cells",
+          "node": "DocumentOutput",
           "owner": "Root",
           "value_preview": "A1=1"
         }

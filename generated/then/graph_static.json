@@ -1,5 +1,5 @@
 {
-  "graph_id": "then",
+  "graph_id": "module_1380010dd36446ae",
   "source_path": "examples/then/source.bn",
   "source_hash": "1380010dd36446aef52b3399a94b0e8ea80379cef4b3fa696da21ce949833816",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/then/source.bn:document"
     },
     {
-      "node": "ThenValue",
+      "node": "Value",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/then/source.bn:document"
@@ -67,7 +67,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ThenValue",
+  "monitor_node": "Value",
   "render_node": "DocumentText",
   "initial_text": "0",
   "physical_scene": false

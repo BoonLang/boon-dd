@@ -1,5 +1,5 @@
 {
-  "graph_id": "todo_mvc",
+  "graph_id": "module_ef126e810b7c5288",
   "source_path": "examples/todo_mvc/source.bn",
   "source_hash": "ef126e810b7c5288c5a3698fa154508504fb02b08c019499e88c069290bcacc5",
   "source_bindings": [
@@ -24,7 +24,7 @@
       "source_span": "examples/todo_mvc/source.bn:document"
     },
     {
-      "node": "TodoMvc",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/todo_mvc/source.bn:document"
@@ -72,7 +72,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "TodoMvc",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "2 todos",
   "physical_scene": false

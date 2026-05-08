@@ -1,5 +1,5 @@
 {
-  "graph_id": "list_retain_reactive",
+  "graph_id": "module_052f0d5e5e1ebe05",
   "source_path": "examples/list_retain_reactive/source.bn",
   "source_hash": "052f0d5e5e1ebe051a9b0141c6a311149bb90c46e61cd0c384b7583138b359e0",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/list_retain_reactive/source.bn:document"
     },
     {
-      "node": "WhileFilter",
+      "node": "Visible",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_retain_reactive/source.bn:document"
@@ -60,7 +60,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "WhileFilter",
+  "monitor_node": "Visible",
   "render_node": "DocumentText",
   "initial_text": "",
   "physical_scene": false

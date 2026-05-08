@@ -1,5 +1,5 @@
 {
-  "graph_id": "todo_mvc_physical",
+  "graph_id": "module_f9046673e2d56937",
   "source_path": "examples/todo_mvc_physical/source.bn",
   "source_hash": "f9046673e2d569372f48aee62fafb98385a7378449c360bab2c9168fe6639956",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/todo_mvc_physical/source.bn:document"
     },
     {
-      "node": "TodoMvcPhysical",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/todo_mvc_physical/source.bn:document"
@@ -40,7 +40,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "TodoMvcPhysical",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "physical ready",
   "physical_scene": true

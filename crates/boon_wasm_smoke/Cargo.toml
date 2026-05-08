@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 boon_dd = { path = "../boon_dd" }
+boon_runtime_host = { path = "../boon_runtime_host" }
 generated_cells = { path = "../../generated/cells" }
 generated_counter = { path = "../../generated/counter" }
 generated_counter_hold = { path = "../../generated/counter_hold" }

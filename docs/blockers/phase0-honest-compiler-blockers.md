@@ -58,11 +58,16 @@ under `target/boon-artifacts/`.
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates with current evidence, hashes, and tool versions.
-  Parser completeness, semantic IR coverage, generated-only runtime,
-  adversarial no-heuristics, and stale-artifact rejection pass; source truth,
-  phase boundary, resolver/shape, DD lowering, scenario protocol, cross-host
-  parity still fail. The verifier self-test gate now passes with synthetic
-  injected-fault checks.
+  Parser completeness, phase boundary, semantic IR coverage, generated-only
+  runtime, adversarial no-heuristics, stale-artifact rejection, cross-host
+  parity, and the verifier self-test pass. Source truth, resolver/shape, DD
+  lowering, and scenario protocol still fail.
+- `target/boon-artifacts/phase-boundary-report.json` now writes the canonical
+  per-example AST/HIR/shape/semantic/DD summary and scans compiler boundary
+  violations. It currently reports verdict `pass` with `0` compiler boundary
+  violations after removing path-derived graph IDs, source path shape/dynamic
+  fallbacks, and operator/example-specific monitor sink selection from
+  `crates/boon_compiler/src/lib.rs`.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
   and no missing required generated artifact paths, including
   `generated/<example>/dd_graph_ir.json` for all 22 required examples.
@@ -92,12 +97,10 @@ under `target/boon-artifacts/`.
   stale artifact hashes, skipped multi-step scenarios, wrong generated fixture
   outputs, and disabled DD lowering.
 - `target/boon-artifacts/cross-host-parity-report.json` now compares terminal
-  scenario outputs with browser generated-WASM smoke outputs and records the
-  native parity gap. It still fails because browser smoke is not yet the
-  canonical per-example scenario protocol and native proof does not expose
-  structured generated DD outputs. The current terminal/browser mismatches are
-  `latest`, `when`, `while`, and `list_retain_reactive`; native structured
-  outputs are `0` of `22`.
+  scenario outputs with browser generated-WASM smoke outputs and records native
+  structured generated DD outputs. It reports verdict `pass`: browser smoke
+  submits checked scenario actions, terminal/browser output hashes match for all
+  22 examples, and native proof exposes `generated_output` for all 22 examples.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
   seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
   deterministic-report hash, verdict, and critical findings. It still fails
@@ -130,7 +133,7 @@ under `target/boon-artifacts/`.
   scenario expects `1`.
 - The current deterministic honesty report has 0 stale artifact failures, 0
   shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
-  features without full coverage, and 1 host-semantics violation.
+  features without full coverage, and 0 host-semantics violations.
 
 ## Minimized Repro
 

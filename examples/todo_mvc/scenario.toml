@@ -8,4 +8,4 @@ actions = [
   { source = "store.sources.new_todo_input.event.key_down.key", value = "Enter" }
 ]
 expect_text = "2 todos"
-expect_monitor_changed = ["TodoMvc", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]

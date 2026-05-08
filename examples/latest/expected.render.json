@@ -1,1 +1,20 @@
-{"monitor":[{"NodeValue":{"epoch":1,"node":"LatestValue","owner":"Root","value_preview":"branch_b"}}],"render":[{"PatchText":{"node":"DocumentText","text":"branch_b"}}]}
+{
+  "monitor": [
+    {
+      "NodeValue": {
+        "epoch": 1,
+        "node": "Value",
+        "owner": "Root",
+        "value_preview": "branch_b"
+      }
+    }
+  ],
+  "render": [
+    {
+      "PatchText": {
+        "node": "DocumentText",
+        "text": "branch_b"
+      }
+    }
+  ]
+}

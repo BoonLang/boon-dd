@@ -8,4 +8,4 @@ actions = [
   { source = "b", value = "branch_b" }
 ]
 expect_text = "branch_b"
-expect_monitor_changed = ["LatestValue", "DocumentText"]
+expect_monitor_changed = ["Value", "DocumentText"]

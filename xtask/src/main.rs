@@ -270,7 +270,7 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
             bail!("Firefox smoke output did not contain required example {example}: {output}");
         }
     }
-    for required in ["CounterHold", "TodoMvcPhysical", "DocumentText"] {
+    for required in ["Counter", "DocumentOutput", "DocumentText"] {
         if !output.contains(required) {
             bail!(
                 "Firefox smoke output did not contain expected monitor/render record {required}: {output}"
@@ -1736,6 +1736,31 @@ fn deterministic_parser_gate(root: &Path, manifest: &LanguageManifest) -> GateRe
 }
 
 fn deterministic_phase_boundary_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let started = Instant::now();
+    match deterministic_phase_boundary_gate_result(root, manifest, started) {
+        Ok(report) => report,
+        Err(error) => GateReport {
+            name: "phase-boundary".to_owned(),
+            command: "emit AST/HIR/shape/semantic/DD graph summaries for every manifest source"
+                .to_owned(),
+            status: "failed".to_owned(),
+            duration_ms: started.elapsed().as_millis(),
+            artifacts: Vec::new(),
+            details: serde_json::json!({
+                "error": format!("{error:#}"),
+                "blockers": [
+                    "phase-boundary verifier crashed before it could write the canonical phase report"
+                ],
+            }),
+        },
+    }
+}
+
+fn deterministic_phase_boundary_gate_result(
+    root: &Path,
+    manifest: &LanguageManifest,
+    started: Instant,
+) -> Result<GateReport> {
     let mut cases = Vec::new();
     let mut failures = Vec::new();
     for example in &manifest.examples {
@@ -1762,22 +1787,86 @@ fn deterministic_phase_boundary_gate(root: &Path, manifest: &LanguageManifest) -
             })),
         }
     }
-    GateReport {
+    let phase_boundary_violations = scan_phase_boundary_violations(root)?;
+    let passed = failures.is_empty() && phase_boundary_violations.is_empty();
+    let details = serde_json::json!({
+        "verdict": if passed { "pass" } else { "fail" },
+        "cases": cases,
+        "failures": failures,
+        "phase_boundary_violations": phase_boundary_violations,
+        "blockers": if passed {
+            Vec::<String>::new()
+        } else {
+            vec![
+                "phase summaries are written to a canonical verifier artifact, but compiler boundary violations remain".to_owned(),
+                "later compiler phases still contain source-path/source-name semantic fallbacks instead of consuming typed HIR/semantic IR only".to_owned(),
+            ]
+        },
+    });
+    let artifact = write_artifact("phase-boundary-report.json", &details)?;
+    Ok(GateReport {
         name: "phase-boundary".to_owned(),
         command: "emit AST/HIR/shape/semantic/DD graph summaries for every manifest source"
             .to_owned(),
-        status: "failed".to_owned(),
-        duration_ms: 0,
-        artifacts: Vec::new(),
-        details: serde_json::json!({
-            "cases": cases,
-            "failures": failures,
-            "blockers": [
-                "phase summaries are in the report but not yet canonical checked artifacts",
-                "no guard proves later phases cannot read raw source text for semantic decisions"
-            ],
-        }),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn scan_phase_boundary_violations(root: &Path) -> Result<Vec<serde_json::Value>> {
+    let compiler_path = root.join("crates/boon_compiler/src/lib.rs");
+    let text = fs::read_to_string(&compiler_path)
+        .with_context(|| format!("missing {}", compiler_path.display()))?;
+    let patterns = [
+        (
+            "graph_id_from_path",
+            "graph identity is derived from source path instead of module metadata or semantic IR",
+        ),
+        (
+            "strip_prefix(\"examples/",
+            "compiler has example-path-specific graph identity logic",
+        ),
+        (
+            "strip_suffix(\"/source.bn\")",
+            "compiler has source-filename-specific graph identity logic",
+        ),
+        (
+            "path.ends_with(\".text\")",
+            "source shape falls back to path suffix instead of typed source metadata",
+        ),
+        (
+            "path.ends_with(\".key\")",
+            "source shape falls back to path suffix instead of typed source metadata",
+        ),
+        (
+            "path == \"selected_filter\"",
+            "source shape falls back to a source name instead of typed source metadata",
+        ),
+        (
+            "source.path.starts_with(\"item.\")",
+            "dynamic source family detection falls back to a source path prefix",
+        ),
+        (
+            "monitor_node_name(",
+            "monitor sink identity is still selected in compatibility graph construction instead of typed output metadata",
+        ),
+    ];
+    let mut hits = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        for (pattern, reason) in patterns {
+            if line.contains(pattern) {
+                hits.push(serde_json::json!({
+                    "path": compiler_path.display().to_string(),
+                    "line": line_index + 1,
+                    "pattern": pattern,
+                    "reason": reason,
+                }));
+            }
+        }
     }
+    Ok(hits)
 }
 
 fn deterministic_resolver_shape_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {

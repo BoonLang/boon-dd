@@ -1,5 +1,5 @@
 {
-  "graph_id": "list_object_state",
+  "graph_id": "module_f52673216be2e830",
   "source_path": "examples/list_object_state/source.bn",
   "source_hash": "f52673216be2e8308c5bdba5376d7617fe6d5c70247db7d522be4d9c6469eeb0",
   "source_bindings": [],
@@ -11,7 +11,7 @@
       "source_span": "examples/list_object_state/source.bn:document"
     },
     {
-      "node": "ListObjectState",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_object_state/source.bn:document"
@@ -40,7 +40,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "ListObjectState",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "2 active",
   "physical_scene": false

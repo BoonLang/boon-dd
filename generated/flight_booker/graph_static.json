@@ -1,5 +1,5 @@
 {
-  "graph_id": "flight_booker",
+  "graph_id": "module_6b3269955f1c59ef",
   "source_path": "examples/flight_booker/source.bn",
   "source_hash": "6b3269955f1c59ef48aee0d7d8564eac5845eece2b1bbbb2a9140e5cc734cfa5",
   "source_bindings": [
@@ -18,7 +18,7 @@
       "source_span": "examples/flight_booker/source.bn:document"
     },
     {
-      "node": "FlightBooker",
+      "node": "DocumentOutput",
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/flight_booker/source.bn:document"
@@ -60,7 +60,7 @@
       "order": 101
     }
   ],
-  "monitor_node": "FlightBooker",
+  "monitor_node": "DocumentOutput",
   "render_node": "DocumentText",
   "initial_text": "booked",
   "physical_scene": false

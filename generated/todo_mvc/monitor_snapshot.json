@@ -4,7 +4,7 @@
       {
         "NodeValue": {
           "epoch": 1,
-          "node": "TodoMvc",
+          "node": "DocumentOutput",
           "owner": "Root",
           "value_preview": "2 todos"
         }

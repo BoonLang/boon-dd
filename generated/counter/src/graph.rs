@@ -70,7 +70,7 @@ impl GeneratedGraphHandles {
 }
 
 pub fn graph_id() -> &'static str {
-    "counter"
+    "module_14e71401ff831fec"
 }
 
 pub fn build_dataflow_description() -> &'static [(&'static str, &'static str)] {

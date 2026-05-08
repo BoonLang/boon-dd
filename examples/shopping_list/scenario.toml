@@ -8,4 +8,4 @@ actions = [
   { source = "new_item_input.event.key_down.key", value = "Enter" }
 ]
 expect_text = "milk,bread"
-expect_monitor_changed = ["ShoppingList", "DocumentText"]
+expect_monitor_changed = ["DocumentOutput", "DocumentText"]
