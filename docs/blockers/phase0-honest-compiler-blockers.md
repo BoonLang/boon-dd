@@ -52,10 +52,12 @@ under `target/boon-artifacts/`.
 
 - `target/boon-artifacts/no-shortcuts-report.json` reports `175` shortcut
   pattern hits in execution paths and generated code.
-- `target/boon-artifacts/honest-compiler-report.json` reports the main Phase 0
-  blockers: skeletal parser/HIR/shape, source-text compiler heuristics,
-  `TextBehavior` runtime semantics, smoke codegen, command-dropping scenario
-  parsing, and missing deterministic/prompt audit verification.
+- `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
+  parser AST exists for the current corpus but compiler semantics still do not
+  consume it, HIR/shape remain skeletal, source-text compiler heuristics remain,
+  `TextBehavior` runtime semantics remain, smoke codegen remains,
+  command-dropping scenario parsing remains, and deterministic/prompt audit
+  verification remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates as missing.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
@@ -75,10 +77,11 @@ and `smoke_input_text`.
 
 ## Next Pin/Fork/Fix Decision
 
-Continue with Phase 1 and Phase 2 of `BOON_DD_HONEST_COMPILER_PLAN.md`:
+Continue with Phase 2 of `BOON_DD_HONEST_COMPILER_PLAN.md`:
 
-1. Replace `boon_syntax::parse_source` with a real parser.
-2. Replace path-only HIR with real lowering and name/source resolution.
+1. Replace path-only HIR with real lowering and name/source resolution.
+2. Make compiler semantics consume structured AST/HIR rather than raw source
+   text.
 3. Keep `verify-no-shortcuts` failing until the execution paths no longer use
    text heuristics, smoke runtime semantics, or host-side Boon behavior.
 

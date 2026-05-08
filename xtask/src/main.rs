@@ -1035,7 +1035,8 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
         "repo_state": repo_state()?,
         "plan": HONEST_COMPILER_PLAN,
         "blockers": [
-            "parser/HIR/shape are skeletal",
+            "parser AST exists for the current corpus, but compiler semantics still do not consume it",
+            "HIR/shape are still skeletal",
             "compiler still derives semantic graph from raw source text",
             "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
             "generated code still uses smoke_input_text/generated_text_collection",
