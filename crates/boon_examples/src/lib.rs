@@ -49,11 +49,13 @@ pub fn run_embedded_matrix() -> Vec<(String, boon_dd::SmokeOutput)> {
         .filter_map(|fixture| {
             let scenario = boon_runtime_host::parse_scenario(fixture.scenario);
             boon_runtime_host::RuntimeHost
-                .compile_and_run_step(
+                .compile_and_run_scenario(
                     &format!("examples/{}/source.bn", fixture.name),
                     fixture.source,
                     &scenario,
                 )
+                .into_iter()
+                .next()
                 .map(|output| (fixture.name.to_owned(), output))
         })
         .collect()

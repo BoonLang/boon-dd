@@ -8,15 +8,14 @@ use std::collections::BTreeMap;
 pub struct RuntimeHost;
 
 impl RuntimeHost {
-    pub fn compile_and_run_step(
+    pub fn compile_and_run_scenario(
         &self,
         source_path: &str,
         source_text: &str,
         scenario: &Scenario,
-    ) -> Option<SmokeOutput> {
+    ) -> Vec<SmokeOutput> {
         let graph = boon_compiler::compile_source(source_path, source_text).graph;
-        let step = scenario.steps.first()?;
-        Some(boon_dd::execute_static_graph(&graph, &step.actions))
+        boon_dd::execute_scenario(&graph, scenario)
     }
 }
 

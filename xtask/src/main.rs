@@ -1038,7 +1038,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
-            "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
+            "runtime still exposes TextBehavior/execute_static_graph/evaluate_text through boon_dd compatibility execution",
             "generated code still uses smoke_input_text/generated_text_collection",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
@@ -1609,7 +1609,9 @@ fn compiled_example_json(example: &str) -> Result<String> {
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let source_path_string = format!("examples/{example}/source.bn");
     let output = boon_runtime_host::RuntimeHost
-        .compile_and_run_step(&source_path_string, &source_text, &scenario)
+        .compile_and_run_scenario(&source_path_string, &source_text, &scenario)
+        .into_iter()
+        .next()
         .with_context(|| format!("example {example} has no runnable scenario step"))?;
     serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
 }
