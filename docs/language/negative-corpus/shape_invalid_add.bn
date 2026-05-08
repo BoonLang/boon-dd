@@ -1,0 +1,5 @@
+value:
+    TEXT { a } + 1
+
+document:
+    value |> Document/new()

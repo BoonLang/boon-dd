@@ -1,0 +1,5 @@
+id = "unsupported_library_call"
+phase = "shape"
+source = "docs/language/negative-corpus/unsupported_library_call.bn"
+expect_diagnostic_contains = "unknown call `Unknown/lib`"
+

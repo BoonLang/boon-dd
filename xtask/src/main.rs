@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
@@ -1110,25 +1110,235 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
     )
 }
 
+#[derive(Debug, Deserialize)]
+struct LanguageManifest {
+    language: ManifestLanguage,
+    #[serde(default)]
+    features: Vec<ManifestFeature>,
+    #[serde(default)]
+    examples: Vec<ManifestExample>,
+    #[serde(default)]
+    negative_examples: Vec<ManifestNegativeExample>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestLanguage {
+    accepted_language_version: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestFeature {
+    id: String,
+    status: String,
+    #[serde(default)]
+    positive_examples: Vec<String>,
+    #[serde(default)]
+    negative_examples: Vec<String>,
+    #[serde(default)]
+    required_coverage: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestExample {
+    id: String,
+    source: String,
+    scenario: String,
+    expected_render: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestNegativeExample {
+    id: String,
+    phase: String,
+    source: String,
+    metadata: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NegativeCase {
+    id: String,
+    phase: String,
+    source: String,
+    #[serde(default)]
+    expect_diagnostic_contains: Option<String>,
+    #[serde(default)]
+    expect_no_sources: bool,
+}
+
+fn read_language_manifest() -> Result<LanguageManifest> {
+    let path = repo_root()?.join(LANGUAGE_MANIFEST);
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("missing language manifest {}", path.display()))?;
+    toml::from_str(&text).with_context(|| format!("invalid TOML {}", path.display()))
+}
+
 fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let manifest = root.join(LANGUAGE_MANIFEST);
+    let parsed_manifest = read_language_manifest()?;
     let examples = required_examples_from_disk()?;
-    let manifest_text = fs::read_to_string(&manifest).unwrap_or_default();
+    let manifest_example_ids = parsed_manifest
+        .examples
+        .iter()
+        .map(|example| example.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let manifest_negative_ids = parsed_manifest
+        .negative_examples
+        .iter()
+        .map(|example| example.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     let missing_examples = examples
         .iter()
-        .filter(|example| !manifest_text.contains(&format!("id = \"{example}\"")))
+        .filter(|example| !manifest_example_ids.contains(*example))
         .cloned()
         .collect::<Vec<_>>();
+    let mut missing_example_files = Vec::new();
+    for example in &parsed_manifest.examples {
+        for (kind, path) in [
+            ("source", example.source.as_str()),
+            ("scenario", example.scenario.as_str()),
+            ("expected_render", example.expected_render.as_str()),
+        ] {
+            if !root.join(path).exists() {
+                missing_example_files.push(serde_json::json!({
+                    "example": example.id,
+                    "kind": kind,
+                    "path": path,
+                }));
+            }
+        }
+    }
+    let feature_unknown_positive_examples = parsed_manifest
+        .features
+        .iter()
+        .flat_map(|feature| {
+            feature
+                .positive_examples
+                .iter()
+                .filter(|example| !manifest_example_ids.contains(*example))
+                .map(|example| {
+                    serde_json::json!({
+                        "feature": feature.id,
+                        "example": example,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    let feature_unknown_negative_examples = parsed_manifest
+        .features
+        .iter()
+        .flat_map(|feature| {
+            feature
+                .negative_examples
+                .iter()
+                .filter(|example| !manifest_negative_ids.contains(*example))
+                .map(|example| {
+                    serde_json::json!({
+                        "feature": feature.id,
+                        "negative_example": example,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    let features_without_positive = parsed_manifest
+        .features
+        .iter()
+        .filter(|feature| feature.positive_examples.is_empty())
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    let features_without_negative = parsed_manifest
+        .features
+        .iter()
+        .filter(|feature| feature.negative_examples.is_empty())
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    let incomplete_features = parsed_manifest
+        .features
+        .iter()
+        .filter(|feature| feature.status != "accepted")
+        .map(|feature| {
+            serde_json::json!({
+                "id": feature.id,
+                "status": feature.status,
+                "required_coverage": feature.required_coverage,
+            })
+        })
+        .collect::<Vec<_>>();
+    let incomplete_examples = parsed_manifest
+        .examples
+        .iter()
+        .filter(|example| example.status != "accepted")
+        .map(|example| {
+            serde_json::json!({
+                "id": example.id,
+                "status": example.status,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut negative_files_missing = Vec::new();
+    for example in &parsed_manifest.negative_examples {
+        for (kind, path) in [
+            ("source", example.source.as_str()),
+            ("metadata", example.metadata.as_str()),
+        ] {
+            if !root.join(path).exists() {
+                negative_files_missing.push(serde_json::json!({
+                    "negative_example": example.id,
+                    "kind": kind,
+                    "path": path,
+                }));
+            }
+        }
+    }
+    let incomplete_negative_examples = parsed_manifest
+        .negative_examples
+        .iter()
+        .filter(|example| example.status != "checked")
+        .map(|example| {
+            serde_json::json!({
+                "id": example.id,
+                "phase": example.phase,
+                "status": example.status,
+            })
+        })
+        .collect::<Vec<_>>();
+    let structural_errors = [
+        missing_examples.is_empty(),
+        missing_example_files.is_empty(),
+        feature_unknown_positive_examples.is_empty(),
+        feature_unknown_negative_examples.is_empty(),
+        features_without_positive.is_empty(),
+        features_without_negative.is_empty(),
+        negative_files_missing.is_empty(),
+        incomplete_negative_examples.is_empty(),
+    ]
+    .into_iter()
+    .any(|ok| !ok);
     let details = serde_json::json!({
         "verdict": "fail",
         "manifest": LANGUAGE_MANIFEST,
         "manifest_exists": manifest.exists(),
+        "accepted_language_version": parsed_manifest.language.accepted_language_version,
+        "language_status": parsed_manifest.language.status,
         "examples_on_disk": examples,
         "missing_examples_in_manifest": missing_examples,
+        "missing_example_files": missing_example_files,
+        "feature_count": parsed_manifest.features.len(),
+        "features_without_positive_examples": features_without_positive,
+        "features_without_negative_examples": features_without_negative,
+        "feature_unknown_positive_examples": feature_unknown_positive_examples,
+        "feature_unknown_negative_examples": feature_unknown_negative_examples,
+        "negative_example_count": parsed_manifest.negative_examples.len(),
+        "negative_files_missing": negative_files_missing,
+        "incomplete_negative_examples": incomplete_negative_examples,
+        "incomplete_features": incomplete_features,
+        "incomplete_examples": incomplete_examples,
+        "structural_errors": structural_errors,
         "blockers": [
-            "manifest is Phase 0 inventory, not full accepted-language coverage",
-            "positive and negative feature coverage IDs are not complete",
+            "manifest is still marked incomplete and examples/features are not accepted",
             "parser/resolver/shape/semantic IR/DD lowering coverage reports do not exist yet"
         ],
     });
@@ -1142,25 +1352,208 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
 fn verify_negative_corpus(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let negative_dir = root.join("docs/language/negative-corpus");
-    let case_count = if negative_dir.exists() {
-        fs::read_dir(&negative_dir)?
+    let manifest = read_language_manifest()?;
+    let mut cases = Vec::new();
+    let mut failures = Vec::new();
+    let metadata_paths = if negative_dir.exists() {
+        let mut paths = fs::read_dir(&negative_dir)?
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("bn"))
-            .count()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("toml"))
+            .collect::<Vec<_>>();
+        paths.sort();
+        paths
     } else {
-        0
+        Vec::new()
+    };
+    for path in metadata_paths {
+        match run_negative_case(&path) {
+            Ok(case) => cases.push(case),
+            Err(error) => failures.push(serde_json::json!({
+                "metadata": path.display().to_string(),
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    let phases = cases
+        .iter()
+        .filter_map(|case| case["phase"].as_str().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+    let required_phases = ["syntax", "resolver", "shape", "adversarial-no-heuristics"];
+    let missing_phases = required_phases
+        .iter()
+        .filter(|phase| !phases.contains(**phase))
+        .copied()
+        .collect::<Vec<_>>();
+    let manifest_negative_ids = manifest
+        .negative_examples
+        .iter()
+        .map(|example| example.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let case_ids = cases
+        .iter()
+        .filter_map(|case| case["id"].as_str().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+    let missing_manifest_cases = manifest_negative_ids
+        .difference(&case_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected_cases = case_ids
+        .difference(&manifest_negative_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let verdict = if failures.is_empty()
+        && missing_phases.is_empty()
+        && missing_manifest_cases.is_empty()
+        && unexpected_cases.is_empty()
+        && !cases.is_empty()
+    {
+        "pass"
+    } else {
+        "fail"
     };
     let details = serde_json::json!({
-        "verdict": "fail",
+        "verdict": verdict,
         "negative_corpus_dir": "docs/language/negative-corpus",
-        "negative_bn_case_count": case_count,
-        "blockers": [
-            "negative syntax/resolver/type/heuristic fixtures are not implemented",
-            "adversarial no-heuristics transformations are not implemented"
-        ],
+        "negative_case_count": cases.len(),
+        "required_phases": required_phases,
+        "phases_covered": phases,
+        "missing_phases": missing_phases,
+        "missing_manifest_cases": missing_manifest_cases,
+        "unexpected_cases": unexpected_cases,
+        "failures": failures,
+        "cases": cases,
     });
     let artifact = write_artifact("negative-corpus-report.json", &details)?;
-    bail!("negative corpus is incomplete; see {}", artifact.display())
+    if verdict != "pass" {
+        bail!("negative corpus is incomplete; see {}", artifact.display());
+    }
+    Ok(details)
+}
+
+fn run_negative_case(metadata_path: &Path) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let metadata_text = fs::read_to_string(metadata_path)
+        .with_context(|| format!("missing negative metadata {}", metadata_path.display()))?;
+    let case: NegativeCase = toml::from_str(&metadata_text)
+        .with_context(|| format!("invalid negative metadata {}", metadata_path.display()))?;
+    let source_path = root.join(&case.source);
+    let source_text = fs::read_to_string(&source_path)
+        .with_context(|| format!("missing negative source {}", source_path.display()))?;
+    let parsed = boon_syntax::parse_source(case.source.clone(), source_text);
+    let mut evidence = serde_json::Map::new();
+    evidence.insert(
+        "syntax_diagnostics".to_owned(),
+        serde_json::json!(parsed.diagnostics),
+    );
+
+    match case.phase.as_str() {
+        "syntax" => {
+            let expected = case
+                .expect_diagnostic_contains
+                .as_deref()
+                .context("syntax negative case missing expect_diagnostic_contains")?;
+            require_message(
+                parsed
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.message.as_str()),
+                expected,
+                &case.id,
+            )?;
+        }
+        "resolver" => {
+            let hir = boon_hir::lower(&parsed);
+            let unresolved = boon_hir::unresolved_references(&hir);
+            evidence.insert(
+                "hir_diagnostics".to_owned(),
+                serde_json::json!(hir.diagnostics),
+            );
+            evidence.insert(
+                "unresolved_references".to_owned(),
+                serde_json::json!(unresolved),
+            );
+            let expected = case
+                .expect_diagnostic_contains
+                .as_deref()
+                .context("resolver negative case missing expect_diagnostic_contains")?;
+            require_message(unresolved.iter().map(String::as_str), expected, &case.id)?;
+        }
+        "shape" => {
+            let hir = boon_hir::lower(&parsed);
+            let shape = boon_shape::check_module(&hir);
+            evidence.insert(
+                "hir_diagnostics".to_owned(),
+                serde_json::json!(hir.diagnostics),
+            );
+            evidence.insert(
+                "shape_diagnostics".to_owned(),
+                serde_json::json!(shape.diagnostics),
+            );
+            let expected = case
+                .expect_diagnostic_contains
+                .as_deref()
+                .context("shape negative case missing expect_diagnostic_contains")?;
+            require_message(
+                shape
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.message.as_str()),
+                expected,
+                &case.id,
+            )?;
+        }
+        "adversarial-no-heuristics" => {
+            if !parsed.diagnostics.is_empty() {
+                bail!(
+                    "adversarial case {} should parse without diagnostics: {:?}",
+                    case.id,
+                    parsed.diagnostics
+                );
+            }
+            let hir = boon_hir::lower(&parsed);
+            let plan =
+                boon_compiler::compile_source(&case.source, fs::read_to_string(&source_path)?);
+            evidence.insert("hir_sources".to_owned(), serde_json::json!(hir.sources));
+            evidence.insert(
+                "source_bindings".to_owned(),
+                serde_json::json!(plan.graph.source_bindings),
+            );
+            if case.expect_no_sources
+                && (!hir.sources.is_empty() || !plan.graph.source_bindings.is_empty())
+            {
+                bail!(
+                    "adversarial case {} detected sources from non-semantic text",
+                    case.id
+                );
+            }
+        }
+        phase => bail!("unknown negative case phase `{phase}` for {}", case.id),
+    }
+
+    Ok(serde_json::json!({
+        "id": case.id,
+        "phase": case.phase,
+        "source": case.source,
+        "metadata": metadata_path.strip_prefix(repo_root()?).unwrap_or(metadata_path).display().to_string(),
+        "status": "passed",
+        "evidence": evidence,
+    }))
+}
+
+fn require_message<'a>(
+    messages: impl IntoIterator<Item = &'a str>,
+    expected: &str,
+    case_id: &str,
+) -> Result<()> {
+    let messages = messages.into_iter().collect::<Vec<_>>();
+    if messages.iter().any(|message| message.contains(expected)) {
+        Ok(())
+    } else {
+        bail!(
+            "negative case {case_id} did not produce expected diagnostic `{expected}`; messages: {messages:?}"
+        )
+    }
 }
 
 fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {

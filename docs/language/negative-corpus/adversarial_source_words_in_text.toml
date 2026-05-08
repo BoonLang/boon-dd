@@ -1,0 +1,5 @@
+id = "adversarial_source_words_in_text"
+phase = "adversarial-no-heuristics"
+source = "docs/language/negative-corpus/adversarial_source_words_in_text.bn"
+expect_no_sources = true
+

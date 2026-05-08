@@ -31,7 +31,6 @@ Error: deterministic honesty verification is not complete; see target/boon-artif
 
 ```bash
 cargo xtask verify-language-corpus --format json
-cargo xtask verify-negative-corpus --format json
 cargo xtask verify-lowering --format json
 cargo xtask verify-generated-freshness --format json
 cargo xtask verify-prompt-audit --format json
@@ -62,6 +61,13 @@ under `target/boon-artifacts/`.
   deterministic honesty gates as missing.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
   and no missing required generated artifact paths.
+- `target/boon-artifacts/negative-corpus-report.json` now reports verdict
+  `pass` across syntax, resolver, shape, unsupported-library, and
+  adversarial no-heuristics cases.
+- `target/boon-artifacts/language-corpus-report.json` reports no structural
+  manifest errors, no missing example entries, and no missing negative coverage,
+  but still fails because features and examples are explicitly
+  `accepted-incomplete`.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
   prompt pack hashes.
 
@@ -76,8 +82,8 @@ jq '.success, [.gates[] | select(.status == "failed") | {name, command, error: .
 
 The expected current failed gates are `verify-honest-compiler`,
 `verify-honesty-deterministic`, `verify-language-corpus`,
-`verify-negative-corpus`, `verify-lowering`, `verify-generated-freshness`, and
-`verify-prompt-audit`. `verify-no-shortcuts`, `verify-playgrounds`, plan
+`verify-lowering`, `verify-generated-freshness`, and `verify-prompt-audit`.
+`verify-no-shortcuts`, `verify-negative-corpus`, `verify-playgrounds`, plan
 coverage, generated crate tests, and terminal/native/browser target tests are
 expected to pass.
 

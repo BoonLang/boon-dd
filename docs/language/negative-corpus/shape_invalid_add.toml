@@ -1,0 +1,5 @@
+id = "shape_invalid_add"
+phase = "shape"
+source = "docs/language/negative-corpus/shape_invalid_add.bn"
+expect_diagnostic_contains = "cannot add shapes Text and Number"
+

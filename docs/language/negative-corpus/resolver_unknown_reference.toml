@@ -1,0 +1,5 @@
+id = "resolver_unknown_reference"
+phase = "resolver"
+source = "docs/language/negative-corpus/resolver_unknown_reference.bn"
+expect_diagnostic_contains = "missing_value"
+

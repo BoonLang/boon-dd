@@ -1,0 +1,5 @@
+id = "syntax_unterminated_text"
+phase = "syntax"
+source = "docs/language/negative-corpus/syntax_unterminated_text.bn"
+expect_diagnostic_contains = "unterminated TEXT literal"
+

@@ -15,43 +15,78 @@ plan = "BOON_DD_HONEST_COMPILER_PLAN.md"
 id = "source-marker"
 status = "accepted-incomplete"
 positive_examples = ["counter", "counter_hold", "latest", "todo_mvc"]
-negative_examples = []
+negative_examples = ["adversarial_source_words_in_text"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
 
 [[features]]
 id = "pipes-and-library-calls"
 status = "accepted-incomplete"
 positive_examples = ["counter", "temperature_converter", "list_map_block"]
-negative_examples = []
+negative_examples = ["unsupported_library_call"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
 
 [[features]]
 id = "then-when-while-latest-hold"
 status = "accepted-incomplete"
 positive_examples = ["then", "when", "while", "latest", "counter_hold", "interval_hold"]
-negative_examples = []
+negative_examples = ["syntax_unterminated_text", "shape_invalid_add"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
 
 [[features]]
 id = "lists-records-blocks"
 status = "accepted-incomplete"
 positive_examples = ["list_map_block", "list_object_state", "list_retain_count", "shopping_list", "todo_mvc"]
-negative_examples = []
+negative_examples = ["shape_invalid_add"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
 
 [[features]]
 id = "document-element-rendering"
 status = "accepted-incomplete"
 positive_examples = ["counter", "crud", "flight_booker", "todo_mvc", "todo_mvc_physical"]
-negative_examples = []
+negative_examples = ["resolver_unknown_reference"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
 
 [[features]]
 id = "time-frame-and-physical-scene"
 status = "accepted-incomplete"
 positive_examples = ["interval", "interval_hold", "pong", "cells", "todo_mvc_physical"]
-negative_examples = []
+negative_examples = ["adversarial_source_words_in_text"]
 required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[negative_examples]]
+id = "syntax_unterminated_text"
+phase = "syntax"
+source = "docs/language/negative-corpus/syntax_unterminated_text.bn"
+metadata = "docs/language/negative-corpus/syntax_unterminated_text.toml"
+status = "checked"
+
+[[negative_examples]]
+id = "resolver_unknown_reference"
+phase = "resolver"
+source = "docs/language/negative-corpus/resolver_unknown_reference.bn"
+metadata = "docs/language/negative-corpus/resolver_unknown_reference.toml"
+status = "checked"
+
+[[negative_examples]]
+id = "shape_invalid_add"
+phase = "shape"
+source = "docs/language/negative-corpus/shape_invalid_add.bn"
+metadata = "docs/language/negative-corpus/shape_invalid_add.toml"
+status = "checked"
+
+[[negative_examples]]
+id = "unsupported_library_call"
+phase = "shape"
+source = "docs/language/negative-corpus/unsupported_library_call.bn"
+metadata = "docs/language/negative-corpus/unsupported_library_call.toml"
+status = "checked"
+
+[[negative_examples]]
+id = "adversarial_source_words_in_text"
+phase = "adversarial-no-heuristics"
+source = "docs/language/negative-corpus/adversarial_source_words_in_text.bn"
+metadata = "docs/language/negative-corpus/adversarial_source_words_in_text.toml"
+status = "checked"
 
 [[examples]]
 id = "cells"

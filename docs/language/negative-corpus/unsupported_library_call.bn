@@ -1,0 +1,5 @@
+value:
+    1
+
+document:
+    value |> Unknown/lib()

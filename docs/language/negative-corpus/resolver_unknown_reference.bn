@@ -1,0 +1,2 @@
+document:
+    missing_value |> Document/new()

@@ -1,0 +1,2 @@
+document:
+    TEXT { SOURCE THEN WHEN WHILE counter pong A1: 1 } |> Document/new()

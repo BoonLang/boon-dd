@@ -4638,10 +4638,14 @@ dependencies = [
  "boon_compiler",
  "boon_dd",
  "boon_examples",
+ "boon_hir",
  "boon_runtime_host",
+ "boon_shape",
+ "boon_syntax",
  "naga",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
