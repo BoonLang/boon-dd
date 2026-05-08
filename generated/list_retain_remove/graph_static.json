@@ -2,7 +2,14 @@
   "graph_id": "module_02ef4c67dcce12f9",
   "source_path": "examples/list_retain_remove/source.bn",
   "source_hash": "02ef4c67dcce12f97aee49bba2db778b12d8c842fc0bfaafbd3722d0da2d6089",
-  "source_bindings": [],
+  "source_bindings": [
+    {
+      "source_id": "ItemSourcesRemoveButtonEventPress",
+      "path": "item.sources.remove_button.event.press",
+      "shape": "SourceMarker",
+      "dynamic": false
+    }
+  ],
   "nodes": [
     {
       "node": "DocumentText",
@@ -15,6 +22,12 @@
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/list_retain_remove/source.bn:document"
+    },
+    {
+      "node": "ItemSourcesRemoveButtonEventPress",
+      "kind": "source.leaf",
+      "shape": "SourceMarker",
+      "source_span": "examples/list_retain_remove/source.bn:item.sources.remove_button.event.press"
     }
   ],
   "operators": [

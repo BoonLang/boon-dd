@@ -183,6 +183,7 @@ pub fn completion_time(epoch: u64) -> u64 {
 fn source_id_for_path(path: &str) -> String {
     match path {
         "frame" => "Frame".to_owned(),
+        "store.sources.frame" => "StoreSourcesFrame".to_owned(),
         other => other.to_owned(),
     }
 }

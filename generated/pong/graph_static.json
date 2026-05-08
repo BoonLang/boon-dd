@@ -8,6 +8,12 @@
       "path": "frame",
       "shape": "SourceMarker",
       "dynamic": false
+    },
+    {
+      "source_id": "StoreSourcesFrame",
+      "path": "store.sources.frame",
+      "shape": "SourceMarker",
+      "dynamic": false
     }
   ],
   "nodes": [
@@ -28,6 +34,12 @@
       "kind": "source.leaf",
       "shape": "SourceMarker",
       "source_span": "examples/pong/source.bn:frame"
+    },
+    {
+      "node": "StoreSourcesFrame",
+      "kind": "source.leaf",
+      "shape": "SourceMarker",
+      "source_span": "examples/pong/source.bn:store.sources.frame"
     }
   ],
   "operators": [

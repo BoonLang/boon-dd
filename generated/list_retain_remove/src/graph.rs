@@ -180,6 +180,7 @@ pub fn completion_time(epoch: u64) -> u64 {
 
 fn source_id_for_path(path: &str) -> String {
     match path {
+        "item.sources.remove_button.event.press" => "ItemSourcesRemoveButtonEventPress".to_owned(),
         other => other.to_owned(),
     }
 }

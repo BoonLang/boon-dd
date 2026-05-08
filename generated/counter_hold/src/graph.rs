@@ -184,6 +184,7 @@ pub fn completion_time(epoch: u64) -> u64 {
 
 fn source_id_for_path(path: &str) -> String {
     match path {
+        "store.sources.increment_button" => "StoreSourcesIncrementButton".to_owned(),
         "store.sources.increment_button.event.press" => {
             "StoreSourcesIncrementButtonEventPress".to_owned()
         }

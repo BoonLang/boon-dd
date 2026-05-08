@@ -2015,6 +2015,32 @@ fn deterministic_resolver_shape_gate_result(
             .features
             .iter()
             .all(|feature| feature.status == "accepted");
+    let mut blockers = Vec::new();
+    if !resolver_shape_heuristics.is_empty() {
+        blockers.push(
+            "resolver/shape coverage is report-backed, but the implementation still contains path/root/library heuristics".to_owned(),
+        );
+    }
+    if !shape_failures.is_empty() || !unknown_shapes.is_empty() || !missing_source_shapes.is_empty()
+    {
+        blockers.push(
+            "shape checking must reject Unknown fallbacks and prove source families, dynamic owner scopes, host bindings, and library contracts through typed metadata".to_owned(),
+        );
+    }
+    if manifest
+        .features
+        .iter()
+        .any(|feature| feature.status != "accepted")
+    {
+        blockers.push(
+            "language manifest features remain accepted-incomplete, so this gate cannot honestly pass".to_owned(),
+        );
+    }
+    if !source_errors.is_empty() || !unresolved.is_empty() {
+        blockers.push(
+            "resolver/shape inputs still contain missing sources, parser diagnostics, HIR diagnostics, or unresolved references".to_owned(),
+        );
+    }
     let details = serde_json::json!({
         "verdict": if passed { "pass" } else { "fail" },
         "scope": "all manifest examples plus resolver/shape source scan",
@@ -2031,15 +2057,7 @@ fn deterministic_resolver_shape_gate_result(
             .filter(|feature| feature.status != "accepted")
             .map(|feature| feature.id.clone())
             .collect::<Vec<_>>(),
-        "blockers": if passed {
-            Vec::<String>::new()
-        } else {
-            vec![
-                "resolver/shape coverage is report-backed, but the implementation still contains path/root/library heuristics".to_owned(),
-                "shape checking must reject Unknown fallbacks and prove source families, dynamic owner scopes, host bindings, and library contracts through typed metadata".to_owned(),
-                "language manifest features remain accepted-incomplete, so this gate cannot honestly pass".to_owned(),
-            ]
-        },
+        "blockers": blockers,
     });
     let artifact = write_artifact("resolver-shape-report.json", &details)?;
     Ok(GateReport {

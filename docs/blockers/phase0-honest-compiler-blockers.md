@@ -68,14 +68,16 @@ under `target/boon-artifacts/`.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
   runtime, adversarial no-heuristics, stale-artifact rejection, cross-host
   parity, scenario protocol, no-shortcuts, and the verifier self-test pass.
-  Source truth, resolver/shape, and DD lowering still fail.
+  Source truth and resolver/shape still fail because the manifest is explicitly
+  incomplete; DD lowering still fails because the DD graph IR does not yet cover
+  the full render/effect/persistence protocol.
 - `target/boon-artifacts/resolver-shape-report.json` is now the canonical
   resolver/shape artifact. It enumerates every manifest example, definitions,
   source bindings, source shapes, unresolved references, shape diagnostics,
   unknown shapes, and a resolver/shape heuristic scan. The latest focused run
   has 0 unresolved references, 0 shape diagnostics, 0 unknown shapes, and 0
-  missing source shapes, but still fails because HIR/shape implementation has
-  path/root/library heuristics and all manifest features remain
+  missing source shapes. The resolver/shape heuristic scan now has 0 hits; this
+  gate still fails only because all manifest features remain
   `accepted-incomplete`.
 - `target/boon-artifacts/phase-boundary-report.json` now writes the canonical
   per-example AST/HIR/shape/semantic/DD summary and scans compiler boundary
@@ -181,17 +183,18 @@ tests, and terminal/native/browser target tests are expected to pass.
 
 ## Next Pin/Fork/Fix Decision
 
-Continue with the remaining Phase 2 and Phase 3 work in
+Continue with the remaining Phase 3 and Phase 4 work in
 `BOON_DD_HONEST_COMPILER_PLAN.md`:
 
-1. Finish resolver diagnostics and name/source resolution.
-2. Expand shape/type checking from initial reports into full accepted-language
-   coverage.
-3. Replace the scalar `DdRenderProgram` path with semantic IR, DD graph IR, and
+1. Expand the manifest from `accepted-incomplete` to `accepted` only when every
+   feature has parser, resolver, shape, semantic IR, DD lowering, generated
+   runtime, host parity, positive fixture, and negative diagnostic coverage.
+2. Replace the scalar `DdRenderProgram` path with semantic IR, DD graph IR, and
    generated-only runtime execution for structured render, effect, monitor, and
    persistence protocols.
-4. Keep `verify-no-shortcuts` passing while replacing the remaining scalar
-   render program and resolver/shape heuristics.
+3. Keep `verify-no-shortcuts`, `plan-coverage`, resolver/shape scans, generated
+   freshness, and generated-crate checks passing while replacing the remaining
+   scalar render program.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.

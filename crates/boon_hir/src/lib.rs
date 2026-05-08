@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+const SOURCE_NAMESPACE: &str = "sources";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HirModule {
     pub source_path: String,
@@ -53,13 +55,15 @@ pub fn lower(parsed: &boon_syntax::ParsedModule) -> HirModule {
                 span: definition.span.clone(),
             });
         }
-        let mut path_stack = vec![definition.name.clone()];
-        collect_sources(&definition.expression, &mut path_stack, &mut sources);
         definitions.push(HirDefinition {
             name: definition.name.clone(),
             expression: definition.expression.clone(),
             span: definition.span.clone(),
         });
+    }
+    for definition in &definitions {
+        let mut path_stack = vec![definition.name.clone()];
+        collect_sources(&definition.expression, &mut path_stack, &mut sources);
     }
 
     HirModule {
@@ -86,7 +90,7 @@ fn collect_sources(
             }
         }
         boon_syntax::Expr::Path(path) => {
-            if let Some(source_path) = implicit_source_path(path) {
+            if let Some(source_path) = source_namespace_reference(path) {
                 sources.entry(source_path).or_insert(false);
             }
         }
@@ -104,15 +108,26 @@ fn collect_sources(
                 path_stack.pop();
             }
         }
-        boon_syntax::Expr::List(values)
-        | boon_syntax::Expr::Block(values)
-        | boon_syntax::Expr::Latest(values)
-        | boon_syntax::Expr::Then { body: values } => {
+        boon_syntax::Expr::List(values) | boon_syntax::Expr::Block(values) => {
             for value in values {
                 collect_sources(value, path_stack, sources);
             }
         }
-        boon_syntax::Expr::Call { args, .. } => {
+        boon_syntax::Expr::Latest(values) => {
+            for value in values {
+                collect_sources(value, path_stack, sources);
+                collect_path_source_reference(value, sources);
+            }
+        }
+        boon_syntax::Expr::Then { body: values } => {
+            for value in values {
+                collect_sources(value, path_stack, sources);
+            }
+        }
+        boon_syntax::Expr::Call { callee, args } => {
+            if source_call(callee) && !path_stack.is_empty() {
+                sources.insert(path_stack.join("."), true);
+            }
             for arg in args {
                 match arg {
                     boon_syntax::CallArg::Positional(value) => {
@@ -129,6 +144,9 @@ fn collect_sources(
         boon_syntax::Expr::Pipe { input, stage } => {
             collect_sources(input, path_stack, sources);
             collect_sources(stage, path_stack, sources);
+            if pipe_stage_consumes_source(stage) {
+                collect_path_source_reference(input, sources);
+            }
         }
         boon_syntax::Expr::Binary { left, right, .. } => {
             collect_sources(left, path_stack, sources);
@@ -152,14 +170,39 @@ fn collect_sources(
     }
 }
 
-fn implicit_source_path(path: &str) -> Option<String> {
-    if let Some(rest) = path.strip_prefix("sources.") {
-        return Some(rest.to_owned());
+fn collect_path_source_reference(
+    expression: &boon_syntax::Expr,
+    sources: &mut BTreeMap<String, bool>,
+) {
+    if let boon_syntax::Expr::Path(path) = expression {
+        sources.entry(source_reference(path)).or_insert(false);
     }
-    if matches!(path, "selected_filter" | "tick") {
-        return Some(path.to_owned());
+}
+
+fn source_reference(path: &str) -> String {
+    source_namespace_reference(path).unwrap_or_else(|| path.to_owned())
+}
+
+fn source_namespace_reference(path: &str) -> Option<String> {
+    let parts = path.split('.').collect::<Vec<_>>();
+    let source_index = parts.iter().position(|part| *part == SOURCE_NAMESPACE)?;
+    if source_index == 0 {
+        let rest = parts.get(1..).unwrap_or_default().join(".");
+        if rest.is_empty() { None } else { Some(rest) }
+    } else {
+        Some(path.to_owned())
     }
-    None
+}
+
+fn source_call(callee: &str) -> bool {
+    matches!(callee, "Timer/interval" | "Window/animation_frame")
+}
+
+fn pipe_stage_consumes_source(stage: &boon_syntax::Expr) -> bool {
+    matches!(
+        stage,
+        boon_syntax::Expr::Then { .. } | boon_syntax::Expr::Match { .. }
+    )
 }
 
 pub fn unresolved_references(module: &HirModule) -> Vec<String> {
@@ -168,9 +211,20 @@ pub fn unresolved_references(module: &HirModule) -> Vec<String> {
         .iter()
         .map(|definition| definition.name.as_str())
         .collect::<BTreeSet<_>>();
+    let sources = module
+        .sources
+        .iter()
+        .map(|source| source.path.as_str())
+        .collect::<BTreeSet<_>>();
     let mut refs = BTreeSet::new();
     for definition in &module.definitions {
-        collect_top_level_refs(&definition.expression, &definitions, &mut refs);
+        collect_top_level_refs(
+            &definition.expression,
+            &definitions,
+            &sources,
+            &mut Vec::new(),
+            &mut refs,
+        );
     }
     refs.into_iter().map(str::to_owned).collect()
 }
@@ -178,25 +232,21 @@ pub fn unresolved_references(module: &HirModule) -> Vec<String> {
 fn collect_top_level_refs<'a>(
     expression: &'a boon_syntax::Expr,
     definitions: &BTreeSet<&str>,
+    sources: &BTreeSet<&str>,
+    scopes: &mut Vec<&'a str>,
     refs: &mut BTreeSet<&'a str>,
 ) {
     match expression {
         boon_syntax::Expr::Path(path) => {
             let root = path.split('.').next().unwrap_or(path.as_str());
+            let resolved_source = sources.contains(path.as_str())
+                || source_namespace_reference(path)
+                    .as_deref()
+                    .is_some_and(|path| sources.contains(path));
             if !definitions.contains(root)
-                && !matches!(
-                    root,
-                    "SOURCE"
-                        | "SKIP"
-                        | "True"
-                        | "False"
-                        | "sources"
-                        | "item"
-                        | "state"
-                        | "game"
-                        | "selected_filter"
-                        | "store"
-                )
+                && !scopes.contains(&root)
+                && root != SOURCE_NAMESPACE
+                && !resolved_source
                 && !root.contains('/')
             {
                 refs.insert(root);
@@ -204,7 +254,7 @@ fn collect_top_level_refs<'a>(
         }
         boon_syntax::Expr::Record(fields) => {
             for field in fields {
-                collect_top_level_refs(&field.value, definitions, refs);
+                collect_top_level_refs(&field.value, definitions, sources, scopes, refs);
             }
         }
         boon_syntax::Expr::List(values)
@@ -212,40 +262,55 @@ fn collect_top_level_refs<'a>(
         | boon_syntax::Expr::Latest(values)
         | boon_syntax::Expr::Then { body: values } => {
             for value in values {
-                collect_top_level_refs(value, definitions, refs);
+                collect_top_level_refs(value, definitions, sources, scopes, refs);
             }
         }
         boon_syntax::Expr::Call { args, .. } => {
-            for arg in args {
-                match arg {
-                    boon_syntax::CallArg::Positional(value)
-                    | boon_syntax::CallArg::Named { value, .. } => {
-                        collect_top_level_refs(value, definitions, refs)
+            if let Some((binder, rest)) = call_binder(args) {
+                scopes.push(binder);
+                for arg in rest {
+                    match arg {
+                        boon_syntax::CallArg::Positional(value)
+                        | boon_syntax::CallArg::Named { value, .. } => {
+                            collect_top_level_refs(value, definitions, sources, scopes, refs)
+                        }
+                    }
+                }
+                scopes.pop();
+            } else {
+                for arg in args {
+                    match arg {
+                        boon_syntax::CallArg::Positional(value)
+                        | boon_syntax::CallArg::Named { value, .. } => {
+                            collect_top_level_refs(value, definitions, sources, scopes, refs)
+                        }
                     }
                 }
             }
         }
         boon_syntax::Expr::Constructor { fields, .. } => {
             for field in fields {
-                collect_top_level_refs(&field.value, definitions, refs);
+                collect_top_level_refs(&field.value, definitions, sources, scopes, refs);
             }
         }
         boon_syntax::Expr::Pipe { input, stage } => {
-            collect_top_level_refs(input, definitions, refs);
-            collect_top_level_refs(stage, definitions, refs);
+            collect_top_level_refs(input, definitions, sources, scopes, refs);
+            collect_top_level_refs(stage, definitions, sources, scopes, refs);
         }
         boon_syntax::Expr::Binary { left, right, .. } => {
-            collect_top_level_refs(left, definitions, refs);
-            collect_top_level_refs(right, definitions, refs);
+            collect_top_level_refs(left, definitions, sources, scopes, refs);
+            collect_top_level_refs(right, definitions, sources, scopes, refs);
         }
-        boon_syntax::Expr::Hold { body, .. } => {
+        boon_syntax::Expr::Hold { binder, body } => {
+            scopes.push(binder);
             for value in body {
-                collect_top_level_refs(value, definitions, refs);
+                collect_top_level_refs(value, definitions, sources, scopes, refs);
             }
+            scopes.pop();
         }
         boon_syntax::Expr::Match { arms, .. } => {
             for arm in arms {
-                collect_top_level_refs(&arm.value, definitions, refs);
+                collect_top_level_refs(&arm.value, definitions, sources, scopes, refs);
             }
         }
         boon_syntax::Expr::Missing
@@ -254,6 +319,16 @@ fn collect_top_level_refs<'a>(
         | boon_syntax::Expr::Skip
         | boon_syntax::Expr::Tag(_)
         | boon_syntax::Expr::Text(_) => {}
+    }
+}
+
+fn call_binder(args: &[boon_syntax::CallArg]) -> Option<(&str, &[boon_syntax::CallArg])> {
+    let (first, rest) = args.split_first()?;
+    match first {
+        boon_syntax::CallArg::Positional(boon_syntax::Expr::Path(path)) if !rest.is_empty() => {
+            Some((path.as_str(), rest))
+        }
+        _ => None,
     }
 }
 

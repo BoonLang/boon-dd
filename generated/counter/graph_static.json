@@ -4,6 +4,12 @@
   "source_hash": "14e71401ff831fec19144a8a5d4be37fbf1395cb6664bd72871cd6e7b931d016",
   "source_bindings": [
     {
+      "source_id": "StoreSourcesIncrementButton",
+      "path": "store.sources.increment_button",
+      "shape": "SourceMarker",
+      "dynamic": false
+    },
+    {
       "source_id": "StoreSourcesIncrementButtonEventPress",
       "path": "store.sources.increment_button.event.press",
       "shape": "SourceMarker",
@@ -22,6 +28,12 @@
       "kind": "monitor.value",
       "shape": "Text",
       "source_span": "examples/counter/source.bn:document"
+    },
+    {
+      "node": "StoreSourcesIncrementButton",
+      "kind": "source.leaf",
+      "shape": "SourceMarker",
+      "source_span": "examples/counter/source.bn:store.sources.increment_button"
     },
     {
       "node": "StoreSourcesIncrementButtonEventPress",
