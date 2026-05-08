@@ -72,6 +72,13 @@
       "order": 90
     },
     {
+      "node": "EffectSink",
+      "kind": "EffectSink",
+      "inputs": [],
+      "output": "EffectSink",
+      "order": 91
+    },
+    {
       "node": "RenderSink",
       "kind": "RenderSink",
       "inputs": [],

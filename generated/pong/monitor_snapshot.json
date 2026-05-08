@@ -18,7 +18,14 @@
         }
       }
     ],
-    "effects": [],
+    "effects": [
+      {
+        "Requested": {
+          "node": "EffectSink",
+          "name": "Window/animation_frame"
+        }
+      }
+    ],
     "persistence": []
   }
 ]

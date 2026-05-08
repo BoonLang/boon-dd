@@ -218,6 +218,7 @@ pub enum DdOutputSink {
     },
     Effect {
         node: NodeId,
+        name: String,
         source: DdRenderProgramSource,
     },
     Persistence {

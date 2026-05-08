@@ -100,13 +100,14 @@ under `target/boon-artifacts/`.
 - `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR,
   DD graph IR coverage, and explicit output protocol coverage for all 22
   required examples. It reports zero unsupported semantic nodes. The output
-  protocol currently proves `MonitorNodeValue`, `RenderPatchText`, and
-  `Persistence` sink families, and reports missing `Effect` sink coverage.
+  protocol currently proves `MonitorNodeValue`, `RenderPatchText`,
+  `Persistence`, and `Effect` sink families, with `Timer/interval` and
+  `Window/animation_frame` lowered as effect-producing source requests.
   Generated crates now return the expanded `SmokeOutput` protocol with monitor,
-  render, effect, and persistence channels. Lowering still fails because effect
-  sink coverage is missing and full semantic render/effect/persistence protocols
-  are not lowered into DD operators yet. The latest focused lowering run reports
-  0 legacy render-operation examples, 0 legacy render operations, and 0
+  render, effect, and persistence channels. Lowering still fails because full
+  semantic render/effect/persistence protocols are not lowered into DD operators
+  yet. The latest focused lowering run reports 0 legacy render-operation
+  examples, 0 legacy render operations, 0 missing output sink families, and 0
   unsupported semantic nodes.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
@@ -190,8 +191,8 @@ Continue with the remaining Phase 3 and Phase 4 work in
 1. Expand the manifest from `accepted-incomplete` to `accepted` only when every
    feature has parser, resolver, shape, semantic IR, DD lowering, generated
    runtime, host parity, positive fixture, and negative diagnostic coverage.
-2. Add honest effect-positive corpus coverage and lower effect sinks through
-   semantic IR, DD graph IR, and generated-only runtime execution.
+2. Replace the remaining incomplete render/effect/persistence protocol paths
+   with semantic IR, DD graph IR, and generated-only runtime execution.
 3. Keep `verify-no-shortcuts`, `plan-coverage`, resolver/shape scans, generated
    freshness, and generated-crate checks passing while replacing the remaining
    incomplete render/effect/persistence protocol paths.

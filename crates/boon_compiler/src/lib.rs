@@ -352,12 +352,16 @@ fn lower_semantic_to_dd(
             })
             .collect(),
         unsupported_semantic_nodes,
-        output_protocol: dd_output_protocol(graph, &render_program),
+        output_protocol: dd_output_protocol(graph, &render_program, hir),
         render_program,
     }
 }
 
-fn dd_output_protocol(graph: &StaticGraph, render_program: &DdRenderProgram) -> DdOutputProtocol {
+fn dd_output_protocol(
+    graph: &StaticGraph,
+    render_program: &DdRenderProgram,
+    hir: &boon_hir::HirModule,
+) -> DdOutputProtocol {
     let render_source = render_program.source.clone();
     let mut sinks = vec![
         DdOutputSink::MonitorNodeValue {
@@ -374,10 +378,13 @@ fn dd_output_protocol(graph: &StaticGraph, render_program: &DdRenderProgram) -> 
         .iter()
         .any(|operator| operator.kind == GraphOperatorKind::EffectSink)
     {
-        sinks.push(DdOutputSink::Effect {
-            node: NodeId("EffectSink".to_owned()),
-            source: render_source.clone(),
-        });
+        for name in effect_request_names(hir) {
+            sinks.push(DdOutputSink::Effect {
+                node: NodeId("EffectSink".to_owned()),
+                name,
+                source: render_source.clone(),
+            });
+        }
     }
     if graph
         .operators
@@ -393,6 +400,26 @@ fn dd_output_protocol(graph: &StaticGraph, render_program: &DdRenderProgram) -> 
         schema_version: "boon-dd-output-v1".to_owned(),
         sinks,
     }
+}
+
+fn effect_request_names(hir: &boon_hir::HirModule) -> Vec<String> {
+    let mut names = Vec::new();
+    for definition in &hir.definitions {
+        collect_effect_request_names(&definition.expression, &mut names);
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn collect_effect_request_names(expression: &boon_syntax::Expr, names: &mut Vec<String>) {
+    walk(expression, &mut |expr| {
+        if let boon_syntax::Expr::Call { callee, .. } = expr {
+            if matches!(callee.as_str(), "Timer/interval" | "Window/animation_frame") {
+                names.push(callee.clone());
+            }
+        }
+    });
 }
 
 fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) -> DdRenderProgram {
@@ -601,6 +628,10 @@ impl OperatorBuilder {
             "List/remove" => GraphOperatorKind::ListRemove,
             "List/map" => GraphOperatorKind::ListMap,
             "List/retain" => GraphOperatorKind::ListRetain,
+            "Timer/interval" | "Window/animation_frame" => {
+                self.add(GraphOperatorKind::EffectSink);
+                GraphOperatorKind::LibraryCall
+            }
             _ => GraphOperatorKind::LibraryCall,
         };
         self.add(kind);
@@ -622,6 +653,7 @@ impl OperatorBuilder {
             (GraphOperatorKind::LibraryCall, "LibraryCall", 70),
             (GraphOperatorKind::BinaryAdd, "BinaryAdd", 80),
             (GraphOperatorKind::PersistTap, "PersistTap", 90),
+            (GraphOperatorKind::EffectSink, "EffectSink", 91),
             (GraphOperatorKind::RenderSink, "RenderSink", 100),
             (GraphOperatorKind::MonitorTap, "MonitorTap", 101),
         ];

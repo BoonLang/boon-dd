@@ -172,6 +172,7 @@ pub fn build_dataflow_description() -> &'static [(&'static str, &'static str)] {
         ("LibraryCall", "LibraryCall"),
         ("BinaryAdd", "BinaryAdd"),
         ("PersistTap", "PersistTap"),
+        ("EffectSink", "EffectSink"),
         ("RenderSink", "RenderSink"),
         ("MonitorTap", "MonitorTap"),
     ]
@@ -218,7 +219,10 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                                 node: render_node.clone(),
                                 text: text.clone(),
                             }],
-                            effects: Vec::new(),
+                            effects: vec![boon_dd::EffectCommand::Requested {
+                                node: NodeId("EffectSink".to_owned()),
+                                name: "Timer/interval".to_owned(),
+                            }],
                             persistence: Vec::new(),
                         });
                 }

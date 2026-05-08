@@ -38,6 +38,13 @@
       "order": 90
     },
     {
+      "node": "EffectSink",
+      "operator": "EffectSink",
+      "inputs": [],
+      "output": "EffectSink",
+      "order": 91
+    },
+    {
       "node": "RenderSink",
       "operator": "RenderSink",
       "inputs": [],
@@ -135,6 +142,16 @@
       {
         "RenderPatchText": {
           "node": "DocumentText",
+          "source": {
+            "semantic_path": "counter",
+            "output_node": "DocumentText"
+          }
+        }
+      },
+      {
+        "Effect": {
+          "node": "EffectSink",
+          "name": "Timer/interval",
           "source": {
             "semantic_path": "counter",
             "output_node": "DocumentText"

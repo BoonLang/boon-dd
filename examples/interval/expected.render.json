@@ -17,6 +17,13 @@
       }
     }
   ],
-  "effects": [],
+  "effects": [
+    {
+      "Requested": {
+        "node": "EffectSink",
+        "name": "Timer/interval"
+      }
+    }
+  ],
   "persistence": []
 }
