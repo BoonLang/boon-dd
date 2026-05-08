@@ -55,7 +55,11 @@ under `target/boon-artifacts/`.
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
-  deterministic honesty gates as missing.
+  deterministic honesty gates with current evidence, hashes, and tool versions.
+  Parser completeness, adversarial no-heuristics, and stale-artifact rejection
+  pass; source truth, phase boundary, resolver/shape, semantic IR coverage, DD
+  lowering, generated-only runtime, scenario protocol, cross-host parity, and
+  verifier self-tests still fail.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
   and no missing required generated artifact paths.
 - `target/boon-artifacts/negative-corpus-report.json` now reports verdict

@@ -1037,9 +1037,8 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
         "blockers": [
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
-            "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
-            "runtime still executes a compatibility scalar DD plan instead of generated semantic IR/DD graph artifacts",
-            "generated code still uses compatibility scalar rendering templates",
+            "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
+            "runtime and generated code still execute a compatibility scalar DD plan instead of generated DD graph templates",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1078,36 +1077,398 @@ fn verify_no_shortcuts(_args: &[String]) -> Result<serde_json::Value> {
 }
 
 fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = read_language_manifest()?;
     let shortcuts = scan_honest_shortcuts()?;
-    let details = serde_json::json!({
-        "verdict": "fail",
-        "repo_state": repo_state()?,
-        "shortcut_symbols_in_execution_paths": shortcuts["hit_count"],
-        "accepted_features_without_full_coverage": "unknown_until_language_manifest_and_phase_reports_are_complete",
-        "stale_artifact_failures": "covered_by_verify_generated_freshness",
-        "host_semantics_violations": "present_until_backend_execution_paths_use_generated_graph_only",
-        "adversarial_heuristic_cases_failed": "covered_by_verify_negative_corpus",
-        "prompt_audit_required": true,
-        "missing_deterministic_gates": [
-            "source-truth",
-            "parser-completeness",
-            "phase-boundary",
-            "resolver-and-shape",
-            "semantic-ir-coverage",
-            "dd-lowering-coverage",
+    let input_hashes = deterministic_input_hashes(&root, &manifest)?;
+    let parser_gate = deterministic_parser_gate(&root, &manifest);
+    let phase_gate = deterministic_phase_boundary_gate(&root, &manifest);
+    let source_truth_gate = deterministic_source_truth_gate(&root, &manifest);
+    let resolver_shape_gate = deterministic_resolver_shape_gate(&root, &manifest);
+    let semantic_gate = deterministic_semantic_ir_gate(&root, &manifest);
+    let dd_lowering_gate = capture_simple_gate(
+        "dd-lowering-coverage",
+        "cargo xtask verify-lowering --format json",
+        || verify_lowering(&["--format".to_owned(), "json".to_owned()]),
+    );
+    let generated_freshness_gate = capture_simple_gate(
+        "stale-artifact-rejection",
+        "cargo xtask verify-generated-freshness --format json",
+        || verify_generated_freshness(&["--format".to_owned(), "json".to_owned()]),
+    );
+    let adversarial_gate = capture_simple_gate(
+        "adversarial-no-heuristics",
+        "cargo xtask verify-negative-corpus --format json",
+        || verify_negative_corpus(&["--format".to_owned(), "json".to_owned()]),
+    );
+    let gates = vec![
+        source_truth_gate,
+        parser_gate,
+        phase_gate,
+        resolver_shape_gate,
+        semantic_gate,
+        dd_lowering_gate,
+        deterministic_static_failed_gate(
             "generated-only-runtime",
+            "inspect generated graph and host execution paths",
+            serde_json::json!({
+                "blockers": [
+                    "generated Rust still consumes compatibility_scalar_plan",
+                    "runtime host still constructs outputs from compatibility graph snapshots"
+                ]
+            }),
+        ),
+        deterministic_static_failed_gate(
             "scenario-protocol",
-            "adversarial-no-heuristics",
-            "stale-artifact-rejection",
+            "inspect examples/*/scenario.toml and runtime protocol",
+            serde_json::json!({
+                "blockers": [
+                    "scenario parser keeps command actions, but command/effect/persistence execution is incomplete",
+                    "no fault-injection check proves command actions cannot be skipped"
+                ]
+            }),
+        ),
+        adversarial_gate,
+        generated_freshness_gate,
+        deterministic_static_failed_gate(
             "cross-host-parity",
-            "verification-harness-self-test"
-        ],
+            "cargo xtask test --target terminal && cargo xtask test --target native && cargo xtask test --target browser",
+            serde_json::json!({
+                "blockers": [
+                    "target gates run, but parity report does not compare a single generated DD graph protocol across terminal/native/browser",
+                    "Firefox proof is still a smoke artifact and not a full per-example generated graph execution proof"
+                ]
+            }),
+        ),
+        deterministic_static_failed_gate(
+            "verification-harness-self-test",
+            "temporary injected-fault verifier self-tests",
+            serde_json::json!({
+                "blockers": [
+                    "missing injected-fault tests for shortcut insertion, stale artifacts, skipped scenario steps, wrong fixture outputs, and disabled DD lowering"
+                ]
+            }),
+        ),
+    ];
+    let missing_deterministic_gates = gates
+        .iter()
+        .filter(|gate| gate.status != "passed")
+        .map(|gate| gate.name.clone())
+        .collect::<Vec<_>>();
+    let accepted_features_without_full_coverage = manifest
+        .features
+        .iter()
+        .filter(|feature| feature.status != "accepted")
+        .count();
+    let stale_artifact_failures = gates
+        .iter()
+        .find(|gate| gate.name == "stale-artifact-rejection")
+        .and_then(|gate| gate.details.get("stale"))
+        .and_then(|stale| stale.as_array())
+        .map_or(0, Vec::len)
+        + gates
+            .iter()
+            .find(|gate| gate.name == "stale-artifact-rejection")
+            .and_then(|gate| gate.details.get("missing"))
+            .and_then(|missing| missing.as_array())
+            .map_or(0, Vec::len);
+    let adversarial_heuristic_cases_failed = gates
+        .iter()
+        .find(|gate| gate.name == "adversarial-no-heuristics")
+        .and_then(|gate| gate.details.get("failures"))
+        .and_then(|failures| failures.as_array())
+        .map_or(0, Vec::len);
+    let details = serde_json::json!({
+        "verdict": if missing_deterministic_gates.is_empty() { "pass" } else { "fail" },
+        "repo_state": repo_state()?,
+        "input_hashes": input_hashes,
+        "dependency_tool_versions": collect_dependency_tool_versions()?,
+        "gates": gates,
+        "shortcut_symbols_in_execution_paths": shortcuts["hit_count"],
+        "accepted_features_without_full_coverage": accepted_features_without_full_coverage,
+        "stale_artifact_failures": stale_artifact_failures,
+        "host_semantics_violations": if missing_deterministic_gates.iter().any(|gate| gate == "generated-only-runtime" || gate == "cross-host-parity") { 1 } else { 0 },
+        "adversarial_heuristic_cases_failed": adversarial_heuristic_cases_failed,
+        "prompt_audit_required": true,
+        "missing_deterministic_gates": missing_deterministic_gates,
     });
     let artifact = write_artifact("honesty-deterministic-report.json", &details)?;
-    bail!(
-        "deterministic honesty verification is not complete; see {}",
-        artifact.display()
-    )
+    if details["verdict"] != "pass" {
+        bail!(
+            "deterministic honesty verification is not complete; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn deterministic_static_failed_gate(
+    name: &str,
+    command: &str,
+    details: serde_json::Value,
+) -> GateReport {
+    GateReport {
+        name: name.to_owned(),
+        command: command.to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details,
+    }
+}
+
+fn deterministic_input_hashes(
+    root: &Path,
+    manifest: &LanguageManifest,
+) -> Result<serde_json::Value> {
+    let mut files = Vec::new();
+    for path in [HONEST_COMPILER_PLAN, LANGUAGE_MANIFEST, "Cargo.lock"] {
+        let full = root.join(path);
+        files.push(serde_json::json!({
+            "path": path,
+            "sha256": full.exists().then(|| sha256_file(&full)).transpose()?,
+        }));
+    }
+    for example in &manifest.examples {
+        for path in [&example.source, &example.scenario, &example.expected_render] {
+            let full = root.join(path);
+            files.push(serde_json::json!({
+                "path": path,
+                "sha256": full.exists().then(|| sha256_file(&full)).transpose()?,
+            }));
+        }
+    }
+    for negative in &manifest.negative_examples {
+        for path in [&negative.source, &negative.metadata] {
+            let full = root.join(path);
+            files.push(serde_json::json!({
+                "path": path,
+                "sha256": full.exists().then(|| sha256_file(&full)).transpose()?,
+            }));
+        }
+    }
+    let mut generated = Vec::new();
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        for relative in generated_artifact_relative_paths() {
+            let path = format!("generated/{example}/{relative}");
+            let full = root.join(&path);
+            generated.push(serde_json::json!({
+                "path": path,
+                "sha256": full.exists().then(|| sha256_file(&full)).transpose()?,
+            }));
+        }
+    }
+    Ok(serde_json::json!({
+        "source_manifest_and_expected_files": files,
+        "generated_artifacts": generated,
+    }))
+}
+
+fn deterministic_source_truth_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let missing_examples = manifest
+        .examples
+        .iter()
+        .flat_map(|example| [&example.source, &example.scenario, &example.expected_render])
+        .filter(|path| !root.join(path).exists())
+        .cloned()
+        .collect::<Vec<_>>();
+    let incomplete_features = manifest
+        .features
+        .iter()
+        .filter(|feature| feature.status != "accepted")
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    let missing_feature_coverage = manifest
+        .features
+        .iter()
+        .filter(|feature| {
+            feature.positive_examples.is_empty() || feature.negative_examples.is_empty()
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    let passed = missing_examples.is_empty()
+        && incomplete_features.is_empty()
+        && missing_feature_coverage.is_empty()
+        && manifest.language.status == "accepted";
+    GateReport {
+        name: "source-truth".to_owned(),
+        command: "validate docs/language/boon-language-manifest.toml".to_owned(),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "language_status": manifest.language.status,
+            "accepted_language_version": manifest.language.accepted_language_version,
+            "feature_count": manifest.features.len(),
+            "example_count": manifest.examples.len(),
+            "negative_example_count": manifest.negative_examples.len(),
+            "missing_examples": missing_examples,
+            "incomplete_features": incomplete_features,
+            "missing_feature_coverage": missing_feature_coverage,
+        }),
+    }
+}
+
+fn deterministic_parser_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let mut parsed = Vec::new();
+    let mut failures = Vec::new();
+    for example in &manifest.examples {
+        match fs::read_to_string(root.join(&example.source)) {
+            Ok(text) => {
+                let module = boon_syntax::parse_source(example.source.clone(), text);
+                if module.diagnostics.is_empty() && !module.definitions.is_empty() {
+                    parsed.push(serde_json::json!({
+                        "example": example.id,
+                        "definition_count": module.definitions.len(),
+                    }));
+                } else {
+                    failures.push(serde_json::json!({
+                        "example": example.id,
+                        "diagnostics": module.diagnostics,
+                        "definition_count": module.definitions.len(),
+                    }));
+                }
+            }
+            Err(error) => failures.push(serde_json::json!({
+                "example": example.id,
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    GateReport {
+        name: "parser-completeness".to_owned(),
+        command: "parse every manifest source with boon_syntax::parse_source".to_owned(),
+        status: if failures.is_empty() {
+            "passed"
+        } else {
+            "failed"
+        }
+        .to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "parsed": parsed,
+            "failures": failures,
+        }),
+    }
+}
+
+fn deterministic_phase_boundary_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let mut cases = Vec::new();
+    let mut failures = Vec::new();
+    for example in &manifest.examples {
+        match fs::read_to_string(root.join(&example.source)) {
+            Ok(text) => {
+                let parsed = boon_syntax::parse_source(example.source.clone(), text.clone());
+                let hir = boon_hir::lower(&parsed);
+                let shape = boon_shape::check_module(&hir);
+                let plan = boon_compiler::compile_source(example.source.clone(), text);
+                cases.push(serde_json::json!({
+                    "example": example.id,
+                    "ast_definitions": parsed.definitions.len(),
+                    "hir_definitions": hir.definitions.len(),
+                    "source_bindings": hir.sources.len(),
+                    "shape_definitions": shape.definitions.len(),
+                    "semantic_ir_nodes": plan.semantic_ir.nodes.len(),
+                    "dd_graph_ir_nodes": plan.dd_graph_ir.nodes.len(),
+                    "generated_graph_id": plan.graph.graph_id,
+                }));
+            }
+            Err(error) => failures.push(serde_json::json!({
+                "example": example.id,
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    GateReport {
+        name: "phase-boundary".to_owned(),
+        command: "emit AST/HIR/shape/semantic/DD graph summaries for every manifest source"
+            .to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "cases": cases,
+            "failures": failures,
+            "blockers": [
+                "phase summaries are in the report but not yet canonical checked artifacts",
+                "no guard proves later phases cannot read raw source text for semantic decisions"
+            ],
+        }),
+    }
+}
+
+fn deterministic_resolver_shape_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let mut unresolved = Vec::new();
+    let mut shape_failures = Vec::new();
+    for example in &manifest.examples {
+        if let Ok(text) = fs::read_to_string(root.join(&example.source)) {
+            let parsed = boon_syntax::parse_source(example.source.clone(), text);
+            let hir = boon_hir::lower(&parsed);
+            let unresolved_refs = boon_hir::unresolved_references(&hir);
+            if !unresolved_refs.is_empty() {
+                unresolved.push(serde_json::json!({
+                    "example": example.id,
+                    "unresolved": unresolved_refs,
+                }));
+            }
+            let shape = boon_shape::check_module(&hir);
+            if !shape.diagnostics.is_empty() {
+                shape_failures.push(serde_json::json!({
+                    "example": example.id,
+                    "diagnostics": shape.diagnostics,
+                }));
+            }
+        }
+    }
+    GateReport {
+        name: "resolver-and-shape".to_owned(),
+        command: "run boon_hir resolver checks and boon_shape over manifest examples".to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "unresolved": unresolved,
+            "shape_failures": shape_failures,
+            "blockers": [
+                "current resolver/shape pass has no full golden coverage for definitions, dynamic owner scopes, host bindings, source families, and library contracts"
+            ],
+        }),
+    }
+}
+
+fn deterministic_semantic_ir_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let mut unknown_nodes = Vec::new();
+    let mut semantic_kinds = std::collections::BTreeSet::new();
+    for example in &manifest.examples {
+        if let Ok(text) = fs::read_to_string(root.join(&example.source)) {
+            let plan = boon_compiler::compile_source(example.source.clone(), text);
+            for node in &plan.semantic_ir.nodes {
+                semantic_kinds.insert(format!("{:?}", node.kind));
+                if format!("{:?}", node.kind) == "Unknown" {
+                    unknown_nodes.push(serde_json::json!({
+                        "example": example.id,
+                        "node": node.node,
+                        "source_span": node.source_span,
+                    }));
+                }
+            }
+        }
+    }
+    GateReport {
+        name: "semantic-ir-coverage".to_owned(),
+        command: "compile manifest examples into boon_compiler semantic IR".to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "semantic_kinds": semantic_kinds,
+            "unknown_nodes": unknown_nodes,
+            "blockers": [
+                "semantic IR exists but still contains Unknown nodes and is not the sole input accepted by generated DD lowering"
+            ],
+        }),
+    }
 }
 
 #[derive(Debug, Deserialize)]
