@@ -22,7 +22,7 @@ macro_rules! run_generated {
             }
         }
         if !submitted {
-            graph.sources.submit_text("", epoch);
+            graph.sources.submit_host_tick(epoch);
         }
         graph.sources.close_epoch(epoch);
         let target = $crate_name::graph::completion_time(epoch) + 1;

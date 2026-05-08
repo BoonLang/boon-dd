@@ -46,7 +46,13 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": {
-    "ConstantText": "frame 1"
+  "render_program": {
+    "source": {
+      "semantic_path": null,
+      "output_node": "DocumentText"
+    },
+    "operation": {
+      "ConstantText": "frame 1"
+    }
   }
 }

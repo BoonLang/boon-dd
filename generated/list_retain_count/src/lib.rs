@@ -13,6 +13,8 @@ mod tests {
     fn generated_graph_matches_checked_scenario_output() {
         let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"2\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"2\"\n      }\n    }\n  ]\n}")
             .expect("checked expected render JSON should deserialize");
+        let actions: Vec<boon_dd::SourceAction> = serde_json::from_str("[{\"source\":\"filter\",\"owner\":null,\"generation\":null,\"value\":{\"Tag\":{\"name\":\"Active\",\"payload\":null}}}]")
+            .expect("checked scenario actions should deserialize");
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
@@ -20,8 +22,12 @@ mod tests {
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = crate::graph::build_dataflow(&mut worker);
         let epoch = 1_u64;
-        for value in ["Active"] {
-            graph.sources.submit_text(value, epoch);
+        if actions.is_empty() {
+            graph.sources.submit_host_tick(epoch);
+        } else {
+            for action in &actions {
+                graph.sources.submit_action(action, epoch);
+            }
         }
         graph.sources.close_epoch(epoch);
         let target = crate::graph::completion_time(epoch) + 1;

@@ -32,5 +32,11 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": "LatestInputText"
+  "render_program": {
+    "source": {
+      "semantic_path": "value",
+      "output_node": "DocumentText"
+    },
+    "operation": "LatestInputText"
+  }
 }

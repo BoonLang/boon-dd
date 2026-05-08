@@ -28,11 +28,21 @@ const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
     concat!("definition", "_block"),
     concat!("text", "_literals"),
     concat!("Text", "Behavior"),
+    concat!("Dd", "Output", "Template"),
     concat!("execute", "_static_graph"),
     concat!("evaluate", "_text"),
     concat!("generated", "_text_collection"),
     concat!("smoke", "_input_text"),
     concat!("compile", "_and_run_step"),
+    concat!("source", "_action_text"),
+    concat!("submit", "_text("),
+    concat!("submit", "_text_and_drain"),
+    concat!("constant", "_text("),
+    concat!("constant", "_value("),
+    concat!("call", "_constant("),
+    concat!("pipe", "_constant("),
+    concat!("dd", "_render_operation_from_expr("),
+    concat!("expression", "_has_call("),
     concat!("line.contains", "(\"command =\")"),
     concat!("contains", "(\"SOURCE\")"),
     concat!("contains", "(\"THEN\")"),
@@ -214,7 +224,7 @@ fn verify_deps(_args: &[String]) -> Result<GateReport> {
 
 fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
-    sync_generated_artifacts()?;
+    verify_generated_freshness(&["--format".to_owned(), "json".to_owned()])?;
     run_status("cargo", &["test", "-p", "boon_dd"])?;
     run_status(
         "cargo",
@@ -343,7 +353,7 @@ fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
 
 fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
-    sync_generated_artifacts()?;
+    verify_generated_freshness(&["--format".to_owned(), "json".to_owned()])?;
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
     run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
     run_status(
@@ -694,6 +704,11 @@ fn verify(args: &[String]) -> Result<()> {
         "cargo xtask verify-deps --format json",
         || verify_deps(&["--format".to_owned(), "json".to_owned()]),
     ));
+    gates.push(capture_simple_gate(
+        "verify-generated-freshness",
+        "cargo xtask verify-generated-freshness --format json",
+        || verify_generated_freshness(&["--format".to_owned(), "json".to_owned()]),
+    ));
     gates.push(capture_gate(
         "verify-wasm-dd",
         "cargo xtask verify-wasm-dd --required --browser firefox",
@@ -804,11 +819,6 @@ fn verify(args: &[String]) -> Result<()> {
         "verify-lowering",
         "cargo xtask verify-lowering --format json",
         || verify_lowering(&["--format".to_owned(), "json".to_owned()]),
-    ));
-    gates.push(capture_simple_gate(
-        "verify-generated-freshness",
-        "cargo xtask verify-generated-freshness --format json",
-        || verify_generated_freshness(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
         "write-honest-compiler-prompts",
@@ -1102,7 +1112,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code and backend smoke paths execute generated Timely/DD crates, but the lowerer still emits transitional scalar output templates",
+            "generated code and backend smoke paths execute generated Timely/DD crates, but the compiler still has constant/render shortcut evaluation and the lowerer still emits scalar render programs",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1148,6 +1158,11 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
     let parser_gate = deterministic_parser_gate(&root, &manifest);
     let phase_gate = deterministic_phase_boundary_gate(&root, &manifest);
     let source_truth_gate = deterministic_source_truth_gate(&root, &manifest);
+    let no_shortcuts_gate = capture_simple_gate(
+        "no-shortcuts",
+        "cargo xtask verify-no-shortcuts --format json",
+        || verify_no_shortcuts(&["--format".to_owned(), "json".to_owned()]),
+    );
     let resolver_shape_gate = deterministic_resolver_shape_gate(&root, &manifest);
     let semantic_gate = deterministic_semantic_ir_gate(&root, &manifest);
     let dd_lowering_gate = capture_simple_gate(
@@ -1167,6 +1182,7 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
     );
     let gates = vec![
         source_truth_gate,
+        no_shortcuts_gate,
         parser_gate,
         phase_gate,
         resolver_shape_gate,
@@ -1888,42 +1904,229 @@ fn scan_phase_boundary_violations(root: &Path) -> Result<Vec<serde_json::Value>>
 }
 
 fn deterministic_resolver_shape_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let started = Instant::now();
+    match deterministic_resolver_shape_gate_result(root, manifest, started) {
+        Ok(report) => report,
+        Err(error) => GateReport {
+            name: "resolver-and-shape".to_owned(),
+            command: "run boon_hir resolver checks and boon_shape over manifest examples"
+                .to_owned(),
+            status: "failed".to_owned(),
+            duration_ms: started.elapsed().as_millis(),
+            artifacts: Vec::new(),
+            details: serde_json::json!({
+                "error": format!("{error:#}"),
+                "blockers": [
+                    "resolver/shape verifier crashed before it could write the canonical report"
+                ],
+            }),
+        },
+    }
+}
+
+fn deterministic_resolver_shape_gate_result(
+    root: &Path,
+    manifest: &LanguageManifest,
+    started: Instant,
+) -> Result<GateReport> {
+    let mut cases = Vec::new();
+    let mut source_errors = Vec::new();
     let mut unresolved = Vec::new();
     let mut shape_failures = Vec::new();
+    let mut unknown_shapes = Vec::new();
+    let mut missing_source_shapes = Vec::new();
+
     for example in &manifest.examples {
-        if let Ok(text) = fs::read_to_string(root.join(&example.source)) {
-            let parsed = boon_syntax::parse_source(example.source.clone(), text);
-            let hir = boon_hir::lower(&parsed);
-            let unresolved_refs = boon_hir::unresolved_references(&hir);
-            if !unresolved_refs.is_empty() {
-                unresolved.push(serde_json::json!({
+        let text = match fs::read_to_string(root.join(&example.source)) {
+            Ok(text) => text,
+            Err(error) => {
+                source_errors.push(serde_json::json!({
                     "example": example.id,
-                    "unresolved": unresolved_refs,
+                    "source": example.source,
+                    "error": format!("{error:#}"),
                 }));
+                continue;
             }
-            let shape = boon_shape::check_module(&hir);
-            if !shape.diagnostics.is_empty() {
-                shape_failures.push(serde_json::json!({
+        };
+        let parsed = boon_syntax::parse_source(example.source.clone(), text);
+        let hir = boon_hir::lower(&parsed);
+        let unresolved_refs = boon_hir::unresolved_references(&hir);
+        if !unresolved_refs.is_empty() || !hir.diagnostics.is_empty() {
+            unresolved.push(serde_json::json!({
+                "example": example.id,
+                "diagnostics": hir.diagnostics,
+                "unresolved": unresolved_refs,
+            }));
+        }
+
+        let shape = boon_shape::check_module(&hir);
+        if !shape.diagnostics.is_empty() {
+            shape_failures.push(serde_json::json!({
+                "example": example.id,
+                "diagnostics": shape.diagnostics,
+            }));
+        }
+        for (definition, definition_shape) in &shape.definitions {
+            if matches!(definition_shape, boon_shape::Shape::Unknown) {
+                unknown_shapes.push(serde_json::json!({
                     "example": example.id,
-                    "diagnostics": shape.diagnostics,
+                    "kind": "definition",
+                    "name": definition,
+                    "shape": definition_shape,
                 }));
             }
         }
+        for source in &hir.sources {
+            match shape.sources.get(&source.path) {
+                Some(source_shape) if matches!(source_shape, boon_shape::Shape::Unknown) => {
+                    unknown_shapes.push(serde_json::json!({
+                        "example": example.id,
+                        "kind": "source",
+                        "path": source.path,
+                        "shape": source_shape,
+                    }));
+                }
+                Some(_) => {}
+                None => missing_source_shapes.push(serde_json::json!({
+                    "example": example.id,
+                    "path": source.path,
+                })),
+            }
+        }
+
+        cases.push(serde_json::json!({
+            "example": example.id,
+            "source": example.source,
+            "definition_count": hir.definitions.len(),
+            "definitions": shape.definitions,
+            "sources": hir.sources,
+            "source_shapes": shape.sources,
+        }));
     }
-    GateReport {
+
+    let resolver_shape_heuristics = scan_resolver_shape_heuristics(root)?;
+    let passed = source_errors.is_empty()
+        && unresolved.is_empty()
+        && shape_failures.is_empty()
+        && unknown_shapes.is_empty()
+        && missing_source_shapes.is_empty()
+        && resolver_shape_heuristics.is_empty()
+        && manifest
+            .features
+            .iter()
+            .all(|feature| feature.status == "accepted");
+    let details = serde_json::json!({
+        "verdict": if passed { "pass" } else { "fail" },
+        "scope": "all manifest examples plus resolver/shape source scan",
+        "cases": cases,
+        "source_errors": source_errors,
+        "unresolved": unresolved,
+        "shape_failures": shape_failures,
+        "unknown_shapes": unknown_shapes,
+        "missing_source_shapes": missing_source_shapes,
+        "resolver_shape_heuristics": resolver_shape_heuristics,
+        "manifest_features_not_fully_accepted": manifest
+            .features
+            .iter()
+            .filter(|feature| feature.status != "accepted")
+            .map(|feature| feature.id.clone())
+            .collect::<Vec<_>>(),
+        "blockers": if passed {
+            Vec::<String>::new()
+        } else {
+            vec![
+                "resolver/shape coverage is report-backed, but the implementation still contains path/root/library heuristics".to_owned(),
+                "shape checking must reject Unknown fallbacks and prove source families, dynamic owner scopes, host bindings, and library contracts through typed metadata".to_owned(),
+                "language manifest features remain accepted-incomplete, so this gate cannot honestly pass".to_owned(),
+            ]
+        },
+    });
+    let artifact = write_artifact("resolver-shape-report.json", &details)?;
+    Ok(GateReport {
         name: "resolver-and-shape".to_owned(),
         command: "run boon_hir resolver checks and boon_shape over manifest examples".to_owned(),
-        status: "failed".to_owned(),
-        duration_ms: 0,
-        artifacts: Vec::new(),
-        details: serde_json::json!({
-            "unresolved": unresolved,
-            "shape_failures": shape_failures,
-            "blockers": [
-                "current resolver/shape pass has no full golden coverage for definitions, dynamic owner scopes, host bindings, source families, and library contracts"
+        status: if passed { "passed" } else { "failed" }.to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn scan_resolver_shape_heuristics(root: &Path) -> Result<Vec<serde_json::Value>> {
+    let scans = [
+        (
+            root.join("crates/boon_hir/src/lib.rs"),
+            vec![
+                (
+                    "implicit_source_path(",
+                    "HIR derives source bindings from path spelling instead of declared source metadata",
+                ),
+                (
+                    "strip_prefix(\"sources.\")",
+                    "HIR treats any sources.* reference as a source family without typed host binding metadata",
+                ),
+                (
+                    "matches!(path, \"selected_filter\" | \"tick\")",
+                    "HIR recognizes host/source names by string literal",
+                ),
+                (
+                    "\"item\"",
+                    "resolver allowlists dynamic item scope by root-name literal",
+                ),
+                (
+                    "\"state\"",
+                    "resolver allowlists HOLD state scope by root-name literal",
+                ),
+                (
+                    "\"game\"",
+                    "resolver allowlists Pong state scope by root-name literal",
+                ),
+                (
+                    "\"selected_filter\"",
+                    "resolver allowlists selected_filter host binding by root-name literal",
+                ),
             ],
-        }),
+        ),
+        (
+            root.join("crates/boon_shape/src/lib.rs"),
+            vec![
+                (
+                    ".unwrap_or(Shape::Unknown)",
+                    "shape pass silently accepts unresolved paths as Unknown",
+                ),
+                (
+                    "fn library_call_shape(",
+                    "shape pass has an ad hoc library fallback outside typed library signatures",
+                ),
+                (
+                    "(\"Pong\", \"initial\" | \"step\")",
+                    "shape pass hard-codes an app-specific Pong library shape",
+                ),
+                (
+                    "Shape::List(Box::new(Shape::Unknown))",
+                    "shape pass accepts list operators without solving item shape variables",
+                ),
+            ],
+        ),
+    ];
+    let mut hits = Vec::new();
+    for (path, patterns) in scans {
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("missing {}", path.display()))?;
+        for (line_index, line) in text.lines().enumerate() {
+            for (pattern, reason) in &patterns {
+                if line.contains(pattern) {
+                    hits.push(serde_json::json!({
+                        "path": path.display().to_string(),
+                        "line": line_index + 1,
+                        "pattern": pattern,
+                        "reason": reason,
+                    }));
+                }
+            }
+        }
     }
+    Ok(hits)
 }
 
 fn deterministic_semantic_ir_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
@@ -2696,7 +2899,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
-    let mut transitional_output_template_examples = Vec::new();
+    let mut limited_render_program_examples = Vec::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let source_path = root.join("examples").join(example).join("source.bn");
         let source_text = fs::read_to_string(&source_path)
@@ -2716,7 +2919,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             .map(|node| format!("{:?}", node.operator))
             .collect::<std::collections::BTreeSet<_>>();
         unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
-        transitional_output_template_examples.push(example);
+        limited_render_program_examples.push(example);
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -2726,7 +2929,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "dd_graph_node_count": plan.dd_graph_ir.nodes.len(),
             "dd_operators": dd_operators,
             "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
-            "dd_output_template": plan.dd_graph_ir.output_template,
+            "dd_render_program": plan.dd_graph_ir.render_program,
         }));
     }
     let details = serde_json::json!({
@@ -2734,11 +2937,11 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
-        "transitional_output_template_examples": transitional_output_template_examples,
+        "limited_render_program_examples": limited_render_program_examples,
         "examples": examples,
         "blockers": [
-            "DD output template remains a transitional scalar render template until full semantic-to-DD lowering is complete",
-            "generated crates execute the template, but full semantic render/effect/persistence protocols are not lowered yet"
+            "DD render program is now explicit in graph IR, but it still covers scalar monitor/render text only",
+            "full semantic render/effect/persistence protocols are not lowered into DD operators yet"
         ],
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
@@ -3378,11 +3581,11 @@ fn run_terminal_scenario(example: &str) -> Result<serde_json::Value> {
             "terminal scenario {example} output mismatch\nexpected: {expected_json}\nactual: {actual_json}"
         );
     }
-    let artifact_dir = write_generated_artifacts(example)?;
+    let artifact_dir = repo_root()?.join("generated").join(example);
     Ok(serde_json::json!({
         "example": example,
         "expected": expected_path,
-        "generated_artifacts": artifact_dir,
+        "generated_artifacts": artifact_dir.display().to_string(),
         "output": actual_json,
     }))
 }
@@ -3406,12 +3609,6 @@ fn compiled_example_json(example: &str) -> Result<String> {
     serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
 }
 
-fn write_generated_artifacts(example: &str) -> Result<String> {
-    let generated_dir = repo_root()?.join("generated").join(example);
-    write_generated_artifacts_at(example, &generated_dir)?;
-    Ok(generated_dir.display().to_string())
-}
-
 fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<()> {
     let root = repo_root()?;
     let example_dir = root.join("examples").join(example);
@@ -3426,15 +3623,10 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let expected_output: boon_dd::SmokeOutput = serde_json::from_str(&expected_render_text)
         .with_context(|| format!("invalid expected render output for {example}"))?;
     let outputs = vec![expected_output];
-    let first_step_action_texts = scenario
+    let first_step_actions = scenario
         .steps
         .first()
-        .map(|step| {
-            step.actions
-                .iter()
-                .map(boon_dd::source_action_text)
-                .collect::<Vec<_>>()
-        })
+        .map(|step| step.actions.clone())
         .unwrap_or_default();
 
     let src_dir = generated_dir.join("src");
@@ -3448,7 +3640,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     )?;
     fs::write(
         src_dir.join("lib.rs"),
-        generated_lib_rs(&first_step_action_texts, &expected_render_text),
+        generated_lib_rs(&first_step_actions, &expected_render_text),
     )?;
     fs::write(
         src_dir.join("graph.rs"),
@@ -3535,13 +3727,6 @@ fn generated_artifact_relative_paths() -> &'static [&'static str] {
     ]
 }
 
-fn sync_generated_artifacts() -> Result<()> {
-    for example in boon_dd::REQUIRED_EXAMPLES {
-        write_generated_artifacts(example)?;
-    }
-    Ok(())
-}
-
 fn format_generated_rust(generated_dir: &Path) -> Result<()> {
     let mut paths = vec![generated_dir.join("generated_graph.rs")];
     for entry in fs::read_dir(generated_dir.join("src"))? {
@@ -3556,17 +3741,13 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generated_lib_rs(action_texts: &[String], expected_render_text: &str) -> String {
-    let mut actions = if action_texts.is_empty() {
-        vec![String::new()]
-    } else {
-        action_texts.to_vec()
-    };
-    actions.shrink_to_fit();
+fn generated_lib_rs(actions: &[boon_dd::SourceAction], expected_render_text: &str) -> String {
+    let actions_json = serde_json::to_string(actions)
+        .expect("source actions should serialize into generated test");
     format!(
-        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let epoch = 1_u64;\n        for value in {actions:?} {{\n            graph.sources.submit_text(value, epoch);\n        }}\n        graph.sources.close_epoch(epoch);\n        let target = crate::graph::completion_time(epoch) + 1;\n        let mut steps = 0_usize;\n        while graph.probe.less_than(&target) {{\n            if steps == 1024 {{\n                panic!(\"generated graph probe stalled at {{target}} after {{steps}} steps\");\n            }}\n            worker.step();\n            steps += 1;\n        }}\n        let outputs = graph.sources.outputs();\n        let actual = outputs\n            .last()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
+        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let actions: Vec<boon_dd::SourceAction> = serde_json::from_str({actions:?})\n            .expect(\"checked scenario actions should deserialize\");\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let epoch = 1_u64;\n        if actions.is_empty() {{\n            graph.sources.submit_host_tick(epoch);\n        }} else {{\n            for action in &actions {{\n                graph.sources.submit_action(action, epoch);\n            }}\n        }}\n        graph.sources.close_epoch(epoch);\n        let target = crate::graph::completion_time(epoch) + 1;\n        let mut steps = 0_usize;\n        while graph.probe.less_than(&target) {{\n            if steps == 1024 {{\n                panic!(\"generated graph probe stalled at {{target}} after {{steps}} steps\");\n            }}\n            worker.step();\n            steps += 1;\n        }}\n        let outputs = graph.sources.outputs();\n        let actual = outputs\n            .last()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
         expected = expected_render_text.trim(),
-        actions = actions,
+        actions = actions_json,
     )
 }
 

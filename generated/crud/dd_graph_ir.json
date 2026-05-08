@@ -32,7 +32,13 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": {
-    "ConstantText": "saved"
+  "render_program": {
+    "source": {
+      "semantic_path": null,
+      "output_node": "DocumentText"
+    },
+    "operation": {
+      "ConstantText": "saved"
+    }
   }
 }

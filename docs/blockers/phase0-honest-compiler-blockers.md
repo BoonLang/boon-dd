@@ -3,10 +3,12 @@
 This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
-removed from Rust execution paths. The remaining compiler/runtime is still not
-honest enough to satisfy the full plan because the generated Rust consumes a DD
-graph IR output template that is still a transitional scalar render template
-instead of a complete typed semantic-to-DD graph lowering.
+removed from the runtime host path. The remaining compiler/runtime is still not
+honest enough to satisfy the full plan because the compiler still performs
+compile-time constant/render shortcut evaluation and the generated Rust consumes
+a DD graph IR render program that is explicit and hashed, but still
+scalar/text-only instead of a complete typed semantic-to-DD graph lowering for
+render, effect, and persistence protocols.
 
 ## Failing Commands
 
@@ -18,6 +20,16 @@ Result:
 
 ```text
 Error: honest compiler is not implemented yet; see target/boon-artifacts/honest-compiler-report.json
+```
+
+```bash
+cargo xtask verify-no-shortcuts --format json
+```
+
+Result:
+
+```text
+Error: shortcut execution patterns are still present; see target/boon-artifacts/no-shortcuts-report.json
 ```
 
 ```bash
@@ -43,17 +55,22 @@ under `target/boon-artifacts/`.
 
 - `cargo xtask verify all --format json` exits with status `1` and writes
   `target/boon-artifacts/verify-report.json` plus `success.json` with
-  `"success": false`. The current report has 19 passed gates and 5 failed
-  gates: `verify-honest-compiler`, `verify-honesty-deterministic`,
-  `verify-language-corpus`, `verify-lowering`, and `verify-prompt-audit`.
-- `target/boon-artifacts/no-shortcuts-report.json` now reports verdict `pass`
-  with `0` shortcut pattern hits in Rust execution paths and generated code.
+  `"success": false`. The current report has 18 passed gates and 6 failed
+  gates: `verify-honest-compiler`, `verify-no-shortcuts`,
+  `verify-honesty-deterministic`, `verify-language-corpus`, `verify-lowering`,
+  and `verify-prompt-audit`.
+- `target/boon-artifacts/no-shortcuts-report.json` now reports verdict `fail`.
+  It catches the remaining compiler execution shortcuts around
+  `constant_text`, `constant_value`, `call_constant`, `pipe_constant`,
+  `dd_render_operation_from_expr`, and `expression_has_call`. Those functions
+  are used to evaluate Boon semantics or choose scalar render behavior in the
+  compiler instead of lowering the semantics into typed DD operators.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
-  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
-  template, but that template is still transitional, runtime command/effect
+  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR render
+  program, but that program is still scalar/text-only, runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
@@ -61,7 +78,16 @@ under `target/boon-artifacts/`.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
   runtime, adversarial no-heuristics, stale-artifact rejection, cross-host
   parity, scenario protocol, and the verifier self-test pass. Source truth,
-  resolver/shape, and DD lowering still fail.
+  resolver/shape, DD lowering, and the no-shortcuts summary still fail while
+  compiler shortcut functions remain.
+- `target/boon-artifacts/resolver-shape-report.json` is now the canonical
+  resolver/shape artifact. It enumerates every manifest example, definitions,
+  source bindings, source shapes, unresolved references, shape diagnostics,
+  unknown shapes, and a resolver/shape heuristic scan. The latest focused run
+  has 0 unresolved references, 0 shape diagnostics, 0 unknown shapes, and 0
+  missing source shapes, but still fails because HIR/shape implementation has
+  path/root/library heuristics and all manifest features remain
+  `accepted-incomplete`.
 - `target/boon-artifacts/phase-boundary-report.json` now writes the canonical
   per-example AST/HIR/shape/semantic/DD summary and scans compiler boundary
   violations. It currently reports verdict `pass` with `0` compiler boundary
@@ -80,11 +106,15 @@ under `target/boon-artifacts/`.
   The current checked set is 374 generated artifacts with 0 stale and 0
   missing paths.
 - `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
-  and DD graph IR coverage for all 22 required examples. It now reports zero
-  unsupported semantic nodes, and `StaticGraph` no longer carries a scalar
-  runtime plan. It still fails because the DD graph IR output template is a
-  transitional scalar render template and full semantic render/effect/
-  persistence protocols are not lowered yet.
+  and DD graph IR coverage for all 22 required examples. It reports zero
+  unsupported semantic nodes, and the old `DdOutputTemplate` execution symbol is
+  gone from compiler, runtime, codegen, xtask, and checked-in generated
+  artifacts. Generated crates now insert typed `GeneratedSourceEvent` facts
+  into Timely/DD instead of pre-collapsing `SourceAction` values into host text;
+  `source_action_text`, `submit_text`, and `submit_text_and_drain` are now
+  forbidden shortcut patterns. Lowering still fails because `DdRenderProgram` is
+  scalar monitor/render text only and full semantic render/effect/persistence
+  protocols are not lowered into DD operators yet.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
@@ -110,11 +140,11 @@ under `target/boon-artifacts/`.
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are
   current-corpus evidence, not full accepted-language completion.
-- `verify-generated-crates` still runs each generated crate's own Timely/DD
-  graph against the first checked scenario step for that example and compares
-  the final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
-  stronger than the earlier "emitted something" smoke test, but it is still not
-  the full multi-step command/effect assertion.
+- `verify-generated-crates` now runs all 22 generated crates' own Timely/DD
+  graphs against typed first-step scenario source facts and compares the final
+  `SmokeOutput` to `examples/<example>/expected.render.json`; this is stronger
+  than the earlier "emitted something" smoke test and the later host-text input
+  path, but it is still not the full multi-step command/effect assertion.
 - `boon_examples::run_embedded_matrix`, backend smoke APIs, xtask example-output
   comparison, and the native/terminal playgrounds now dispatch the generated
   Timely/DD crates directly for the canonical examples instead of compiling
@@ -132,8 +162,17 @@ under `target/boon-artifacts/`.
   the generated graph/runtime protocol renders the expected text `1` after
   reload.
 - The current deterministic honesty report has 0 stale artifact failures, 0
-  shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
-  features without full coverage, and 0 host-semantics violations.
+  adversarial heuristic failures, 6 accepted features without full coverage, and
+  0 host-semantics violations. The focused `verify-no-shortcuts` report now
+  records remaining compiler shortcut symbols, so those must be removed before
+  the deterministic honesty verdict can honestly pass.
+- Verification no longer refreshes checked-in generated artifacts as part of
+  `verify all`, `verify-wasm-dd`, `verify-playgrounds`, or the terminal example
+  matrix. Those paths require `verify-generated-freshness` first and fail on
+  stale checked-in generated files instead of rewriting them.
+- The current focused generated-crate report is
+  `target/boon-artifacts/generated-crates.json`; it has 22 checked generated
+  crates, 0 failures, and 0 missing crates after the typed-source input change.
 
 ## Minimized Repro
 
@@ -145,11 +184,11 @@ jq '.success, [.gates[] | select(.status == "failed") | {name, command, error: .
 ```
 
 The expected current failed gates are `verify-honest-compiler`,
-`verify-honesty-deterministic`, `verify-language-corpus`,
-`verify-lowering`, and `verify-prompt-audit`.
-`verify-no-shortcuts`, `verify-negative-corpus`, `verify-playgrounds`, plan
-coverage, generated freshness, generated crate tests, and
-terminal/native/browser target tests are expected to pass.
+`verify-no-shortcuts`, `verify-honesty-deterministic`,
+`verify-language-corpus`, `verify-lowering`, and `verify-prompt-audit`.
+`verify-negative-corpus`, `verify-playgrounds`, plan coverage, generated
+freshness, generated crate tests, and terminal/native/browser target tests are
+expected to pass.
 
 ## Next Pin/Fork/Fix Decision
 
@@ -159,10 +198,11 @@ Continue with the remaining Phase 2 and Phase 3 work in
 1. Finish resolver diagnostics and name/source resolution.
 2. Expand shape/type checking from initial reports into full accepted-language
    coverage.
-3. Replace the transitional scalar output template path with semantic IR, DD
-   graph IR, and generated-only runtime execution.
-4. Keep `verify-no-shortcuts` passing while broadening the deterministic gates
-   so renamed or newly introduced shortcuts cannot slip through.
+3. Replace the scalar `DdRenderProgram` path with semantic IR, DD graph IR, and
+   generated-only runtime execution for structured render, effect, monitor, and
+   persistence protocols.
+4. Remove the compiler shortcut functions now caught by `verify-no-shortcuts`
+   rather than renaming or allowlisting them.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.

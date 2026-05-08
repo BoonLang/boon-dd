@@ -100,7 +100,7 @@ macro_rules! run_generated_fixture_actions {
             submitted = true;
         }
         if !submitted {
-            graph.sources.submit_text("", epoch);
+            graph.sources.submit_host_tick(epoch);
         }
         graph.sources.close_epoch(epoch);
         let target = $crate_name::graph::completion_time(epoch) + 1;
@@ -165,7 +165,7 @@ macro_rules! run_generated_fixture_steps {
                         graph = $crate_name::graph::build_dataflow(&mut worker);
                         if persistence_enabled {
                             if let Some(value) = persisted_text.clone() {
-                                graph.sources.submit_text(value, epoch);
+                                graph.sources.submit_persisted_text(value, epoch);
                             }
                         }
                     }

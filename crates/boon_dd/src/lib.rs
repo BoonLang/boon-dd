@@ -1,6 +1,7 @@
 use differential_dataflow::collection::VecCollection;
 use differential_dataflow::input::InputSession;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
@@ -65,11 +66,13 @@ pub enum BoonValue {
 pub enum GeneratedSourceEventPayload {
     EmptyRecord,
     Text(String),
+    Number(BoonNumber),
     Tag {
         name: TagName,
         payload: Option<BoonValue>,
     },
     Record(BTreeMap<String, BoonValue>),
+    List(Vec<BoonValue>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -84,6 +87,20 @@ pub enum GeneratedSourceEvent {
         generation: u32,
         payload: GeneratedSourceEventPayload,
     },
+}
+
+impl Eq for GeneratedSourceEvent {}
+
+impl PartialOrd for GeneratedSourceEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for GeneratedSourceEvent {
+    fn cmp(&self, other: &Self) -> Ordering {
+        format!("{self:?}").cmp(&format!("{other:?}"))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,7 +172,19 @@ pub struct GraphOperator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DdOutputTemplate {
+pub struct DdRenderProgram {
+    pub source: DdRenderProgramSource,
+    pub operation: DdRenderOperation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderProgramSource {
+    pub semantic_path: Option<String>,
+    pub output_node: NodeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderOperation {
     ConstantText(String),
     CountInputEvents { initial: i64 },
     LatestInputText,
@@ -232,8 +261,45 @@ pub fn value_to_text(value: &BoonValue) -> String {
     }
 }
 
-pub fn source_action_text(action: &SourceAction) -> String {
-    value_to_text(&action.value)
+pub fn source_action_payload(action: &SourceAction) -> GeneratedSourceEventPayload {
+    match &action.value {
+        BoonValue::EmptyRecord => GeneratedSourceEventPayload::EmptyRecord,
+        BoonValue::Text(text) => GeneratedSourceEventPayload::Text(text.clone()),
+        BoonValue::Number(number) => GeneratedSourceEventPayload::Number(number.clone()),
+        BoonValue::Tag { name, payload } => GeneratedSourceEventPayload::Tag {
+            name: name.clone(),
+            payload: payload.as_deref().cloned(),
+        },
+        BoonValue::Record(record) => GeneratedSourceEventPayload::Record(record.clone()),
+        BoonValue::List(values) => GeneratedSourceEventPayload::List(values.clone()),
+    }
+}
+
+pub fn generated_source_event_text(event: &GeneratedSourceEvent) -> String {
+    match event {
+        GeneratedSourceEvent::Static { payload, .. }
+        | GeneratedSourceEvent::Dynamic { payload, .. } => generated_payload_text(payload),
+    }
+}
+
+pub fn generated_payload_text(payload: &GeneratedSourceEventPayload) -> String {
+    match payload {
+        GeneratedSourceEventPayload::EmptyRecord => String::new(),
+        GeneratedSourceEventPayload::Text(text) => text.clone(),
+        GeneratedSourceEventPayload::Number(number) => {
+            value_to_text(&BoonValue::Number(number.clone()))
+        }
+        GeneratedSourceEventPayload::Tag { name, payload } => value_to_text(&BoonValue::Tag {
+            name: name.clone(),
+            payload: payload.clone().map(Box::new),
+        }),
+        GeneratedSourceEventPayload::Record(record) => {
+            value_to_text(&BoonValue::Record(record.clone()))
+        }
+        GeneratedSourceEventPayload::List(values) => {
+            value_to_text(&BoonValue::List(values.clone()))
+        }
+    }
 }
 
 pub const REQUIRED_EXAMPLES: &[&str] = &[

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Shape {
@@ -33,6 +33,11 @@ pub struct ShapeDiagnostic {
 pub fn check_module(module: &boon_hir::HirModule) -> ShapeReport {
     let mut context = ShapeContext {
         definitions: BTreeMap::new(),
+        source_paths: module
+            .sources
+            .iter()
+            .map(|source| source.path.clone())
+            .collect(),
         diagnostics: Vec::new(),
     };
     for definition in &module.definitions {
@@ -53,6 +58,7 @@ pub fn check_module(module: &boon_hir::HirModule) -> ShapeReport {
 
 struct ShapeContext {
     definitions: BTreeMap<String, Shape>,
+    source_paths: BTreeSet<String>,
     diagnostics: Vec<ShapeDiagnostic>,
 }
 
@@ -109,6 +115,13 @@ impl ShapeContext {
     }
 
     fn path_shape(&self, path: &str) -> Shape {
+        if self.source_paths.contains(path)
+            || path
+                .strip_prefix("sources.")
+                .is_some_and(|source_path| self.source_paths.contains(source_path))
+        {
+            return Shape::SourceMarker;
+        }
         let root = path.split('.').next().unwrap_or(path);
         self.definitions
             .get(root)

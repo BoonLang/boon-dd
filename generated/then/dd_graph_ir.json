@@ -39,9 +39,15 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": {
-    "CountInputEvents": {
-      "initial": 0
+  "render_program": {
+    "source": {
+      "semantic_path": "value",
+      "output_node": "DocumentText"
+    },
+    "operation": {
+      "CountInputEvents": {
+        "initial": 0
+      }
     }
   }
 }

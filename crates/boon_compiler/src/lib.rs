@@ -1,6 +1,6 @@
 use boon_dd::{
-    DdOutputTemplate, GraphNode, GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId,
-    StaticGraph,
+    DdRenderOperation, DdRenderProgram, DdRenderProgramSource, GraphNode, GraphOperator,
+    GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -65,7 +65,7 @@ pub struct DdGraphIr {
     pub source_hash: String,
     pub nodes: Vec<DdGraphNode>,
     pub unsupported_semantic_nodes: Vec<NodeId>,
-    pub output_template: DdOutputTemplate,
+    pub render_program: DdRenderProgram,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,11 +349,11 @@ fn lower_semantic_to_dd(
             })
             .collect(),
         unsupported_semantic_nodes,
-        output_template: dd_output_template_from_hir(hir, &graph.initial_text),
+        render_program: dd_render_program_from_hir(hir, graph),
     }
 }
 
-fn dd_output_template_from_hir(hir: &boon_hir::HirModule, initial_text: &str) -> DdOutputTemplate {
+fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) -> DdRenderProgram {
     let document = hir
         .definitions
         .iter()
@@ -364,27 +364,40 @@ fn dd_output_template_from_hir(hir: &boon_hir::HirModule, initial_text: &str) ->
         .as_deref()
         .and_then(|path| target_expression(path, hir));
     let semantic_expr = target_expr.or(document_expr);
-    if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
-        return DdOutputTemplate::ConstantText(text);
-    }
-    let Some(expr) = semantic_expr else {
-        return DdOutputTemplate::ConstantText(String::new());
+    let source = DdRenderProgramSource {
+        semantic_path: target_path.clone(),
+        output_node: graph.render_node.clone(),
     };
+    let operation = if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
+        DdRenderOperation::ConstantText(text)
+    } else if let Some(expr) = semantic_expr {
+        dd_render_operation_from_expr(expr, hir, &graph.initial_text)
+    } else {
+        DdRenderOperation::ConstantText(String::new())
+    };
+    DdRenderProgram { source, operation }
+}
+
+fn dd_render_operation_from_expr(
+    expr: &boon_syntax::Expr,
+    hir: &boon_hir::HirModule,
+    initial_text: &str,
+) -> DdRenderOperation {
     if expression_has_latest(expr) {
-        DdOutputTemplate::LatestInputText
+        DdRenderOperation::LatestInputText
     } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::When) {
-        DdOutputTemplate::MatchTagText { tag, text }
+        DdRenderOperation::MatchTagText { tag, text }
     } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::While) {
-        DdOutputTemplate::MatchTagText { tag, text }
+        DdRenderOperation::MatchTagText { tag, text }
     } else if expression_has_call(expr, "Math/sum")
         || expression_has_hold(expr)
         || expression_has_then(expr)
     {
-        DdOutputTemplate::CountInputEvents {
+        DdRenderOperation::CountInputEvents {
             initial: initial_text.parse().unwrap_or(0),
         }
     } else {
-        DdOutputTemplate::ConstantText(constant_text(expr, hir).unwrap_or_default())
+        DdRenderOperation::ConstantText(constant_text(expr, hir).unwrap_or_default())
     }
 }
 

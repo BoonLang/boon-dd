@@ -32,10 +32,16 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": {
-    "MatchTagText": {
-      "tag": "Active",
-      "text": "active"
+  "render_program": {
+    "source": {
+      "semantic_path": "visible",
+      "output_node": "DocumentText"
+    },
+    "operation": {
+      "MatchTagText": {
+        "tag": "Active",
+        "text": "active"
+      }
     }
   }
 }

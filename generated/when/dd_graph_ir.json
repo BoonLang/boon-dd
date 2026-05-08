@@ -32,10 +32,16 @@
     }
   ],
   "unsupported_semantic_nodes": [],
-  "output_template": {
-    "MatchTagText": {
-      "tag": "Enter",
-      "text": "accepted"
+  "render_program": {
+    "source": {
+      "semantic_path": "accepted",
+      "output_node": "DocumentText"
+    },
+    "operation": {
+      "MatchTagText": {
+        "tag": "Enter",
+        "text": "accepted"
+      }
     }
   }
 }
