@@ -224,7 +224,10 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                                 node: NodeId("EffectSink".to_owned()),
                                 name: "Window/animation_frame".to_owned(),
                             }],
-                            persistence: Vec::new(),
+                            persistence: vec![boon_dd::PersistenceCommand::SaveText {
+                                node: NodeId("PersistTap".to_owned()),
+                                value: text.clone(),
+                            }],
                         });
                 }
             })

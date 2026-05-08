@@ -26,6 +26,13 @@
         }
       }
     ],
-    "persistence": []
+    "persistence": [
+      {
+        "SaveText": {
+          "node": "PersistTap",
+          "value": "1"
+        }
+      }
+    ]
   }
 ]

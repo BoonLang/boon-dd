@@ -223,7 +223,10 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                                 text: text.clone(),
                             }],
                             effects: Vec::new(),
-                            persistence: Vec::new(),
+                            persistence: vec![boon_dd::PersistenceCommand::SaveText {
+                                node: NodeId("PersistTap".to_owned()),
+                                value: text.clone(),
+                            }],
                         });
                 }
             })

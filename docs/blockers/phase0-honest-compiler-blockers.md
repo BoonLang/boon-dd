@@ -104,11 +104,14 @@ under `target/boon-artifacts/`.
   `Persistence`, and `Effect` sink families, with `Timer/interval` and
   `Window/animation_frame` lowered as effect-producing source requests.
   Generated crates now return the expanded `SmokeOutput` protocol with monitor,
-  render, effect, and persistence channels. Lowering still fails because full
-  semantic render/effect/persistence protocols are not lowered into DD operators
-  yet. The latest focused lowering run reports 0 legacy render-operation
-  examples, 0 legacy render operations, 0 missing output sink families, and 0
-  unsupported semantic nodes.
+  render, effect, and persistence channels. `PersistTap` graphs emit generated
+  `PersistenceCommand::SaveText` outputs, and scenario reload proof consumes
+  that generated persistence channel instead of deriving saved state from host
+  render text. Lowering still fails because full semantic render/effect/
+  persistence protocols are not lowered into DD operators yet. The latest
+  focused lowering run reports 0 legacy render-operation examples, 0 legacy
+  render operations, 0 missing output sink families, and 0 unsupported semantic
+  nodes.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
@@ -145,8 +148,8 @@ under `target/boon-artifacts/`.
   source through `RuntimeHost`. The old `RuntimeHost::compile_and_run_scenario`
   execution API has been removed; the deterministic generated-only runtime gate
   now passes with 22 generated fixture outputs and zero forbidden runtime helper
-  hits. Remaining runtime blockers are the transitional output-template lowerer
-  and incomplete command/effect/persistence execution.
+  hits. Remaining runtime blockers are the transitional render-expression
+  lowerer and incomplete command/effect/persistence execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario, preserves ordered source/command events, and runs every parsed
   scenario step through the generated Timely/DD graph. It reports verdict

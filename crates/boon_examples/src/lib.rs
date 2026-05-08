@@ -141,7 +141,7 @@ macro_rules! run_generated_fixture_steps {
         let has_persistence_tap = $crate_name::persist_bindings::has_persistence_tap();
         let mut persistence_enabled = false;
         let mut persisted_text: Option<String> = None;
-        let mut last_text: Option<String> = None;
+        let mut last_generated_persisted_text: Option<String> = None;
         let mut outputs = Vec::new();
         for (step_index, step) in $steps.iter().enumerate() {
             let epoch = step_index as u64 + 1;
@@ -155,7 +155,7 @@ macro_rules! run_generated_fixture_steps {
                     {
                         if has_persistence_tap {
                             persistence_enabled = true;
-                            persisted_text = last_text.clone();
+                            persisted_text = last_generated_persisted_text.clone();
                         }
                     }
                     boon_dd::ScenarioEvent::Command(command) if command.command == "reload" => {
@@ -193,8 +193,11 @@ macro_rules! run_generated_fixture_steps {
                 .into_iter()
                 .last()
                 .unwrap_or_else(empty_smoke_output);
-            last_text = output.render.first().map(|command| match command {
-                boon_dd::RenderCommand::PatchText { text, .. } => text.clone(),
+            last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {
+                match command {
+                    boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),
+                    boon_dd::PersistenceCommand::LoadText { .. } => None,
+                }
             });
             outputs.push(GeneratedScenarioStepOutput {
                 step_index,

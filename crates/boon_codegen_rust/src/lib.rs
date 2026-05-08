@@ -142,6 +142,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
         graph.render_node.0
     ));
     let effect_commands = effect_commands_from_protocol(&dd_graph_ir.output_protocol);
+    let persistence_commands = persistence_commands_from_protocol(&dd_graph_ir.output_protocol);
     code.push_str("    worker.dataflow::<EncodedTime, _, _>(|scope| {\n");
     code.push_str("        let events = input.to_collection(scope);\n");
     code.push_str(&render_collection_from_program(&dd_graph_ir.render_program));
@@ -163,7 +164,10 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
         "                        effects: {},\n",
         effect_commands
     ));
-    code.push_str("                        persistence: Vec::new(),\n");
+    code.push_str(&format!(
+        "                        persistence: {},\n",
+        persistence_commands
+    ));
     code.push_str("                    });\n");
     code.push_str("                }\n");
     code.push_str("            })\n");
@@ -185,6 +189,25 @@ fn effect_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String
             boon_dd::DdOutputSink::Effect { node, name, .. } => Some(format!(
                 "boon_dd::EffectCommand::Requested {{ node: NodeId({:?}.to_owned()), name: {:?}.to_owned() }}",
                 node.0, name
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if commands.is_empty() {
+        "Vec::new()".to_owned()
+    } else {
+        format!("vec![{}]", commands.join(", "))
+    }
+}
+
+fn persistence_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String {
+    let commands = protocol
+        .sinks
+        .iter()
+        .filter_map(|sink| match sink {
+            boon_dd::DdOutputSink::Persistence { node, .. } => Some(format!(
+                "boon_dd::PersistenceCommand::SaveText {{ node: NodeId({:?}.to_owned()), value: text.clone() }}",
+                node.0
             )),
             _ => None,
         })
