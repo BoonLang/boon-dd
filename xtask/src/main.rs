@@ -34,6 +34,10 @@ const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
     concat!("generated", "_text_collection"),
     concat!("smoke", "_input_text"),
     concat!("compile", "_and_run_step"),
+    concat!("scenario", "_actions_for_text"),
+    concat!("run", "_generated_for_source"),
+    concat!("REQUIRED", "_FIXTURES"),
+    concat!("steps", ".first()"),
     concat!("source", "_action_text"),
     concat!("submit", "_text("),
     concat!("submit", "_text_and_drain"),
@@ -3293,6 +3297,23 @@ fn validate_prompt_audit_file(
         .get("critical_findings")
         .and_then(|value| value.as_array())
         .context("audit missing critical_findings array")?;
+    for (index, finding) in critical_findings.iter().enumerate() {
+        for field in ["summary", "path", "evidence", "required_fix"] {
+            finding
+                .get(field)
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .with_context(|| {
+                    format!("audit critical_findings[{index}] missing non-empty {field}")
+                })?;
+        }
+        finding
+            .get("line")
+            .and_then(|value| value.as_u64())
+            .with_context(|| {
+                format!("audit critical_findings[{index}] missing non-negative line")
+            })?;
+    }
     for field in ["reviewed_files", "reviewed_artifacts", "commands_reviewed"] {
         audit
             .get(field)

@@ -2,13 +2,14 @@
 
 This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
-machine-readable reports, and the named shortcut execution symbols have been
-removed from compiler/runtime execution paths. The remaining compiler/runtime
-is still not honest enough to satisfy the full plan because the generated Rust
-consumes a DD graph IR output protocol and render program that are explicit,
-hashed, and carry render-expression IR instead of precomputed compiler text,
-and the old legacy render-operation variants have been removed. The output
-protocol is still incomplete for effect execution.
+machine-readable reports. The compiler no longer uses the original
+precomputed-text render shortcuts, and the generated Rust consumes explicit,
+hashed DD graph IR output protocol and render-expression IR. Independent
+prompt audits found remaining shortcut/fake-pass paths, including fixture hash
+dispatch, first-step-only browser/generated smoke paths, host-side native
+render/input branches, weak native parity, expected-output-derived generated
+snapshots, and synthetic verifier self-tests. These are now tracked as honest
+blockers instead of being hidden behind a green no-shortcuts report.
 
 ## Failing Commands
 
@@ -35,6 +36,7 @@ Error: deterministic honesty verification is not complete; see target/boon-artif
 ```bash
 cargo xtask verify-language-corpus --format json
 cargo xtask verify-lowering --format json
+cargo xtask verify-no-shortcuts --format json
 cargo xtask verify-prompt-audit --format json
 ```
 
@@ -45,11 +47,17 @@ under `target/boon-artifacts/`.
 
 - `cargo xtask verify all --format json` exits with status `1` and writes
   `target/boon-artifacts/verify-report.json` plus `success.json` with
-  `"success": false`. The current report has 19 passed gates and 5 failed
-  gates: `verify-honest-compiler`, `verify-honesty-deterministic`,
+  `"success": false`. The previous clean report had 19 passed gates and 5
+  failed gates: `verify-honest-compiler`, `verify-honesty-deterministic`,
   `verify-language-corpus`, `verify-lowering`, and `verify-prompt-audit`.
-- `target/boon-artifacts/no-shortcuts-report.json` now reports verdict `pass`
-  with `0` shortcut pattern hits in Rust execution paths and generated code.
+  The no-shortcuts gate has since been tightened to also reject fixture
+  dispatch and first-step-only scenario helpers, so the next aggregate report
+  is expected to include `verify-no-shortcuts` until those paths are removed.
+- `target/boon-artifacts/no-shortcuts-report.json` now rejects the active
+  fixture/first-step execution shortcuts found by prompt audit:
+  `scenario_actions_for_text`, `run_generated_for_source`, `REQUIRED_FIXTURES`,
+  and `steps.first()`. Earlier reports showed verdict `pass` with 0 hits, which
+  was too weak because those execution paths were not scanned.
   The compiler no longer precomputes render text through `constant_text`,
   `constant_value`, `call_constant`, `pipe_constant`,
   `dd_render_operation_from_expr`, or `expression_has_call`; checked-in
@@ -68,10 +76,12 @@ under `target/boon-artifacts/`.
   deterministic honesty gates with current evidence, hashes, and tool versions.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
   runtime, adversarial no-heuristics, stale-artifact rejection, cross-host
-  parity, scenario protocol, no-shortcuts, and the verifier self-test pass.
-  Source truth and resolver/shape still fail because the manifest is explicitly
-  incomplete; DD lowering still fails because the DD graph IR does not yet cover
-  the full render/effect/persistence protocol.
+  parity, scenario protocol, and the verifier self-test pass. Source truth and
+  resolver/shape still fail because the manifest is explicitly incomplete; DD
+  lowering still fails because the DD graph IR does not yet cover the full
+  render/effect/persistence protocol. The independent fake-pass audit also
+  found that the self-test is synthetic and native parity only counts native
+  structured outputs, so those reports are evidence but not sufficient proof.
 - `target/boon-artifacts/resolver-shape-report.json` is now the canonical
   resolver/shape artifact. It enumerates every manifest example, definitions,
   source bindings, source shapes, unresolved references, shape diagnostics,
@@ -122,17 +132,23 @@ under `target/boon-artifacts/`.
 - `target/boon-artifacts/verification-harness-self-test-report.json` now reports
   verdict `pass` for synthetic injected faults covering shortcut insertion,
   stale artifact hashes, skipped multi-step scenarios, wrong generated fixture
-  outputs, and disabled DD lowering.
+  outputs, and disabled DD lowering. Prompt audit found this is still too weak:
+  the self-test does not run the real gates against corrupted artifacts or a
+  faulty first-step runner.
 - `target/boon-artifacts/cross-host-parity-report.json` now compares terminal
   scenario outputs with browser generated-WASM smoke outputs and records native
   structured generated DD outputs. It reports verdict `pass`: browser smoke
   submits checked scenario actions, terminal/browser output hashes match for all
   22 examples, and native proof exposes `generated_output` for all 22 examples.
+  Prompt audit found native output values are counted but not hashed and compared
+  against terminal/browser outputs.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
   seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
-  deterministic-report hash, verdict, and critical findings. It still fails
-  because no audit outputs have been produced under
-  `target/boon-artifacts/prompt-audit/`.
+  deterministic-report hash, verdict, required critical-finding fields, and
+  critical finding counts. Independent audits have produced failing findings
+  for shortcut/fallback paths, language completeness, runtime boundaries,
+  verifier fake-pass paths, and cross-repo missing semantics. This gate must
+  remain failed until those findings are fixed by code plus deterministic tests.
 - Phase-specific report commands now exist for the current manifest corpus:
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are
@@ -160,9 +176,11 @@ under `target/boon-artifacts/`.
   reload.
 - The current deterministic honesty report has 0 stale artifact failures, 0
   adversarial heuristic failures, 6 accepted features without full coverage, and
-  0 host-semantics violations. It also reports 0 shortcut execution symbols.
-  The current failed deterministic gates are `source-truth`,
-  `resolver-and-shape`, and `dd-lowering-coverage`.
+  0 host-semantics violations. Earlier reports showed 0 shortcut execution
+  symbols, but the no-shortcuts pattern set was too narrow. The current failed
+  deterministic gates are `source-truth`, `resolver-and-shape`, and
+  `dd-lowering-coverage`; after the no-shortcuts hardening, shortcut execution
+  symbols must also be expected until the flagged paths are removed.
 - Verification no longer refreshes checked-in generated artifacts as part of
   `verify all`, `verify-wasm-dd`, `verify-playgrounds`, or the terminal example
   matrix. Those paths require `verify-generated-freshness` first and fail on
@@ -182,7 +200,7 @@ jq '.success, [.gates[] | select(.status == "failed") | {name, command, error: .
 
 The expected current failed gates are `verify-honest-compiler`,
 `verify-honesty-deterministic`, `verify-language-corpus`, `verify-lowering`,
-and `verify-prompt-audit`. `verify-no-shortcuts`, `verify-negative-corpus`,
+`verify-no-shortcuts`, and `verify-prompt-audit`. `verify-negative-corpus`,
 `verify-playgrounds`, plan coverage, generated freshness, generated crate
 tests, and terminal/native/browser target tests are expected to pass.
 
@@ -196,9 +214,13 @@ Continue with the remaining Phase 3 and Phase 4 work in
    runtime, host parity, positive fixture, and negative diagnostic coverage.
 2. Replace the remaining incomplete render/effect/persistence protocol paths
    with semantic IR, DD graph IR, and generated-only runtime execution.
-3. Keep `verify-no-shortcuts`, `plan-coverage`, resolver/shape scans, generated
-   freshness, and generated-crate checks passing while replacing the remaining
-   incomplete render/effect/persistence protocol paths.
+3. Remove the fixture-dispatch and first-step-only execution helpers now caught
+   by `verify-no-shortcuts`: `scenario_actions_for_text`,
+   `run_generated_for_source`, `REQUIRED_FIXTURES` execution dispatch, and
+   `steps.first()` scenario replay.
+4. Replace expected-output-derived generated snapshots, synthetic self-tests,
+   and native-output count-only parity with generated-DD execution artifacts and
+   value hash comparisons.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.
