@@ -5,7 +5,7 @@ implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
 removed from Rust execution paths. The remaining compiler/runtime is still not
 honest enough to satisfy the full plan because it uses a compatibility scalar
-DD plan instead of a complete semantic IR and DD graph IR.
+DD plan instead of generated Rust from the reported semantic IR and DD graph IR.
 
 ## Failing Commands
 
@@ -48,11 +48,9 @@ under `target/boon-artifacts/`.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
-  now consumes AST/HIR for compatibility graph construction but real semantic IR
-  and DD graph IR are not implemented,
-  runtime still executes a compatibility scalar DD plan instead of generated
-  semantic IR/DD graph artifacts, generated code still uses compatibility scalar
-  rendering templates,
+  now consumes AST/HIR for compatibility graph construction and emits reportable
+  semantic IR/DD graph IR, but generated code still selects runtime behavior
+  through a compatibility scalar plan instead of generated DD graph templates,
   scenario parsing now models command actions but runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
@@ -66,6 +64,10 @@ under `target/boon-artifacts/`.
 - `target/boon-artifacts/generated-freshness-report.json` now reports verdict
   `pass` after regenerating every required generated artifact into a temporary
   directory and comparing SHA-256 hashes against the checked-in generated tree.
+- `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
+  and DD graph IR coverage for all 22 required examples. It still fails because
+  unsupported semantic nodes remain and generated Rust still consumes the
+  compatibility scalar plan.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   but still fails because features and examples are explicitly
