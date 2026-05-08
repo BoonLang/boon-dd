@@ -144,11 +144,13 @@ under `target/boon-artifacts/`.
   against terminal/browser outputs.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
   seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
-  deterministic-report hash, verdict, required critical-finding fields, and
-  critical finding counts. Independent audits have produced failing findings
-  for shortcut/fallback paths, language completeness, runtime boundaries,
-  verifier fake-pass paths, and cross-repo missing semantics. This gate must
-  remain failed until those findings are fixed by code plus deterministic tests.
+  canonical deterministic-report hash, verdict, required critical-finding
+  fields, and critical finding counts. The deterministic-report hash normalizes
+  volatile `duration_ms` fields so prompt-audit freshness is not invalidated by
+  elapsed-time noise. Independent audits have produced failing findings for
+  shortcut/fallback paths, language completeness, runtime boundaries, verifier
+  fake-pass paths, and cross-repo missing semantics. This gate must remain
+  failed until those findings are fixed by code plus deterministic tests.
 - Phase-specific report commands now exist for the current manifest corpus:
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are

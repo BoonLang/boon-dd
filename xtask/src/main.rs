@@ -1058,6 +1058,38 @@ fn sha256_text(text: &str) -> Result<String> {
         .context("sha256sum text output was empty")
 }
 
+fn canonical_deterministic_report_hash(path: &Path) -> Result<Option<String>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("missing deterministic report {}", path.display()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("invalid deterministic report JSON {}", path.display()))?;
+    normalize_deterministic_report_hash_value(&mut value);
+    Ok(Some(sha256_text(&serde_json::to_string(&value)?)?))
+}
+
+fn normalize_deterministic_report_hash_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, value) in map.iter_mut() {
+                if key == "duration_ms" {
+                    *value = serde_json::Value::from(0);
+                } else {
+                    normalize_deterministic_report_hash_value(value);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                normalize_deterministic_report_hash_value(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn repo_state() -> Result<serde_json::Value> {
     let root = repo_root()?;
     let status = run_capture("git", &["status", "--short"])?;
@@ -3111,10 +3143,7 @@ fn write_honest_compiler_prompts(_args: &[String]) -> Result<serde_json::Value> 
             })
         })
         .collect::<Vec<_>>();
-    let deterministic_report_sha256 = deterministic_report
-        .exists()
-        .then(|| sha256_file(&deterministic_report))
-        .transpose()?;
+    let deterministic_report_sha256 = canonical_deterministic_report_hash(&deterministic_report)?;
     let details = serde_json::json!({
         "verdict": "pass",
         "repo_state": repo_state()?,
@@ -3144,10 +3173,8 @@ fn verify_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
     let prompt_dir = root.join("docs/prompts/honest-compiler");
     let deterministic_report = artifacts_dir()?.join("honesty-deterministic-report.json");
     let current_repo_state_hash = repo_state_hash()?;
-    let current_deterministic_report_hash = deterministic_report
-        .exists()
-        .then(|| sha256_file(&deterministic_report))
-        .transpose()?;
+    let current_deterministic_report_hash =
+        canonical_deterministic_report_hash(&deterministic_report)?;
     let required_prompt_counts = [
         ("01_shortcut_and_fallback_audit", 2_usize),
         ("02_language_completeness_audit", 1),
