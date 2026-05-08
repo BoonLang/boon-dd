@@ -1766,6 +1766,30 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         .iter()
         .map(|example| example.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
+    let embedded_required_examples = boon_dd::REQUIRED_EXAMPLES
+        .iter()
+        .map(|example| (*example).to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let embedded_fixture_examples = boon_examples::REQUIRED_FIXTURES
+        .iter()
+        .map(|fixture| fixture.name.to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    let manifest_missing_from_required_examples = manifest_example_ids
+        .difference(&embedded_required_examples)
+        .cloned()
+        .collect::<Vec<_>>();
+    let required_examples_missing_from_manifest = embedded_required_examples
+        .difference(&manifest_example_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let manifest_missing_from_embedded_fixtures = manifest_example_ids
+        .difference(&embedded_fixture_examples)
+        .cloned()
+        .collect::<Vec<_>>();
+    let embedded_fixtures_missing_from_manifest = embedded_fixture_examples
+        .difference(&manifest_example_ids)
+        .cloned()
+        .collect::<Vec<_>>();
     let manifest_negative_ids = parsed_manifest
         .negative_examples
         .iter()
@@ -1893,6 +1917,10 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         feature_unknown_negative_examples.is_empty(),
         features_without_positive.is_empty(),
         features_without_negative.is_empty(),
+        manifest_missing_from_required_examples.is_empty(),
+        required_examples_missing_from_manifest.is_empty(),
+        manifest_missing_from_embedded_fixtures.is_empty(),
+        embedded_fixtures_missing_from_manifest.is_empty(),
         negative_files_missing.is_empty(),
         incomplete_negative_examples.is_empty(),
     ]
@@ -1905,7 +1933,14 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         "accepted_language_version": parsed_manifest.language.accepted_language_version,
         "language_status": parsed_manifest.language.status,
         "examples_on_disk": examples,
+        "manifest_example_count": manifest_example_ids.len(),
+        "required_examples_count": embedded_required_examples.len(),
+        "embedded_fixture_count": embedded_fixture_examples.len(),
         "missing_examples_in_manifest": missing_examples,
+        "manifest_missing_from_required_examples": manifest_missing_from_required_examples,
+        "required_examples_missing_from_manifest": required_examples_missing_from_manifest,
+        "manifest_missing_from_embedded_fixtures": manifest_missing_from_embedded_fixtures,
+        "embedded_fixtures_missing_from_manifest": embedded_fixtures_missing_from_manifest,
         "missing_example_files": missing_example_files,
         "feature_count": parsed_manifest.features.len(),
         "features_without_positive_examples": features_without_positive,

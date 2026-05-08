@@ -82,8 +82,9 @@ under `target/boon-artifacts/`.
   template instead of loading a verified generated graph API.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
-  but still fails because features and examples are explicitly
-  `accepted-incomplete`.
+  and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
+  and embedded example fixtures. It still fails because features and examples
+  are explicitly `accepted-incomplete`.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
   prompt pack hashes, repo-state hash, and deterministic-report hash.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
