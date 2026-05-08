@@ -101,6 +101,10 @@ under `target/boon-artifacts/`.
   final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
   stronger than the earlier "emitted something" smoke test, but it is still not
   full multi-step command/effect execution.
+- `boon_examples::run_embedded_matrix` and the terminal playground now dispatch
+  the generated Timely/DD crates directly for the canonical examples instead of
+  compiling source through `RuntimeHost`; remaining runtime-host users are still
+  blockers for generated-only runtime completion.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario and reports preserved command actions. It still fails because
   command/effect/persistence execution and skip-fault self-tests are incomplete.
