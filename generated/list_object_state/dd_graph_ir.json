@@ -3,25 +3,201 @@
   "source_hash": "f52673216be2e8308c5bdba5376d7617fe6d5c70247db7d522be4d9c6469eeb0",
   "nodes": [
     {
-      "node": "LibraryCall",
+      "node": "Semantic1Items0Title",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic1Items0Title",
+      "order": 0
+    },
+    {
+      "node": "Semantic2Items0Completed",
+      "operator": "Tag",
+      "inputs": [],
+      "output": "Semantic2Items0Completed",
+      "order": 1
+    },
+    {
+      "node": "Semantic3Items0",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1Items0Title",
+        "Semantic2Items0Completed"
+      ],
+      "output": "Semantic3Items0",
+      "order": 2
+    },
+    {
+      "node": "Semantic4Items1Title",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic4Items1Title",
+      "order": 3
+    },
+    {
+      "node": "Semantic5Items1Completed",
+      "operator": "Tag",
+      "inputs": [],
+      "output": "Semantic5Items1Completed",
+      "order": 4
+    },
+    {
+      "node": "Semantic6Items1",
+      "operator": "Record",
+      "inputs": [
+        "Semantic4Items1Title",
+        "Semantic5Items1Completed"
+      ],
+      "output": "Semantic6Items1",
+      "order": 5
+    },
+    {
+      "node": "Semantic7Items",
+      "operator": "List",
+      "inputs": [
+        "Semantic3Items0",
+        "Semantic6Items1"
+      ],
+      "output": "Semantic7Items",
+      "order": 6
+    },
+    {
+      "node": "Semantic8ActiveCountInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic8ActiveCountInput",
+      "order": 7
+    },
+    {
+      "node": "Semantic9ActiveCountStage0",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic9ActiveCountStage0",
+      "order": 8
+    },
+    {
+      "node": "Semantic10ActiveCountStageIfInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic10ActiveCountStageIfInput",
+      "order": 9
+    },
+    {
+      "node": "Semantic11ActiveCountStageIfStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic11ActiveCountStageIfStage",
+      "order": 10
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic12ActiveCountStageIf",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic10ActiveCountStageIfInput",
+        "Semantic11ActiveCountStageIfStage"
+      ],
+      "output": "Semantic12ActiveCountStageIf",
+      "order": 11
+    },
+    {
+      "node": "Semantic13ActiveCountStage",
+      "operator": "LibraryCall",
+      "inputs": [
+        "Semantic9ActiveCountStage0",
+        "Semantic12ActiveCountStageIf"
+      ],
+      "output": "Semantic13ActiveCountStage",
+      "order": 12
+    },
+    {
+      "node": "Semantic14ActiveCount",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic8ActiveCountInput",
+        "Semantic13ActiveCountStage"
+      ],
+      "output": "Semantic14ActiveCount",
+      "order": 13
+    },
+    {
+      "node": "Semantic15DocumentInputInputInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic15DocumentInputInputInput",
+      "order": 14
+    },
+    {
+      "node": "Semantic16DocumentInputInputStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic16DocumentInputInputStage",
+      "order": 15
+    },
+    {
+      "node": "Semantic17DocumentInputInput",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic15DocumentInputInputInput",
+        "Semantic16DocumentInputInputStage"
+      ],
+      "output": "Semantic17DocumentInputInput",
+      "order": 16
+    },
+    {
+      "node": "Semantic18DocumentInputStage0",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic18DocumentInputStage0",
+      "order": 17
+    },
+    {
+      "node": "Semantic19DocumentInputStage",
+      "operator": "LibraryCall",
+      "inputs": [
+        "Semantic18DocumentInputStage0"
+      ],
+      "output": "Semantic19DocumentInputStage",
+      "order": 18
+    },
+    {
+      "node": "Semantic20DocumentInput",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic17DocumentInputInput",
+        "Semantic19DocumentInputStage"
+      ],
+      "output": "Semantic20DocumentInput",
+      "order": 19
+    },
+    {
+      "node": "Semantic21DocumentStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic21DocumentStage",
+      "order": 20
+    },
+    {
+      "node": "Semantic22Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic20DocumentInput",
+        "Semantic21DocumentStage"
+      ],
+      "output": "Semantic22Document",
+      "order": 21
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 22
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 23
     }
   ],
   "unsupported_semantic_nodes": [],

@@ -313,48 +313,59 @@ fn lower_semantic_to_dd(
     graph: &StaticGraph,
     hir: &boon_hir::HirModule,
 ) -> DdGraphIr {
-    let lowered_kinds = graph
-        .operators
-        .iter()
-        .filter_map(|operator| semantic_kind_for_operator(&operator.kind))
-        .collect::<std::collections::BTreeSet<_>>();
     let unsupported_semantic_nodes = semantic_ir
         .nodes
         .iter()
-        .filter(|node| {
-            !matches!(
-                node.kind,
-                SemanticNodeKind::ConstantText
-                    | SemanticNodeKind::ConstantNumber
-                    | SemanticNodeKind::PathReference
-                    | SemanticNodeKind::Pipe
-                    | SemanticNodeKind::Skip
-                    | SemanticNodeKind::Tag
-                    | SemanticNodeKind::Record
-                    | SemanticNodeKind::List
-            ) && !lowered_kinds.contains(&node.kind)
-        })
+        .filter(|node| dd_operator_for_semantic_kind(&node.kind).is_none())
         .map(|node| node.node.clone())
-        .collect();
+        .collect::<Vec<_>>();
     let render_program = dd_render_program_from_hir(hir, graph);
     DdGraphIr {
         graph_id: graph.graph_id.clone(),
         source_hash: graph.source_hash.clone(),
-        nodes: graph
-            .operators
+        nodes: semantic_ir
+            .nodes
             .iter()
-            .map(|operator| DdGraphNode {
-                node: operator.node.clone(),
-                operator: operator.kind.clone(),
-                inputs: operator.inputs.clone(),
-                output: operator.output.clone(),
-                order: operator.order,
+            .enumerate()
+            .filter_map(|(index, node)| {
+                let operator = dd_operator_for_semantic_kind(&node.kind)?;
+                Some(DdGraphNode {
+                    node: node.node.clone(),
+                    operator,
+                    inputs: node.dependencies.clone(),
+                    output: node.node.clone(),
+                    order: index as u32,
+                })
             })
             .collect(),
         unsupported_semantic_nodes,
         output_protocol: dd_output_protocol(graph, &render_program, hir),
         render_program,
     }
+}
+
+fn dd_operator_for_semantic_kind(kind: &SemanticNodeKind) -> Option<GraphOperatorKind> {
+    Some(match kind {
+        SemanticNodeKind::SourceLeaf => GraphOperatorKind::SourceLeaf,
+        SemanticNodeKind::PathReference => GraphOperatorKind::PathReference,
+        SemanticNodeKind::Skip => GraphOperatorKind::Skip,
+        SemanticNodeKind::ConstantText => GraphOperatorKind::ConstantText,
+        SemanticNodeKind::ConstantNumber => GraphOperatorKind::ConstantNumber,
+        SemanticNodeKind::Tag => GraphOperatorKind::Tag,
+        SemanticNodeKind::Record => GraphOperatorKind::Record,
+        SemanticNodeKind::List => GraphOperatorKind::List,
+        SemanticNodeKind::BinaryAdd => GraphOperatorKind::BinaryAdd,
+        SemanticNodeKind::Pipe => GraphOperatorKind::Pipe,
+        SemanticNodeKind::Then => GraphOperatorKind::Then,
+        SemanticNodeKind::Hold => GraphOperatorKind::Hold,
+        SemanticNodeKind::Latest => GraphOperatorKind::Latest,
+        SemanticNodeKind::When => GraphOperatorKind::When,
+        SemanticNodeKind::While => GraphOperatorKind::WhileSwitch,
+        SemanticNodeKind::LibraryCall => GraphOperatorKind::LibraryCall,
+        SemanticNodeKind::RenderSink => GraphOperatorKind::RenderSink,
+        SemanticNodeKind::MonitorTap => GraphOperatorKind::MonitorTap,
+        SemanticNodeKind::Unknown => return None,
+    })
 }
 
 fn dd_output_protocol(
@@ -445,26 +456,6 @@ fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) ->
             expr: DdRenderExpr::Text(String::new()),
         });
     DdRenderProgram { source, operation }
-}
-
-fn semantic_kind_for_operator(kind: &GraphOperatorKind) -> Option<SemanticNodeKind> {
-    Some(match kind {
-        GraphOperatorKind::SourceLeaf => SemanticNodeKind::SourceLeaf,
-        GraphOperatorKind::Then | GraphOperatorKind::ThenConst => SemanticNodeKind::Then,
-        GraphOperatorKind::When => SemanticNodeKind::When,
-        GraphOperatorKind::WhileSwitch => SemanticNodeKind::While,
-        GraphOperatorKind::Latest => SemanticNodeKind::Latest,
-        GraphOperatorKind::Hold | GraphOperatorKind::KeyedHold => SemanticNodeKind::Hold,
-        GraphOperatorKind::ListAppend
-        | GraphOperatorKind::ListRemove
-        | GraphOperatorKind::ListMap
-        | GraphOperatorKind::ListRetain => SemanticNodeKind::LibraryCall,
-        GraphOperatorKind::RenderSink => SemanticNodeKind::RenderSink,
-        GraphOperatorKind::EffectSink | GraphOperatorKind::PersistTap => return None,
-        GraphOperatorKind::MonitorTap => SemanticNodeKind::MonitorTap,
-        GraphOperatorKind::LibraryCall => SemanticNodeKind::LibraryCall,
-        GraphOperatorKind::BinaryAdd => SemanticNodeKind::BinaryAdd,
-    })
 }
 
 fn build_static_graph(

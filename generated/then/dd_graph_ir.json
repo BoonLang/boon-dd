@@ -3,39 +3,75 @@
   "source_hash": "1380010dd36446aef52b3399a94b0e8ea80379cef4b3fa696da21ce949833816",
   "nodes": [
     {
-      "node": "Then",
+      "node": "Semantic1ValueInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic1ValueInput",
+      "order": 0
+    },
+    {
+      "node": "Semantic2ValueStage0",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic2ValueStage0",
+      "order": 1
+    },
+    {
+      "node": "Semantic3ValueStage",
       "operator": "Then",
-      "inputs": [],
-      "output": "Then",
-      "order": 10
+      "inputs": [
+        "Semantic2ValueStage0"
+      ],
+      "output": "Semantic3ValueStage",
+      "order": 2
     },
     {
-      "node": "ThenConst",
-      "operator": "ThenConst",
-      "inputs": [],
-      "output": "ThenConst",
-      "order": 11
+      "node": "Semantic4Value",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic1ValueInput",
+        "Semantic3ValueStage"
+      ],
+      "output": "Semantic4Value",
+      "order": 3
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic5DocumentInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic5DocumentInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic6DocumentStage",
+      "order": 5
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic7Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic5DocumentInput",
+        "Semantic6DocumentStage"
+      ],
+      "output": "Semantic7Document",
+      "order": 6
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 7
     },
     {
-      "node": "MonitorTap",
+      "node": "Value",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Value",
+      "order": 8
     }
   ],
   "unsupported_semantic_nodes": [],

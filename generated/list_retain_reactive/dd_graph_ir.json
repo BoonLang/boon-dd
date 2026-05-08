@@ -3,32 +3,83 @@
   "source_hash": "052f0d5e5e1ebe051a9b0141c6a311149bb90c46e61cd0c384b7583138b359e0",
   "nodes": [
     {
-      "node": "WhileSwitch",
-      "operator": "WhileSwitch",
+      "node": "Semantic1VisibleInput",
+      "operator": "PathReference",
       "inputs": [],
-      "output": "WhileSwitch",
-      "order": 21
+      "output": "Semantic1VisibleInput",
+      "order": 0
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic2VisibleStageArmActive",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic2VisibleStageArmActive",
+      "order": 1
+    },
+    {
+      "node": "Semantic3VisibleStageArmCompleted",
+      "operator": "Skip",
+      "inputs": [],
+      "output": "Semantic3VisibleStageArmCompleted",
+      "order": 2
+    },
+    {
+      "node": "Semantic4VisibleStage",
+      "operator": "WhileSwitch",
+      "inputs": [
+        "Semantic2VisibleStageArmActive",
+        "Semantic3VisibleStageArmCompleted"
+      ],
+      "output": "Semantic4VisibleStage",
+      "order": 3
+    },
+    {
+      "node": "Semantic5Visible",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic1VisibleInput",
+        "Semantic4VisibleStage"
+      ],
+      "output": "Semantic5Visible",
+      "order": 4
+    },
+    {
+      "node": "Semantic6DocumentInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic6DocumentInput",
+      "order": 5
+    },
+    {
+      "node": "Semantic7DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic7DocumentStage",
+      "order": 6
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic8Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic6DocumentInput",
+        "Semantic7DocumentStage"
+      ],
+      "output": "Semantic8Document",
+      "order": 7
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 8
     },
     {
-      "node": "MonitorTap",
+      "node": "Visible",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Visible",
+      "order": 9
     }
   ],
   "unsupported_semantic_nodes": [],

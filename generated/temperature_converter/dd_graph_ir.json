@@ -3,25 +3,73 @@
   "source_hash": "b50788f0f4b02652a5067c0c1258115c4219cf61e26d5aa4239d0188abebb543",
   "nodes": [
     {
-      "node": "LibraryCall",
+      "node": "Semantic1Celsius",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic1Celsius",
+      "order": 0
+    },
+    {
+      "node": "Semantic2FahrenheitInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic2FahrenheitInput",
+      "order": 1
+    },
+    {
+      "node": "Semantic3FahrenheitStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic3FahrenheitStage",
+      "order": 2
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic4Fahrenheit",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic2FahrenheitInput",
+        "Semantic3FahrenheitStage"
+      ],
+      "output": "Semantic4Fahrenheit",
+      "order": 3
+    },
+    {
+      "node": "Semantic5DocumentInput",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic5DocumentInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6DocumentStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic6DocumentStage",
+      "order": 5
+    },
+    {
+      "node": "Semantic7Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic5DocumentInput",
+        "Semantic6DocumentStage"
+      ],
+      "output": "Semantic7Document",
+      "order": 6
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 7
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 8
     }
   ],
   "unsupported_semantic_nodes": [],

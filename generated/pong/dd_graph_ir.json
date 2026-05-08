@@ -3,53 +3,136 @@
   "source_hash": "f9c7ec25c45ac53e25b44795429ff3401adef7ed5416d1d64e1ff36d1d2de8f6",
   "nodes": [
     {
-      "node": "Then",
-      "operator": "Then",
+      "node": "Semantic1StoreSourcesFrame",
+      "operator": "LibraryCall",
       "inputs": [],
-      "output": "Then",
+      "output": "Semantic1StoreSourcesFrame",
+      "order": 0
+    },
+    {
+      "node": "Semantic2StoreSources",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1StoreSourcesFrame"
+      ],
+      "output": "Semantic2StoreSources",
+      "order": 1
+    },
+    {
+      "node": "Semantic3StoreGameInput",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic3StoreGameInput",
+      "order": 2
+    },
+    {
+      "node": "Semantic4StoreGameStageHold0Input",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic4StoreGameStageHold0Input",
+      "order": 3
+    },
+    {
+      "node": "Semantic5StoreGameStageHold0Stage0Game",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic5StoreGameStageHold0Stage0Game",
+      "order": 4
+    },
+    {
+      "node": "Semantic6StoreGameStageHold0Stage0",
+      "operator": "LibraryCall",
+      "inputs": [
+        "Semantic5StoreGameStageHold0Stage0Game"
+      ],
+      "output": "Semantic6StoreGameStageHold0Stage0",
+      "order": 5
+    },
+    {
+      "node": "Semantic7StoreGameStageHold0Stage",
+      "operator": "Then",
+      "inputs": [
+        "Semantic6StoreGameStageHold0Stage0"
+      ],
+      "output": "Semantic7StoreGameStageHold0Stage",
+      "order": 6
+    },
+    {
+      "node": "Semantic8StoreGameStageHold0",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic4StoreGameStageHold0Input",
+        "Semantic7StoreGameStageHold0Stage"
+      ],
+      "output": "Semantic8StoreGameStageHold0",
+      "order": 7
+    },
+    {
+      "node": "Semantic9StoreGameStage",
+      "operator": "Hold",
+      "inputs": [
+        "Semantic8StoreGameStageHold0"
+      ],
+      "output": "Semantic9StoreGameStage",
+      "order": 8
+    },
+    {
+      "node": "Semantic10StoreGame",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic3StoreGameInput",
+        "Semantic9StoreGameStage"
+      ],
+      "output": "Semantic10StoreGame",
+      "order": 9
+    },
+    {
+      "node": "Semantic11Store",
+      "operator": "Record",
+      "inputs": [
+        "Semantic2StoreSources",
+        "Semantic10StoreGame"
+      ],
+      "output": "Semantic11Store",
       "order": 10
     },
     {
-      "node": "Hold",
-      "operator": "Hold",
+      "node": "Semantic12DocumentInput",
+      "operator": "ConstantText",
       "inputs": [],
-      "output": "Hold",
-      "order": 30
+      "output": "Semantic12DocumentInput",
+      "order": 11
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic13DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic13DocumentStage",
+      "order": 12
     },
     {
-      "node": "PersistTap",
-      "operator": "PersistTap",
-      "inputs": [],
-      "output": "PersistTap",
-      "order": 90
+      "node": "Semantic14Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic12DocumentInput",
+        "Semantic13DocumentStage"
+      ],
+      "output": "Semantic14Document",
+      "order": 13
     },
     {
-      "node": "EffectSink",
-      "operator": "EffectSink",
-      "inputs": [],
-      "output": "EffectSink",
-      "order": 91
-    },
-    {
-      "node": "RenderSink",
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 14
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 15
     }
   ],
   "unsupported_semantic_nodes": [],

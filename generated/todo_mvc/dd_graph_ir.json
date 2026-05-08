@@ -3,32 +3,127 @@
   "source_hash": "ef126e810b7c5288c5a3698fa154508504fb02b08c019499e88c069290bcacc5",
   "nodes": [
     {
-      "node": "SourceLeaf",
+      "node": "Semantic1StoreSourcesNewTodoInputText",
       "operator": "SourceLeaf",
       "inputs": [],
-      "output": "SourceLeaf",
+      "output": "Semantic1StoreSourcesNewTodoInputText",
       "order": 0
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic2StoreSourcesNewTodoInputEventKeyDownKey",
+      "operator": "SourceLeaf",
+      "inputs": [],
+      "output": "Semantic2StoreSourcesNewTodoInputEventKeyDownKey",
+      "order": 1
+    },
+    {
+      "node": "Semantic3StoreSourcesNewTodoInputEventKeyDown",
+      "operator": "Record",
+      "inputs": [
+        "Semantic2StoreSourcesNewTodoInputEventKeyDownKey"
+      ],
+      "output": "Semantic3StoreSourcesNewTodoInputEventKeyDown",
+      "order": 2
+    },
+    {
+      "node": "Semantic4StoreSourcesNewTodoInputEvent",
+      "operator": "Record",
+      "inputs": [
+        "Semantic3StoreSourcesNewTodoInputEventKeyDown"
+      ],
+      "output": "Semantic4StoreSourcesNewTodoInputEvent",
+      "order": 3
+    },
+    {
+      "node": "Semantic5StoreSourcesNewTodoInput",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1StoreSourcesNewTodoInputText",
+        "Semantic4StoreSourcesNewTodoInputEvent"
+      ],
+      "output": "Semantic5StoreSourcesNewTodoInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6StoreSources",
+      "operator": "Record",
+      "inputs": [
+        "Semantic5StoreSourcesNewTodoInput"
+      ],
+      "output": "Semantic6StoreSources",
+      "order": 5
+    },
+    {
+      "node": "Semantic7StoreTodos0",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic7StoreTodos0",
+      "order": 6
+    },
+    {
+      "node": "Semantic8StoreTodos1",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic8StoreTodos1",
+      "order": 7
+    },
+    {
+      "node": "Semantic9StoreTodos",
+      "operator": "List",
+      "inputs": [
+        "Semantic7StoreTodos0",
+        "Semantic8StoreTodos1"
+      ],
+      "output": "Semantic9StoreTodos",
+      "order": 8
+    },
+    {
+      "node": "Semantic10Store",
+      "operator": "Record",
+      "inputs": [
+        "Semantic6StoreSources",
+        "Semantic9StoreTodos"
+      ],
+      "output": "Semantic10Store",
+      "order": 9
+    },
+    {
+      "node": "Semantic11DocumentInput",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic11DocumentInput",
+      "order": 10
+    },
+    {
+      "node": "Semantic12DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic12DocumentStage",
+      "order": 11
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic13Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic11DocumentInput",
+        "Semantic12DocumentStage"
+      ],
+      "output": "Semantic13Document",
+      "order": 12
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 13
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 14
     }
   ],
   "unsupported_semantic_nodes": [],

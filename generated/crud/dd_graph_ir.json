@@ -3,32 +3,85 @@
   "source_hash": "f760154427ea497f56c3c255239e192fe56b094a54ea1f455f81ff8f6c71f3e7",
   "nodes": [
     {
-      "node": "SourceLeaf",
+      "node": "Semantic1StoreSourcesSaveButtonEventPress",
       "operator": "SourceLeaf",
       "inputs": [],
-      "output": "SourceLeaf",
+      "output": "Semantic1StoreSourcesSaveButtonEventPress",
       "order": 0
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic2StoreSourcesSaveButtonEvent",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1StoreSourcesSaveButtonEventPress"
+      ],
+      "output": "Semantic2StoreSourcesSaveButtonEvent",
+      "order": 1
+    },
+    {
+      "node": "Semantic3StoreSourcesSaveButton",
+      "operator": "Record",
+      "inputs": [
+        "Semantic2StoreSourcesSaveButtonEvent"
+      ],
+      "output": "Semantic3StoreSourcesSaveButton",
+      "order": 2
+    },
+    {
+      "node": "Semantic4StoreSources",
+      "operator": "Record",
+      "inputs": [
+        "Semantic3StoreSourcesSaveButton"
+      ],
+      "output": "Semantic4StoreSources",
+      "order": 3
+    },
+    {
+      "node": "Semantic5Store",
+      "operator": "Record",
+      "inputs": [
+        "Semantic4StoreSources"
+      ],
+      "output": "Semantic5Store",
+      "order": 4
+    },
+    {
+      "node": "Semantic6DocumentInput",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic6DocumentInput",
+      "order": 5
+    },
+    {
+      "node": "Semantic7DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic7DocumentStage",
+      "order": 6
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic8Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic6DocumentInput",
+        "Semantic7DocumentStage"
+      ],
+      "output": "Semantic8Document",
+      "order": 7
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 8
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 9
     }
   ],
   "unsupported_semantic_nodes": [],

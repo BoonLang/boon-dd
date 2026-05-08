@@ -3,60 +3,196 @@
   "source_hash": "95bff9fa06b9e74b54ed29f113093777aa31a33886e0c389b70733970ae53ea2",
   "nodes": [
     {
-      "node": "SourceLeaf",
+      "node": "Semantic1StoreSourcesIncrementButtonEventPress",
       "operator": "SourceLeaf",
       "inputs": [],
-      "output": "SourceLeaf",
+      "output": "Semantic1StoreSourcesIncrementButtonEventPress",
       "order": 0
     },
     {
-      "node": "Then",
-      "operator": "Then",
+      "node": "Semantic2StoreSourcesIncrementButtonEvent",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1StoreSourcesIncrementButtonEventPress"
+      ],
+      "output": "Semantic2StoreSourcesIncrementButtonEvent",
+      "order": 1
+    },
+    {
+      "node": "Semantic3StoreSourcesIncrementButton",
+      "operator": "Record",
+      "inputs": [
+        "Semantic2StoreSourcesIncrementButtonEvent"
+      ],
+      "output": "Semantic3StoreSourcesIncrementButton",
+      "order": 2
+    },
+    {
+      "node": "Semantic4StoreSources",
+      "operator": "Record",
+      "inputs": [
+        "Semantic3StoreSourcesIncrementButton"
+      ],
+      "output": "Semantic4StoreSources",
+      "order": 3
+    },
+    {
+      "node": "Semantic5StoreCounterInput",
+      "operator": "ConstantNumber",
       "inputs": [],
-      "output": "Then",
+      "output": "Semantic5StoreCounterInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6StoreCounterStageHold0Input",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic6StoreCounterStageHold0Input",
+      "order": 5
+    },
+    {
+      "node": "Semantic7StoreCounterStageHold0Stage0Left",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic7StoreCounterStageHold0Stage0Left",
+      "order": 6
+    },
+    {
+      "node": "Semantic8StoreCounterStageHold0Stage0Right",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic8StoreCounterStageHold0Stage0Right",
+      "order": 7
+    },
+    {
+      "node": "Semantic9StoreCounterStageHold0Stage0",
+      "operator": "BinaryAdd",
+      "inputs": [
+        "Semantic7StoreCounterStageHold0Stage0Left",
+        "Semantic8StoreCounterStageHold0Stage0Right"
+      ],
+      "output": "Semantic9StoreCounterStageHold0Stage0",
+      "order": 8
+    },
+    {
+      "node": "Semantic10StoreCounterStageHold0Stage",
+      "operator": "Then",
+      "inputs": [
+        "Semantic9StoreCounterStageHold0Stage0"
+      ],
+      "output": "Semantic10StoreCounterStageHold0Stage",
+      "order": 9
+    },
+    {
+      "node": "Semantic11StoreCounterStageHold0",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic6StoreCounterStageHold0Input",
+        "Semantic10StoreCounterStageHold0Stage"
+      ],
+      "output": "Semantic11StoreCounterStageHold0",
       "order": 10
     },
     {
-      "node": "Hold",
+      "node": "Semantic12StoreCounterStage",
       "operator": "Hold",
-      "inputs": [],
-      "output": "Hold",
-      "order": 30
+      "inputs": [
+        "Semantic11StoreCounterStageHold0"
+      ],
+      "output": "Semantic12StoreCounterStage",
+      "order": 11
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic13StoreCounter",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic5StoreCounterInput",
+        "Semantic12StoreCounterStage"
+      ],
+      "output": "Semantic13StoreCounter",
+      "order": 12
+    },
+    {
+      "node": "Semantic14Store",
+      "operator": "Record",
+      "inputs": [
+        "Semantic4StoreSources",
+        "Semantic13StoreCounter"
+      ],
+      "output": "Semantic14Store",
+      "order": 13
+    },
+    {
+      "node": "Semantic15DocumentRootElement",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic15DocumentRootElement",
+      "order": 14
+    },
+    {
+      "node": "Semantic16DocumentRootStyle",
+      "operator": "Record",
+      "inputs": [],
+      "output": "Semantic16DocumentRootStyle",
+      "order": 15
+    },
+    {
+      "node": "Semantic17DocumentRootLabelInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic17DocumentRootLabelInput",
+      "order": 16
+    },
+    {
+      "node": "Semantic18DocumentRootLabelStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic18DocumentRootLabelStage",
+      "order": 17
     },
     {
-      "node": "BinaryAdd",
-      "operator": "BinaryAdd",
-      "inputs": [],
-      "output": "BinaryAdd",
-      "order": 80
+      "node": "Semantic19DocumentRootLabel",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic17DocumentRootLabelInput",
+        "Semantic18DocumentRootLabelStage"
+      ],
+      "output": "Semantic19DocumentRootLabel",
+      "order": 18
     },
     {
-      "node": "PersistTap",
-      "operator": "PersistTap",
-      "inputs": [],
-      "output": "PersistTap",
-      "order": 90
+      "node": "Semantic20DocumentRoot",
+      "operator": "LibraryCall",
+      "inputs": [
+        "Semantic15DocumentRootElement",
+        "Semantic16DocumentRootStyle",
+        "Semantic19DocumentRootLabel"
+      ],
+      "output": "Semantic20DocumentRoot",
+      "order": 19
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic21Document",
+      "operator": "LibraryCall",
+      "inputs": [
+        "Semantic20DocumentRoot"
+      ],
+      "output": "Semantic21Document",
+      "order": 20
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 21
     },
     {
-      "node": "MonitorTap",
+      "node": "Counter",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Counter",
+      "order": 22
     }
   ],
   "unsupported_semantic_nodes": [],

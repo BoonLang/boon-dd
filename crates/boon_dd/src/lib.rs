@@ -160,6 +160,14 @@ pub struct GraphNode {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphOperatorKind {
     SourceLeaf,
+    PathReference,
+    Skip,
+    ConstantText,
+    ConstantNumber,
+    Tag,
+    Record,
+    List,
+    Pipe,
     ThenConst,
     Then,
     When,

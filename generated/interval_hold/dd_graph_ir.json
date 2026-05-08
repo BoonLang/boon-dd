@@ -3,60 +3,151 @@
   "source_hash": "f3dcfc6bf5fd0c81bb94ca1904e3452aefd12775ed052cffae4d235b3f5fd274",
   "nodes": [
     {
-      "node": "Then",
-      "operator": "Then",
+      "node": "Semantic1TickInputSeconds",
+      "operator": "ConstantNumber",
       "inputs": [],
-      "output": "Then",
+      "output": "Semantic1TickInputSeconds",
+      "order": 0
+    },
+    {
+      "node": "Semantic2TickInput",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1TickInputSeconds"
+      ],
+      "output": "Semantic2TickInput",
+      "order": 1
+    },
+    {
+      "node": "Semantic3TickStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic3TickStage",
+      "order": 2
+    },
+    {
+      "node": "Semantic4Tick",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic2TickInput",
+        "Semantic3TickStage"
+      ],
+      "output": "Semantic4Tick",
+      "order": 3
+    },
+    {
+      "node": "Semantic5CounterInput",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic5CounterInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6CounterStageHold0Input",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic6CounterStageHold0Input",
+      "order": 5
+    },
+    {
+      "node": "Semantic7CounterStageHold0Stage0Left",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic7CounterStageHold0Stage0Left",
+      "order": 6
+    },
+    {
+      "node": "Semantic8CounterStageHold0Stage0Right",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic8CounterStageHold0Stage0Right",
+      "order": 7
+    },
+    {
+      "node": "Semantic9CounterStageHold0Stage0",
+      "operator": "BinaryAdd",
+      "inputs": [
+        "Semantic7CounterStageHold0Stage0Left",
+        "Semantic8CounterStageHold0Stage0Right"
+      ],
+      "output": "Semantic9CounterStageHold0Stage0",
+      "order": 8
+    },
+    {
+      "node": "Semantic10CounterStageHold0Stage",
+      "operator": "Then",
+      "inputs": [
+        "Semantic9CounterStageHold0Stage0"
+      ],
+      "output": "Semantic10CounterStageHold0Stage",
+      "order": 9
+    },
+    {
+      "node": "Semantic11CounterStageHold0",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic6CounterStageHold0Input",
+        "Semantic10CounterStageHold0Stage"
+      ],
+      "output": "Semantic11CounterStageHold0",
       "order": 10
     },
     {
-      "node": "Hold",
+      "node": "Semantic12CounterStage",
       "operator": "Hold",
-      "inputs": [],
-      "output": "Hold",
-      "order": 30
+      "inputs": [
+        "Semantic11CounterStageHold0"
+      ],
+      "output": "Semantic12CounterStage",
+      "order": 11
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic13Counter",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic5CounterInput",
+        "Semantic12CounterStage"
+      ],
+      "output": "Semantic13Counter",
+      "order": 12
+    },
+    {
+      "node": "Semantic14DocumentInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic14DocumentInput",
+      "order": 13
+    },
+    {
+      "node": "Semantic15DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic15DocumentStage",
+      "order": 14
     },
     {
-      "node": "BinaryAdd",
-      "operator": "BinaryAdd",
-      "inputs": [],
-      "output": "BinaryAdd",
-      "order": 80
+      "node": "Semantic16Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic14DocumentInput",
+        "Semantic15DocumentStage"
+      ],
+      "output": "Semantic16Document",
+      "order": 15
     },
     {
-      "node": "PersistTap",
-      "operator": "PersistTap",
-      "inputs": [],
-      "output": "PersistTap",
-      "order": 90
-    },
-    {
-      "node": "EffectSink",
-      "operator": "EffectSink",
-      "inputs": [],
-      "output": "EffectSink",
-      "order": 91
-    },
-    {
-      "node": "RenderSink",
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 16
     },
     {
-      "node": "MonitorTap",
+      "node": "Counter",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Counter",
+      "order": 17
     }
   ],
   "unsupported_semantic_nodes": [],

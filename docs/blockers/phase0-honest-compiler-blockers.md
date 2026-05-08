@@ -94,6 +94,12 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
   compares structured generated outputs across terminal, Firefox/WASM, and
   native proof artifacts. Cross-host parity reports 22 native structured
   outputs and no terminal/browser or terminal/native mismatches.
+- `target/boon-artifacts/lowering-coverage-report.json` now records one DD
+  graph IR node per semantic IR node, preserving semantic dependency edges in
+  `DdGraphNode.inputs`. For example, `counter` currently reports 20 semantic IR
+  nodes and 20 DD graph IR nodes, with typed operators such as `SourceLeaf`,
+  `PathReference`, `Pipe`, `Then`, `ConstantNumber`, `LibraryCall`,
+  `RenderSink`, and `MonitorTap`.
 
 ## Current Blockers
 
@@ -113,8 +119,9 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
   runtime, generated freshness, and no-shortcuts reports pass, while
   `lowering-coverage-report.json` still fails.
 - `target/boon-artifacts/lowering-coverage-report.json` reports verdict `fail`
-  because the DD lowering still does not cover the full semantic
-  render/effect/persistence protocol required by the plan.
+  because code generation still builds the executable Timely/DD render pipeline
+  from the render-expression program rather than fully constructing every
+  render/effect/persistence behavior from the expanded DD graph IR nodes.
 - `target/boon-artifacts/prompt-audit-report.json` reports verdict `fail`: 7
   audit JSON files found, 0 missing, 0 schema errors, 14 hash mismatches, and
   17 open critical findings. The audit outputs are stale against the current

@@ -3,25 +3,58 @@
   "source_hash": "fe67e9b4a4e85d8a2baf0a4c4c891f036fe6ecd27d31502423373eba1c519f37",
   "nodes": [
     {
-      "node": "LibraryCall",
+      "node": "Semantic1SheetA1",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic1SheetA1",
+      "order": 0
+    },
+    {
+      "node": "Semantic2Sheet",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1SheetA1"
+      ],
+      "output": "Semantic2Sheet",
+      "order": 1
+    },
+    {
+      "node": "Semantic3DocumentInput",
+      "operator": "ConstantText",
+      "inputs": [],
+      "output": "Semantic3DocumentInput",
+      "order": 2
+    },
+    {
+      "node": "Semantic4DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic4DocumentStage",
+      "order": 3
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic5Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic3DocumentInput",
+        "Semantic4DocumentStage"
+      ],
+      "output": "Semantic5Document",
+      "order": 4
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 5
     },
     {
-      "node": "MonitorTap",
+      "node": "DocumentOutput",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "DocumentOutput",
+      "order": 6
     }
   ],
   "unsupported_semantic_nodes": [],

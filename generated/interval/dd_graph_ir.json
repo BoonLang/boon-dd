@@ -3,46 +3,125 @@
   "source_hash": "c51db24b3b3e254d25e471bbb2eeb921481abda1a6c5758da0ab93a8c5b6b978",
   "nodes": [
     {
-      "node": "Then",
-      "operator": "Then",
+      "node": "Semantic1TickInputSeconds",
+      "operator": "ConstantNumber",
       "inputs": [],
-      "output": "Then",
+      "output": "Semantic1TickInputSeconds",
+      "order": 0
+    },
+    {
+      "node": "Semantic2TickInput",
+      "operator": "Record",
+      "inputs": [
+        "Semantic1TickInputSeconds"
+      ],
+      "output": "Semantic2TickInput",
+      "order": 1
+    },
+    {
+      "node": "Semantic3TickStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic3TickStage",
+      "order": 2
+    },
+    {
+      "node": "Semantic4Tick",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic2TickInput",
+        "Semantic3TickStage"
+      ],
+      "output": "Semantic4Tick",
+      "order": 3
+    },
+    {
+      "node": "Semantic5CounterInputInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic5CounterInputInput",
+      "order": 4
+    },
+    {
+      "node": "Semantic6CounterInputStage0",
+      "operator": "ConstantNumber",
+      "inputs": [],
+      "output": "Semantic6CounterInputStage0",
+      "order": 5
+    },
+    {
+      "node": "Semantic7CounterInputStage",
+      "operator": "Then",
+      "inputs": [
+        "Semantic6CounterInputStage0"
+      ],
+      "output": "Semantic7CounterInputStage",
+      "order": 6
+    },
+    {
+      "node": "Semantic8CounterInput",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic5CounterInputInput",
+        "Semantic7CounterInputStage"
+      ],
+      "output": "Semantic8CounterInput",
+      "order": 7
+    },
+    {
+      "node": "Semantic9CounterStage",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "Semantic9CounterStage",
+      "order": 8
+    },
+    {
+      "node": "Semantic10Counter",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic8CounterInput",
+        "Semantic9CounterStage"
+      ],
+      "output": "Semantic10Counter",
+      "order": 9
+    },
+    {
+      "node": "Semantic11DocumentInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic11DocumentInput",
       "order": 10
     },
     {
-      "node": "ThenConst",
-      "operator": "ThenConst",
+      "node": "Semantic12DocumentStage",
+      "operator": "LibraryCall",
       "inputs": [],
-      "output": "ThenConst",
+      "output": "Semantic12DocumentStage",
       "order": 11
     },
     {
-      "node": "LibraryCall",
-      "operator": "LibraryCall",
-      "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "node": "Semantic13Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic11DocumentInput",
+        "Semantic12DocumentStage"
+      ],
+      "output": "Semantic13Document",
+      "order": 12
     },
     {
-      "node": "EffectSink",
-      "operator": "EffectSink",
-      "inputs": [],
-      "output": "EffectSink",
-      "order": 91
-    },
-    {
-      "node": "RenderSink",
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 13
     },
     {
-      "node": "MonitorTap",
+      "node": "Counter",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Counter",
+      "order": 14
     }
   ],
   "unsupported_semantic_nodes": [],

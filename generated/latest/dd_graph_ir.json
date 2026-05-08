@@ -3,32 +3,66 @@
   "source_hash": "03a354802943c2b640b6017e3de2a57c989a9c332d13d1494fd8e30b2575d925",
   "nodes": [
     {
-      "node": "Latest",
-      "operator": "Latest",
+      "node": "Semantic1Value0",
+      "operator": "PathReference",
       "inputs": [],
-      "output": "Latest",
-      "order": 22
+      "output": "Semantic1Value0",
+      "order": 0
     },
     {
-      "node": "LibraryCall",
+      "node": "Semantic2Value1",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic2Value1",
+      "order": 1
+    },
+    {
+      "node": "Semantic3Value",
+      "operator": "Latest",
+      "inputs": [
+        "Semantic1Value0",
+        "Semantic2Value1"
+      ],
+      "output": "Semantic3Value",
+      "order": 2
+    },
+    {
+      "node": "Semantic4DocumentInput",
+      "operator": "PathReference",
+      "inputs": [],
+      "output": "Semantic4DocumentInput",
+      "order": 3
+    },
+    {
+      "node": "Semantic5DocumentStage",
       "operator": "LibraryCall",
       "inputs": [],
-      "output": "LibraryCall",
-      "order": 70
+      "output": "Semantic5DocumentStage",
+      "order": 4
     },
     {
-      "node": "RenderSink",
+      "node": "Semantic6Document",
+      "operator": "Pipe",
+      "inputs": [
+        "Semantic4DocumentInput",
+        "Semantic5DocumentStage"
+      ],
+      "output": "Semantic6Document",
+      "order": 5
+    },
+    {
+      "node": "DocumentText",
       "operator": "RenderSink",
       "inputs": [],
-      "output": "RenderSink",
-      "order": 100
+      "output": "DocumentText",
+      "order": 6
     },
     {
-      "node": "MonitorTap",
+      "node": "Value",
       "operator": "MonitorTap",
       "inputs": [],
-      "output": "MonitorTap",
-      "order": 101
+      "output": "Value",
+      "order": 7
     }
   ],
   "unsupported_semantic_nodes": [],
