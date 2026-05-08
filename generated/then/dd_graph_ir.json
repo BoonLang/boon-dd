@@ -1,0 +1,47 @@
+{
+  "graph_id": "then",
+  "source_hash": "1380010dd36446aef52b3399a94b0e8ea80379cef4b3fa696da21ce949833816",
+  "nodes": [
+    {
+      "node": "Then",
+      "operator": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "ThenConst",
+      "operator": "ThenConst",
+      "inputs": [],
+      "output": "ThenConst",
+      "order": 11
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "CountInputEvents": {
+      "initial": 0
+    }
+  }
+}

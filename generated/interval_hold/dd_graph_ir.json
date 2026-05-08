@@ -1,0 +1,61 @@
+{
+  "graph_id": "interval_hold",
+  "source_hash": "f3dcfc6bf5fd0c81bb94ca1904e3452aefd12775ed052cffae4d235b3f5fd274",
+  "nodes": [
+    {
+      "node": "Then",
+      "operator": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "Hold",
+      "operator": "Hold",
+      "inputs": [],
+      "output": "Hold",
+      "order": 30
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "BinaryAdd",
+      "operator": "BinaryAdd",
+      "inputs": [],
+      "output": "BinaryAdd",
+      "order": 80
+    },
+    {
+      "node": "PersistTap",
+      "operator": "PersistTap",
+      "inputs": [],
+      "output": "PersistTap",
+      "order": 90
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "CountInputEvents": {
+      "initial": 0
+    }
+  }
+}

@@ -4,8 +4,10 @@ This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
 removed from Rust execution paths. The remaining compiler/runtime is still not
-honest enough to satisfy the full plan because it uses a compatibility scalar
-DD plan instead of generated Rust from the reported semantic IR and DD graph IR.
+honest enough to satisfy the full plan because the generated Rust consumes a DD
+graph IR output template that is still derived from the transitional static
+graph plan, and the runtime/static graph path still carries a compatibility
+scalar DD plan.
 
 ## Failing Commands
 
@@ -42,16 +44,18 @@ under `target/boon-artifacts/`.
 
 - `cargo xtask verify all --format json` exits with status `1` and writes
   `target/boon-artifacts/verify-report.json` plus `success.json` with
-  `"success": false`.
+  `"success": false`. The current report has 19 passed gates and 5 failed
+  gates: `verify-honest-compiler`, `verify-honesty-deterministic`,
+  `verify-language-corpus`, `verify-lowering`, and `verify-prompt-audit`.
 - `target/boon-artifacts/no-shortcuts-report.json` now reports verdict `pass`
   with `0` shortcut pattern hits in Rust execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
-  semantic IR/DD graph IR, but generated code still selects runtime behavior
-  through a compatibility scalar plan instead of generated DD graph templates,
-  scenario parsing now models command actions but runtime command/effect
+  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
+  template, but that template is still derived from the transitional static
+  graph plan, and runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
@@ -61,17 +65,21 @@ under `target/boon-artifacts/`.
   DD lowering, generated-only runtime, scenario protocol, cross-host parity, and
   verifier self-tests still fail.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
-  and no missing required generated artifact paths.
+  and no missing required generated artifact paths, including
+  `generated/<example>/dd_graph_ir.json` for all 22 required examples.
 - `target/boon-artifacts/negative-corpus-report.json` now reports verdict
   `pass` across syntax, resolver, shape, unsupported-library, and
   adversarial no-heuristics cases.
 - `target/boon-artifacts/generated-freshness-report.json` now reports verdict
   `pass` after regenerating every required generated artifact into a temporary
   directory and comparing SHA-256 hashes against the checked-in generated tree.
+  The current checked set is 374 generated artifacts with 0 stale and 0
+  missing paths.
 - `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
   and DD graph IR coverage for all 22 required examples. It now reports zero
-  unsupported semantic nodes, but still fails because generated Rust still
-  consumes the compatibility scalar plan instead of DD graph IR templates.
+  unsupported semantic nodes, but still fails because the runtime/static graph
+  still carries the compatibility scalar DD plan and the DD graph IR output
+  template is transitional.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   but still fails because features and examples are explicitly
@@ -90,6 +98,9 @@ under `target/boon-artifacts/`.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario and reports preserved command actions. It still fails because
   command/effect/persistence execution and skip-fault self-tests are incomplete.
+- The current deterministic honesty report has 0 stale artifact failures, 0
+  shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
+  features without full coverage, and 1 host-semantics violation.
 
 ## Minimized Repro
 

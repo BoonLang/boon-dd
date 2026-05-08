@@ -1,0 +1,38 @@
+{
+  "graph_id": "flight_booker",
+  "source_hash": "6b3269955f1c59ef48aee0d7d8564eac5845eece2b1bbbb2a9140e5cc734cfa5",
+  "nodes": [
+    {
+      "node": "SourceLeaf",
+      "operator": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "ConstantText": "booked"
+  }
+}

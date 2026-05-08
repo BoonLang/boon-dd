@@ -1,0 +1,68 @@
+{
+  "graph_id": "counter_hold",
+  "source_hash": "95bff9fa06b9e74b54ed29f113093777aa31a33886e0c389b70733970ae53ea2",
+  "nodes": [
+    {
+      "node": "SourceLeaf",
+      "operator": "SourceLeaf",
+      "inputs": [],
+      "output": "SourceLeaf",
+      "order": 0
+    },
+    {
+      "node": "Then",
+      "operator": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "Hold",
+      "operator": "Hold",
+      "inputs": [],
+      "output": "Hold",
+      "order": 30
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "BinaryAdd",
+      "operator": "BinaryAdd",
+      "inputs": [],
+      "output": "BinaryAdd",
+      "order": 80
+    },
+    {
+      "node": "PersistTap",
+      "operator": "PersistTap",
+      "inputs": [],
+      "output": "PersistTap",
+      "order": 90
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "CountInputEvents": {
+      "initial": 0
+    }
+  }
+}

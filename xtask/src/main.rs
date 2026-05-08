@@ -1092,7 +1092,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "runtime and generated code still execute a compatibility scalar DD plan instead of generated DD graph templates",
+            "generated code consumes the reported DD graph IR output template, but runtime/static graph execution still carries a compatibility scalar DD plan",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1167,8 +1167,8 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
             "inspect generated graph and host execution paths",
             serde_json::json!({
                 "blockers": [
-                    "generated Rust still consumes compatibility_scalar_plan",
-                    "runtime host still constructs outputs from compatibility graph snapshots"
+                    "runtime/static graph still carries the compatibility scalar DD plan",
+                    "DD output template is still derived from the transitional static graph plan"
                 ]
             }),
         ),
@@ -2142,7 +2142,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
-    let mut compatibility_scalar_plan_examples = Vec::new();
+    let mut runtime_compatibility_plan_examples = Vec::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let source_path = root.join("examples").join(example).join("source.bn");
         let source_text = fs::read_to_string(&source_path)
@@ -2162,7 +2162,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             .map(|node| format!("{:?}", node.operator))
             .collect::<std::collections::BTreeSet<_>>();
         unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
-        compatibility_scalar_plan_examples.push(example);
+        runtime_compatibility_plan_examples.push(example);
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -2172,7 +2172,8 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "dd_graph_node_count": plan.dd_graph_ir.nodes.len(),
             "dd_operators": dd_operators,
             "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
-            "compatibility_scalar_plan": plan.dd_graph_ir.compatibility_scalar_plan,
+            "dd_output_template": plan.dd_graph_ir.output_template,
+            "runtime_static_graph_plan": plan.graph.dd_plan,
         }));
     }
     let details = serde_json::json!({
@@ -2180,11 +2181,11 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
-        "compatibility_scalar_plan_examples": compatibility_scalar_plan_examples,
+        "runtime_compatibility_plan_examples": runtime_compatibility_plan_examples,
         "examples": examples,
         "blockers": [
-            "codegen still selects dataflow from a compatibility scalar DD plan",
-            "generated Rust still consumes compatibility_scalar_plan instead of DD graph IR templates"
+            "runtime/static graph still carries the compatibility scalar DD plan for every required example",
+            "DD output template is still derived from the transitional static graph plan until full semantic-to-DD lowering is complete"
         ],
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
@@ -2602,6 +2603,9 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
             format!("generated/{example}/graph_static.json").into_boxed_str(),
         ));
         required_paths.push(Box::leak(
+            format!("generated/{example}/dd_graph_ir.json").into_boxed_str(),
+        ));
+        required_paths.push(Box::leak(
             format!("generated/{example}/Cargo.toml").into_boxed_str(),
         ));
         required_paths.push(Box::leak(
@@ -2900,6 +2904,10 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
         serde_json::to_vec_pretty(&plan.graph)?,
     )?;
     fs::write(
+        generated_dir.join("dd_graph_ir.json"),
+        serde_json::to_vec_pretty(&plan.dd_graph_ir)?,
+    )?;
+    fs::write(
         generated_dir.join("generated_graph.rs"),
         boon_codegen_rust::generated_graph_module(&plan),
     )?;
@@ -2944,6 +2952,7 @@ fn generated_artifact_relative_paths() -> &'static [&'static str] {
         "src/monitor_bindings.rs",
         "src/persist_bindings.rs",
         "graph_static.json",
+        "dd_graph_ir.json",
         "generated_graph.rs",
         "monitor_snapshot.json",
         "terminal_120x40.snapshot.txt",

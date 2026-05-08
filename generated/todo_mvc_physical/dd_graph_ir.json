@@ -1,0 +1,31 @@
+{
+  "graph_id": "todo_mvc_physical",
+  "source_hash": "f9046673e2d569372f48aee62fafb98385a7378449c360bab2c9168fe6639956",
+  "nodes": [
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "ConstantText": "physical ready"
+  }
+}

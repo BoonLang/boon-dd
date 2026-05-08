@@ -1,0 +1,52 @@
+{
+  "graph_id": "pong",
+  "source_hash": "f9c7ec25c45ac53e25b44795429ff3401adef7ed5416d1d64e1ff36d1d2de8f6",
+  "nodes": [
+    {
+      "node": "Then",
+      "operator": "Then",
+      "inputs": [],
+      "output": "Then",
+      "order": 10
+    },
+    {
+      "node": "Hold",
+      "operator": "Hold",
+      "inputs": [],
+      "output": "Hold",
+      "order": 30
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "PersistTap",
+      "operator": "PersistTap",
+      "inputs": [],
+      "output": "PersistTap",
+      "order": 90
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "ConstantText": "frame 1"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "graph_id": "list_object_state",
+  "source_hash": "f52673216be2e8308c5bdba5376d7617fe6d5c70247db7d522be4d9c6469eeb0",
+  "nodes": [
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "ConstantText": "2 active"
+  }
+}

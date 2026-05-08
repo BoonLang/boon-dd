@@ -1,0 +1,41 @@
+{
+  "graph_id": "list_retain_reactive",
+  "source_hash": "052f0d5e5e1ebe051a9b0141c6a311149bb90c46e61cd0c384b7583138b359e0",
+  "nodes": [
+    {
+      "node": "WhileSwitch",
+      "operator": "WhileSwitch",
+      "inputs": [],
+      "output": "WhileSwitch",
+      "order": 21
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "MatchTagText": {
+      "tag": "Active",
+      "text": "active"
+    }
+  }
+}

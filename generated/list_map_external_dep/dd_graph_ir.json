@@ -1,0 +1,38 @@
+{
+  "graph_id": "list_map_external_dep",
+  "source_hash": "4c01ae60dd9edb812b5e35c5b7aadbe5a989abb56ea6cc53e3a37e3614d7f605",
+  "nodes": [
+    {
+      "node": "ListMap",
+      "operator": "ListMap",
+      "inputs": [],
+      "output": "ListMap",
+      "order": 42
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "ConstantText": "A,B,C"
+  }
+}

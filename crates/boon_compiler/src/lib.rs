@@ -65,7 +65,7 @@ pub struct DdGraphIr {
     pub source_hash: String,
     pub nodes: Vec<DdGraphNode>,
     pub unsupported_semantic_nodes: Vec<NodeId>,
-    pub compatibility_scalar_plan: DdScalarPlan,
+    pub output_template: DdOutputTemplate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +75,14 @@ pub struct DdGraphNode {
     pub inputs: Vec<NodeId>,
     pub output: NodeId,
     pub order: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdOutputTemplate {
+    ConstantText(String),
+    CountInputEvents { initial: i64 },
+    LatestInputText,
+    MatchTagText { tag: String, text: String },
 }
 
 pub fn compile_source(path: impl Into<String>, text: impl Into<String>) -> CompilePlan {
@@ -345,7 +353,21 @@ fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGrap
             })
             .collect(),
         unsupported_semantic_nodes,
-        compatibility_scalar_plan: graph.dd_plan.clone(),
+        output_template: dd_output_template_from_graph(graph),
+    }
+}
+
+fn dd_output_template_from_graph(graph: &StaticGraph) -> DdOutputTemplate {
+    match &graph.dd_plan {
+        DdScalarPlan::ConstantText(text) => DdOutputTemplate::ConstantText(text.clone()),
+        DdScalarPlan::CountInputEvents { initial } => {
+            DdOutputTemplate::CountInputEvents { initial: *initial }
+        }
+        DdScalarPlan::LatestInputText => DdOutputTemplate::LatestInputText,
+        DdScalarPlan::MatchTagText { tag, text } => DdOutputTemplate::MatchTagText {
+            tag: tag.clone(),
+            text: text.clone(),
+        },
     }
 }
 

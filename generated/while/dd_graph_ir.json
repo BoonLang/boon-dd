@@ -1,0 +1,41 @@
+{
+  "graph_id": "while",
+  "source_hash": "8b7fd25b6f0ba628b0467ff9a70397511ff04be7947e730f4cc04d217fc07738",
+  "nodes": [
+    {
+      "node": "WhileSwitch",
+      "operator": "WhileSwitch",
+      "inputs": [],
+      "output": "WhileSwitch",
+      "order": 21
+    },
+    {
+      "node": "LibraryCall",
+      "operator": "LibraryCall",
+      "inputs": [],
+      "output": "LibraryCall",
+      "order": 70
+    },
+    {
+      "node": "RenderSink",
+      "operator": "RenderSink",
+      "inputs": [],
+      "output": "RenderSink",
+      "order": 100
+    },
+    {
+      "node": "MonitorTap",
+      "operator": "MonitorTap",
+      "inputs": [],
+      "output": "MonitorTap",
+      "order": 101
+    }
+  ],
+  "unsupported_semantic_nodes": [],
+  "output_template": {
+    "MatchTagText": {
+      "tag": "Active",
+      "text": "visible"
+    }
+  }
+}
