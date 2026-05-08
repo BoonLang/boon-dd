@@ -1,5 +1,5 @@
 use boon_dd::{
-    DdScalarPlan, GraphNode, GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId,
+    DdOutputTemplate, GraphNode, GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId,
     StaticGraph,
 };
 use serde::{Deserialize, Serialize};
@@ -77,14 +77,6 @@ pub struct DdGraphNode {
     pub order: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DdOutputTemplate {
-    ConstantText(String),
-    CountInputEvents { initial: i64 },
-    LatestInputText,
-    MatchTagText { tag: String, text: String },
-}
-
 pub fn compile_source(path: impl Into<String>, text: impl Into<String>) -> CompilePlan {
     let path = path.into();
     let text = text.into();
@@ -93,7 +85,7 @@ pub fn compile_source(path: impl Into<String>, text: impl Into<String>) -> Compi
     let shapes = boon_shape::check_module(&hir);
     let graph = build_static_graph(&parsed, &hir, &shapes);
     let semantic_ir = build_semantic_ir(&hir, &shapes, &graph);
-    let dd_graph_ir = lower_semantic_to_dd(&semantic_ir, &graph);
+    let dd_graph_ir = lower_semantic_to_dd(&semantic_ir, &graph, &hir);
     CompilePlan {
         source_path: hir.source_path,
         semantic_ir,
@@ -314,7 +306,11 @@ fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
     }
 }
 
-fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGraphIr {
+fn lower_semantic_to_dd(
+    semantic_ir: &SemanticIr,
+    graph: &StaticGraph,
+    hir: &boon_hir::HirModule,
+) -> DdGraphIr {
     let lowered_kinds = graph
         .operators
         .iter()
@@ -353,21 +349,42 @@ fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGrap
             })
             .collect(),
         unsupported_semantic_nodes,
-        output_template: dd_output_template_from_graph(graph),
+        output_template: dd_output_template_from_hir(hir, &graph.initial_text),
     }
 }
 
-fn dd_output_template_from_graph(graph: &StaticGraph) -> DdOutputTemplate {
-    match &graph.dd_plan {
-        DdScalarPlan::ConstantText(text) => DdOutputTemplate::ConstantText(text.clone()),
-        DdScalarPlan::CountInputEvents { initial } => {
-            DdOutputTemplate::CountInputEvents { initial: *initial }
+fn dd_output_template_from_hir(hir: &boon_hir::HirModule, initial_text: &str) -> DdOutputTemplate {
+    let document = hir
+        .definitions
+        .iter()
+        .find(|definition| definition.name == "document");
+    let document_expr = document.map(|definition| &definition.expression);
+    let target_path = document_expr.and_then(document_target_path);
+    let target_expr = target_path
+        .as_deref()
+        .and_then(|path| target_expression(path, hir));
+    let semantic_expr = target_expr.or(document_expr);
+    if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
+        return DdOutputTemplate::ConstantText(text);
+    }
+    let Some(expr) = semantic_expr else {
+        return DdOutputTemplate::ConstantText(String::new());
+    };
+    if expression_has_latest(expr) {
+        DdOutputTemplate::LatestInputText
+    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::When) {
+        DdOutputTemplate::MatchTagText { tag, text }
+    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::While) {
+        DdOutputTemplate::MatchTagText { tag, text }
+    } else if expression_has_call(expr, "Math/sum")
+        || expression_has_hold(expr)
+        || expression_has_then(expr)
+    {
+        DdOutputTemplate::CountInputEvents {
+            initial: initial_text.parse().unwrap_or(0),
         }
-        DdScalarPlan::LatestInputText => DdOutputTemplate::LatestInputText,
-        DdScalarPlan::MatchTagText { tag, text } => DdOutputTemplate::MatchTagText {
-            tag: tag.clone(),
-            text: text.clone(),
-        },
+    } else {
+        DdOutputTemplate::ConstantText(constant_text(expr, hir).unwrap_or_default())
     }
 }
 
@@ -418,7 +435,6 @@ fn build_static_graph(
     ));
     let render_node = NodeId("DocumentText".to_owned());
     let initial_text = initial_text(document_expr, semantic_expr, hir);
-    let dd_plan = output_dd_plan(document_expr, semantic_expr, hir, &initial_text);
     let mut nodes = Vec::new();
     nodes.push(GraphNode {
         node: render_node.clone(),
@@ -449,7 +465,6 @@ fn build_static_graph(
         monitor_node,
         render_node,
         initial_text,
-        dd_plan,
         physical_scene: hir
             .definitions
             .iter()
@@ -795,36 +810,6 @@ fn initial_text(
         String::new()
     } else {
         constant_text(expr, hir).unwrap_or_default()
-    }
-}
-
-fn output_dd_plan(
-    document_expr: Option<&boon_syntax::Expr>,
-    semantic_expr: Option<&boon_syntax::Expr>,
-    hir: &boon_hir::HirModule,
-    initial_text: &str,
-) -> DdScalarPlan {
-    if let Some(text) = document_expr.and_then(|expr| constant_text(expr, hir)) {
-        return DdScalarPlan::ConstantText(text);
-    }
-    let Some(expr) = semantic_expr else {
-        return DdScalarPlan::ConstantText(String::new());
-    };
-    if expression_has_latest(expr) {
-        DdScalarPlan::LatestInputText
-    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::When) {
-        DdScalarPlan::MatchTagText { tag, text }
-    } else if let Some((tag, text)) = match_branch_text(expr, boon_syntax::MatchKind::While) {
-        DdScalarPlan::MatchTagText { tag, text }
-    } else if expression_has_call(expr, "Math/sum")
-        || expression_has_hold(expr)
-        || expression_has_then(expr)
-    {
-        DdScalarPlan::CountInputEvents {
-            initial: initial_text.parse().unwrap_or(0),
-        }
-    } else {
-        DdScalarPlan::ConstantText(constant_text(expr, hir).unwrap_or_default())
     }
 }
 

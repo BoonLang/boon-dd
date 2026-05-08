@@ -50,8 +50,5 @@
   "monitor_node": "ListRetainRemove",
   "render_node": "DocumentText",
   "initial_text": "removed",
-  "dd_plan": {
-    "ConstantText": "removed"
-  },
   "physical_scene": false
 }

@@ -77,10 +77,5 @@
   "monitor_node": "Counter",
   "render_node": "DocumentText",
   "initial_text": "0",
-  "dd_plan": {
-    "CountInputEvents": {
-      "initial": 0
-    }
-  },
   "physical_scene": false
 }

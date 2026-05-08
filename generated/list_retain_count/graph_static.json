@@ -50,8 +50,5 @@
   "monitor_node": "ListRetainCount",
   "render_node": "DocumentText",
   "initial_text": "2",
-  "dd_plan": {
-    "ConstantText": "2"
-  },
   "physical_scene": false
 }

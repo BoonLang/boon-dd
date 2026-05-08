@@ -43,8 +43,5 @@
   "monitor_node": "ListObjectState",
   "render_node": "DocumentText",
   "initial_text": "2 active",
-  "dd_plan": {
-    "ConstantText": "2 active"
-  },
   "physical_scene": false
 }

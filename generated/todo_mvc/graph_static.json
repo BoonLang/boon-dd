@@ -75,8 +75,5 @@
   "monitor_node": "TodoMvc",
   "render_node": "DocumentText",
   "initial_text": "2 todos",
-  "dd_plan": {
-    "ConstantText": "2 todos"
-  },
   "physical_scene": false
 }

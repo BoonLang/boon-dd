@@ -123,20 +123,20 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code
 }
 
-fn generated_render_collection(template: &boon_compiler::DdOutputTemplate) -> String {
+fn generated_render_collection(template: &boon_dd::DdOutputTemplate) -> String {
     match template {
-        boon_compiler::DdOutputTemplate::ConstantText(text) => format!(
+        boon_dd::DdOutputTemplate::ConstantText(text) => format!(
             "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| {:?}.to_owned());\n",
             text
         ),
-        boon_compiler::DdOutputTemplate::CountInputEvents { initial } => format!(
+        boon_dd::DdOutputTemplate::CountInputEvents { initial } => format!(
             "        let rendered = events.map(|_| ()).count().map(|(_key, count)| ({} + count as i64).to_string());\n",
             initial
         ),
-        boon_compiler::DdOutputTemplate::LatestInputText => {
+        boon_dd::DdOutputTemplate::LatestInputText => {
             "        let rendered = events.map(|(sequence, value)| ((), (sequence, value))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned()
         }
-        boon_compiler::DdOutputTemplate::MatchTagText { tag, text } => format!(
+        boon_dd::DdOutputTemplate::MatchTagText { tag, text } => format!(
             "        let rendered = events.filter(|(_sequence, value)| value == {:?}).map(|_| {:?}.to_owned());\n",
             tag, text
         ),

@@ -77,8 +77,5 @@
   "monitor_node": "Pong",
   "render_node": "DocumentText",
   "initial_text": "frame 1",
-  "dd_plan": {
-    "ConstantText": "frame 1"
-  },
   "physical_scene": false
 }

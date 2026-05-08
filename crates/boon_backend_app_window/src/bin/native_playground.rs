@@ -71,6 +71,7 @@ struct SmokeRequest {
 struct PlaygroundExample {
     name: String,
     graph: boon_dd::StaticGraph,
+    output_template: boon_dd::DdOutputTemplate,
     scenario_actions: Vec<SourceAction>,
     actions: Vec<SourceAction>,
     output: SmokeOutput,
@@ -339,16 +340,17 @@ fn build_playground_examples() -> Vec<PlaygroundExample> {
     boon_examples::REQUIRED_FIXTURES
         .iter()
         .map(|fixture| {
-            let graph = boon_compiler::compile_source(
+            let plan = boon_compiler::compile_source(
                 &format!("examples/{}/source.bn", fixture.name),
                 fixture.source,
-            )
-            .graph;
+            );
             let scenario = boon_runtime_host::parse_scenario(fixture.scenario);
-            let output = boon_dd::run_static_dd_graph(&graph, &[]);
+            let output =
+                boon_dd::run_dd_graph_template(&plan.graph, &plan.dd_graph_ir.output_template, &[]);
             PlaygroundExample {
                 name: fixture.name.to_owned(),
-                graph,
+                graph: plan.graph,
+                output_template: plan.dd_graph_ir.output_template,
                 scenario_actions: scenario
                     .steps
                     .first()
@@ -464,7 +466,8 @@ fn trigger_example_action(example: &mut PlaygroundExample) {
 }
 
 fn refresh_example_output(example: &mut PlaygroundExample) {
-    example.output = boon_dd::run_static_dd_graph(&example.graph, &example.actions);
+    example.output =
+        boon_dd::run_dd_graph_template(&example.graph, &example.output_template, &example.actions);
 }
 
 fn render_frame(

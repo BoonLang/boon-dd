@@ -155,7 +155,7 @@ pub struct GraphOperator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DdScalarPlan {
+pub enum DdOutputTemplate {
     ConstantText(String),
     CountInputEvents { initial: i64 },
     LatestInputText,
@@ -173,7 +173,6 @@ pub struct StaticGraph {
     pub monitor_node: NodeId,
     pub render_node: NodeId,
     pub initial_text: String,
-    pub dd_plan: DdScalarPlan,
     pub physical_scene: bool,
 }
 
@@ -206,11 +205,15 @@ pub struct Scenario {
     pub steps: Vec<ScenarioStep>,
 }
 
-pub fn execute_scenario(graph: &StaticGraph, scenario: &Scenario) -> Vec<SmokeOutput> {
+pub fn execute_scenario(
+    graph: &StaticGraph,
+    output_template: &DdOutputTemplate,
+    scenario: &Scenario,
+) -> Vec<SmokeOutput> {
     scenario
         .steps
         .iter()
-        .map(|step| run_static_dd_graph(graph, &step.actions))
+        .map(|step| run_dd_graph_template(graph, output_template, &step.actions))
         .collect()
 }
 
@@ -237,13 +240,18 @@ pub fn source_action_text(action: &SourceAction) -> String {
     value_to_text(&action.value)
 }
 
-pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> SmokeOutput {
+pub fn run_dd_graph_template(
+    graph: &StaticGraph,
+    output_template: &DdOutputTemplate,
+    actions: &[SourceAction],
+) -> SmokeOutput {
     let output = Arc::new(Mutex::new(SmokeOutput {
         monitor: Vec::new(),
         render: Vec::new(),
     }));
 
     let graph = graph.clone();
+    let output_template = output_template.clone();
     let output_in_graph = Arc::clone(&output);
     let allocator = timely::communication::Allocator::Thread(
         timely::communication::allocator::Thread::default(),
@@ -256,8 +264,8 @@ pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> Smo
 
         worker.dataflow::<EncodedTime, _, _>(|scope| {
             let events = input.to_collection(scope);
-            let rendered = match &graph.dd_plan {
-                DdScalarPlan::ConstantText(text) => {
+            let rendered = match &output_template {
+                DdOutputTemplate::ConstantText(text) => {
                     let text = text.clone();
                     events
                         .map(|_| ())
@@ -265,14 +273,14 @@ pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> Smo
                         .filter(|(_key, count)| *count > 0)
                         .map(move |_| text.clone())
                 }
-                DdScalarPlan::CountInputEvents { initial } => {
+                DdOutputTemplate::CountInputEvents { initial } => {
                     let initial = *initial;
                     events
                         .map(|_| ())
                         .count()
                         .map(move |(_key, count)| (initial + count as i64).to_string())
                 }
-                DdScalarPlan::LatestInputText => events
+                DdOutputTemplate::LatestInputText => events
                     .map(|(sequence, value)| ((), (sequence, value)))
                     .reduce(|_, inputs, output| {
                         if let Some(((_sequence, value), _diff)) =
@@ -282,7 +290,7 @@ pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> Smo
                         }
                     })
                     .map(|(_key, value)| value),
-                DdScalarPlan::MatchTagText { tag, text } => {
+                DdOutputTemplate::MatchTagText { tag, text } => {
                     let tag = tag.clone();
                     let text = text.clone();
                     events
@@ -315,7 +323,7 @@ pub fn run_static_dd_graph(graph: &StaticGraph, actions: &[SourceAction]) -> Smo
         for (sequence, action) in actions.iter().enumerate() {
             input.insert((sequence as u64, source_action_text(action)));
         }
-        if actions.is_empty() && matches!(graph.dd_plan, DdScalarPlan::ConstantText(_)) {
+        if actions.is_empty() && matches!(output_template, DdOutputTemplate::ConstantText(_)) {
             input.insert((0, String::new()));
         }
         input.advance_to(command_time + 1);
@@ -465,11 +473,11 @@ mod tests {
             monitor_node: NodeId("ThenValue".to_owned()),
             render_node: NodeId("DocumentText".to_owned()),
             initial_text: "0".to_owned(),
-            dd_plan: DdScalarPlan::CountInputEvents { initial: 0 },
             physical_scene: false,
         };
-        let output = run_static_dd_graph(
+        let output = run_dd_graph_template(
             &graph,
+            &DdOutputTemplate::CountInputEvents { initial: 0 },
             &[SourceAction {
                 source: "press".to_owned(),
                 owner: None,

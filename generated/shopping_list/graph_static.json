@@ -50,8 +50,5 @@
   "monitor_node": "ShoppingList",
   "render_node": "DocumentText",
   "initial_text": "milk,bread",
-  "dd_plan": {
-    "ConstantText": "milk,bread"
-  },
   "physical_scene": false
 }

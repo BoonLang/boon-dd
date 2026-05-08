@@ -43,8 +43,5 @@
   "monitor_node": "TodoMvcPhysical",
   "render_node": "DocumentText",
   "initial_text": "physical ready",
-  "dd_plan": {
-    "ConstantText": "physical ready"
-  },
   "physical_scene": true
 }

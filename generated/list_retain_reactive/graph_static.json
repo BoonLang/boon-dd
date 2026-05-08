@@ -63,11 +63,5 @@
   "monitor_node": "WhileFilter",
   "render_node": "DocumentText",
   "initial_text": "",
-  "dd_plan": {
-    "MatchTagText": {
-      "tag": "Active",
-      "text": "active"
-    }
-  },
   "physical_scene": false
 }

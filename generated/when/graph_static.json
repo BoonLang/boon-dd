@@ -63,11 +63,5 @@
   "monitor_node": "WhenEnter",
   "render_node": "DocumentText",
   "initial_text": "",
-  "dd_plan": {
-    "MatchTagText": {
-      "tag": "Enter",
-      "text": "accepted"
-    }
-  },
   "physical_scene": false
 }

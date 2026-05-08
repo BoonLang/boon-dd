@@ -14,8 +14,8 @@ impl RuntimeHost {
         source_text: &str,
         scenario: &Scenario,
     ) -> Vec<SmokeOutput> {
-        let graph = boon_compiler::compile_source(source_path, source_text).graph;
-        boon_dd::execute_scenario(&graph, scenario)
+        let plan = boon_compiler::compile_source(source_path, source_text);
+        boon_dd::execute_scenario(&plan.graph, &plan.dd_graph_ir.output_template, scenario)
     }
 }
 

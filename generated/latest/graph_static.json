@@ -75,6 +75,5 @@
   "monitor_node": "LatestValue",
   "render_node": "DocumentText",
   "initial_text": "",
-  "dd_plan": "LatestInputText",
   "physical_scene": false
 }

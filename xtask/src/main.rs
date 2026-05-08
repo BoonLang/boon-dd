@@ -1092,7 +1092,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code consumes the reported DD graph IR output template, but runtime/static graph execution still carries a compatibility scalar DD plan",
+            "generated code consumes the reported DD graph IR output template, but runtime host execution still uses the transitional scalar output template path",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1167,8 +1167,8 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
             "inspect generated graph and host execution paths",
             serde_json::json!({
                 "blockers": [
-                    "runtime/static graph still carries the compatibility scalar DD plan",
-                    "DD output template is still derived from the transitional static graph plan"
+                    "DD output template remains a transitional scalar render template",
+                    "runtime host still executes the transitional output template instead of loading a verified generated graph API"
                 ]
             }),
         ),
@@ -2142,7 +2142,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
-    let mut runtime_compatibility_plan_examples = Vec::new();
+    let mut transitional_output_template_examples = Vec::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let source_path = root.join("examples").join(example).join("source.bn");
         let source_text = fs::read_to_string(&source_path)
@@ -2162,7 +2162,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             .map(|node| format!("{:?}", node.operator))
             .collect::<std::collections::BTreeSet<_>>();
         unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
-        runtime_compatibility_plan_examples.push(example);
+        transitional_output_template_examples.push(example);
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -2173,7 +2173,6 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "dd_operators": dd_operators,
             "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
             "dd_output_template": plan.dd_graph_ir.output_template,
-            "runtime_static_graph_plan": plan.graph.dd_plan,
         }));
     }
     let details = serde_json::json!({
@@ -2181,11 +2180,11 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
-        "runtime_compatibility_plan_examples": runtime_compatibility_plan_examples,
+        "transitional_output_template_examples": transitional_output_template_examples,
         "examples": examples,
         "blockers": [
-            "runtime/static graph still carries the compatibility scalar DD plan for every required example",
-            "DD output template is still derived from the transitional static graph plan until full semantic-to-DD lowering is complete"
+            "DD output template remains a transitional scalar render template until full semantic-to-DD lowering is complete",
+            "runtime host still executes the transitional output template instead of loading a verified generated graph API"
         ],
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
@@ -2864,7 +2863,8 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let outputs = boon_dd::execute_scenario(&plan.graph, &scenario);
+    let outputs =
+        boon_dd::execute_scenario(&plan.graph, &plan.dd_graph_ir.output_template, &scenario);
 
     let src_dir = generated_dir.join("src");
     fs::create_dir_all(generated_dir)?;

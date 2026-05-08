@@ -63,8 +63,5 @@
   "monitor_node": "Crud",
   "render_node": "DocumentText",
   "initial_text": "saved",
-  "dd_plan": {
-    "ConstantText": "saved"
-  },
   "physical_scene": false
 }

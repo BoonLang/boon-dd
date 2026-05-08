@@ -4,10 +4,9 @@ This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
 removed from Rust execution paths. The remaining compiler/runtime is still not
-honest enough to satisfy the full plan because the generated Rust consumes a DD
-graph IR output template that is still derived from the transitional static
-graph plan, and the runtime/static graph path still carries a compatibility
-scalar DD plan.
+honest enough to satisfy the full plan because the generated Rust and runtime
+host consume a DD graph IR output template that is still a transitional scalar
+render template instead of a complete typed semantic-to-DD graph lowering.
 
 ## Failing Commands
 
@@ -53,9 +52,9 @@ under `target/boon-artifacts/`.
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
-  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
-  template, but that template is still derived from the transitional static
-  graph plan, and runtime command/effect
+  semantic IR/DD graph IR. Generated Rust and the runtime host now consume the
+  DD graph IR output template, but that template is still transitional, and
+  runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
@@ -77,9 +76,10 @@ under `target/boon-artifacts/`.
   missing paths.
 - `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
   and DD graph IR coverage for all 22 required examples. It now reports zero
-  unsupported semantic nodes, but still fails because the runtime/static graph
-  still carries the compatibility scalar DD plan and the DD graph IR output
-  template is transitional.
+  unsupported semantic nodes, and `StaticGraph` no longer carries a scalar
+  runtime plan. It still fails because the DD graph IR output template is a
+  transitional scalar render template and the runtime host still executes that
+  template instead of loading a verified generated graph API.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   but still fails because features and examples are explicitly
@@ -126,8 +126,8 @@ Continue with the remaining Phase 2 and Phase 3 work in
 1. Finish resolver diagnostics and name/source resolution.
 2. Expand shape/type checking from initial reports into full accepted-language
    coverage.
-3. Replace the compatibility scalar DD plan path with semantic IR, DD graph IR,
-   and generated-only runtime execution.
+3. Replace the transitional scalar output template path with semantic IR, DD
+   graph IR, and generated-only runtime execution.
 4. Keep `verify-no-shortcuts` passing while broadening the deterministic gates
    so renamed or newly introduced shortcuts cannot slip through.
 
