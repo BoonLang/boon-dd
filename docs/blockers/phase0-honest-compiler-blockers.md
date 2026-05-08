@@ -60,8 +60,8 @@ under `target/boon-artifacts/`.
   deterministic honesty gates with current evidence, hashes, and tool versions.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
   runtime, adversarial no-heuristics, stale-artifact rejection, cross-host
-  parity, and the verifier self-test pass. Source truth, resolver/shape, DD
-  lowering, and scenario protocol still fail.
+  parity, scenario protocol, and the verifier self-test pass. Source truth,
+  resolver/shape, and DD lowering still fail.
 - `target/boon-artifacts/phase-boundary-report.json` now writes the canonical
   per-example AST/HIR/shape/semantic/DD summary and scans compiler boundary
   violations. It currently reports verdict `pass` with `0` compiler boundary
@@ -125,13 +125,12 @@ under `target/boon-artifacts/`.
   and incomplete command/effect/persistence execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario, preserves ordered source/command events, and runs every parsed
-  scenario step through the generated Timely/DD graph. It still fails because
-  command/effect/persistence execution is incomplete. The current minimized
-  mismatch is `examples/counter_hold/scenario.toml` step 2: the preserved event
-  order is `command:enable_persistence`,
-  `source:store.sources.increment_button.event.press`, `command:reload`; the
-  generated graph executes the step in epoch 2, and the actual render text is
-  `2` while the scenario expects `1`.
+  scenario step through the generated Timely/DD graph. It reports verdict
+  `pass`: `examples/counter_hold/scenario.toml` step 2 preserves the ordered
+  protocol `command:enable_persistence`,
+  `source:store.sources.increment_button.event.press`, `command:reload`, and
+  the generated graph/runtime protocol renders the expected text `1` after
+  reload.
 - The current deterministic honesty report has 0 stale artifact failures, 0
   shortcut execution symbols, 0 adversarial heuristic failures, 6 accepted
   features without full coverage, and 0 host-semantics violations.

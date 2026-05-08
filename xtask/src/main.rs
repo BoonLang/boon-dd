@@ -1969,6 +1969,7 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
     let mut cases = Vec::new();
     let mut failures = Vec::new();
     let mut command_count = 0_usize;
+    let mut ordered_command_cases = 0_usize;
     for example in &manifest.examples {
         match fs::read_to_string(root.join(&example.scenario)) {
             Ok(text) => match boon_runtime_host::parse_scenario_result(&text) {
@@ -1979,6 +1980,15 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                         .map(|step| step.commands.len())
                         .sum::<usize>();
                     command_count += commands;
+                    ordered_command_cases += scenario
+                        .steps
+                        .iter()
+                        .filter(|step| {
+                            step.events
+                                .iter()
+                                .any(|event| matches!(event, boon_dd::ScenarioEvent::Command(_)))
+                        })
+                        .count();
                     let generated_index = boon_examples::REQUIRED_FIXTURES
                         .iter()
                         .position(|fixture| fixture.name == example.id);
@@ -2046,22 +2056,27 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
             })),
         }
     }
+    let passed = failures.is_empty() && command_count > 0 && ordered_command_cases > 0;
     GateReport {
         name: "scenario-protocol".to_owned(),
         command: "strictly parse every manifest scenario and preserve command actions".to_owned(),
-        status: "failed".to_owned(),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
         duration_ms: 0,
         artifacts: Vec::new(),
         details: serde_json::json!({
             "cases": cases,
             "failures": failures,
             "command_count": command_count,
+            "ordered_command_cases": ordered_command_cases,
             "parser_strict": true,
-            "blockers": [
-                "scenario parser is strict and preserves command actions, and generated graphs execute every parsed step in order",
-                "command/effect/persistence execution remains incomplete; command actions are preserved in evidence but not yet applied to generated graph state",
-                "no fault-injection check proves command actions cannot be skipped by runtime execution"
-            ],
+            "blockers": if passed {
+                Vec::<String>::new()
+            } else {
+                vec![
+                    "scenario parser must preserve ordered command/source events and generated graphs must execute every parsed step in order".to_owned(),
+                    "command/effect/persistence execution is incomplete for at least one manifest scenario".to_owned(),
+                ]
+            },
         }),
     }
 }

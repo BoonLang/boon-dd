@@ -131,17 +131,46 @@ macro_rules! run_generated_fixture_steps {
             $fixture.name, $expected_name,
             "generated fixture registry order drifted"
         );
-        let allocator = timely::communication::Allocator::Thread(
+        let allocator = || timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
-        let mut worker =
-            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);
         let mut graph = $crate_name::graph::build_dataflow(&mut worker);
+        let has_persistence_tap = $crate_name::persist_bindings::has_persistence_tap();
+        let mut persistence_enabled = false;
+        let mut persisted_text: Option<String> = None;
+        let mut last_text: Option<String> = None;
         let mut outputs = Vec::new();
         for (step_index, step) in $steps.iter().enumerate() {
             let epoch = step_index as u64 + 1;
-            for action in &step.actions {
-                graph.sources.submit_action(action, epoch);
+            for event in &step.events {
+                match event {
+                    boon_dd::ScenarioEvent::Source(action) => {
+                        graph.sources.submit_action(action, epoch);
+                    }
+                    boon_dd::ScenarioEvent::Command(command)
+                        if command.command == "enable_persistence" =>
+                    {
+                        if has_persistence_tap {
+                            persistence_enabled = true;
+                            persisted_text = last_text.clone();
+                        }
+                    }
+                    boon_dd::ScenarioEvent::Command(command) if command.command == "reload" => {
+                        worker = timely::worker::Worker::new(
+                            timely::WorkerConfig::default(),
+                            allocator(),
+                            None,
+                        );
+                        graph = $crate_name::graph::build_dataflow(&mut worker);
+                        if persistence_enabled {
+                            if let Some(value) = persisted_text.clone() {
+                                graph.sources.submit_text(value, epoch);
+                            }
+                        }
+                    }
+                    boon_dd::ScenarioEvent::Command(_) => {}
+                }
             }
             graph.sources.close_epoch(epoch);
             let target = $crate_name::graph::completion_time(epoch) + 1;
@@ -162,6 +191,9 @@ macro_rules! run_generated_fixture_steps {
                 .into_iter()
                 .last()
                 .unwrap_or_else(empty_smoke_output);
+            last_text = output.render.first().map(|command| match command {
+                boon_dd::RenderCommand::PatchText { text, .. } => text.clone(),
+            });
             outputs.push(GeneratedScenarioStepOutput {
                 step_index,
                 description: step.description.clone(),
