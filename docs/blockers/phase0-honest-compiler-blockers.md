@@ -54,8 +54,9 @@ under `target/boon-artifacts/`.
   pattern hits in execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus but compiler semantics still do not
-  consume it, HIR has initial AST/source lowering but resolver and shape/type
-  checking remain incomplete, source-text compiler heuristics remain,
+  consume it, HIR and shape checking have initial AST-derived reports but
+  resolver/type coverage remains incomplete and compiler semantics still do not
+  consume them, source-text compiler heuristics remain,
   `TextBehavior` runtime semantics remain, smoke codegen remains,
   command-dropping scenario parsing remains, and deterministic/prompt audit
   verification remains incomplete.
@@ -78,10 +79,12 @@ and `smoke_input_text`.
 
 ## Next Pin/Fork/Fix Decision
 
-Continue with Phase 2 and Phase 3 of `BOON_DD_HONEST_COMPILER_PLAN.md`:
+Continue with the remaining Phase 2 and Phase 3 work in
+`BOON_DD_HONEST_COMPILER_PLAN.md`:
 
 1. Finish resolver diagnostics and name/source resolution.
-2. Add real shape/type checking.
+2. Expand shape/type checking from initial reports into full accepted-language
+   coverage.
 3. Make compiler semantics consume structured AST/HIR rather than raw source
    text.
 4. Keep `verify-no-shortcuts` failing until the execution paths no longer use

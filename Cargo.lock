@@ -658,6 +658,8 @@ dependencies = [
 name = "boon_shape"
 version = "0.1.0"
 dependencies = [
+ "boon_hir",
+ "boon_syntax",
  "serde",
 ]
 
