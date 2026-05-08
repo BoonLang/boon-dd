@@ -91,6 +91,13 @@ under `target/boon-artifacts/`.
   verdict `pass` for synthetic injected faults covering shortcut insertion,
   stale artifact hashes, skipped multi-step scenarios, wrong generated fixture
   outputs, and disabled DD lowering.
+- `target/boon-artifacts/cross-host-parity-report.json` now compares terminal
+  scenario outputs with browser generated-WASM smoke outputs and records the
+  native parity gap. It still fails because browser smoke is not yet the
+  canonical per-example scenario protocol and native proof does not expose
+  structured generated DD outputs. The current terminal/browser mismatches are
+  `latest`, `when`, `while`, and `list_retain_reactive`; native structured
+  outputs are `0` of `22`.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
   seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
   deterministic-report hash, verdict, and critical findings. It still fails

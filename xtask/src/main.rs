@@ -1176,16 +1176,7 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
         deterministic_scenario_protocol_gate(&root, &manifest),
         adversarial_gate,
         generated_freshness_gate,
-        deterministic_static_failed_gate(
-            "cross-host-parity",
-            "cargo xtask test --target terminal && cargo xtask test --target native && cargo xtask test --target browser",
-            serde_json::json!({
-                "blockers": [
-                    "target gates run, but parity report does not compare a single generated DD graph protocol across terminal/native/browser",
-                    "Firefox proof is still a smoke artifact and not a full per-example generated graph execution proof"
-                ]
-            }),
-        ),
+        deterministic_cross_host_parity_gate(&root),
         deterministic_verification_harness_self_test_gate(&root, &manifest),
     ];
     let missing_deterministic_gates = gates
@@ -1240,19 +1231,157 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
     Ok(details)
 }
 
-fn deterministic_static_failed_gate(
-    name: &str,
-    command: &str,
-    details: serde_json::Value,
-) -> GateReport {
-    GateReport {
-        name: name.to_owned(),
-        command: command.to_owned(),
-        status: "failed".to_owned(),
-        duration_ms: 0,
-        artifacts: Vec::new(),
-        details,
+fn deterministic_cross_host_parity_gate(root: &Path) -> GateReport {
+    let started = Instant::now();
+    match deterministic_cross_host_parity_gate_result(root, started) {
+        Ok(report) => report,
+        Err(error) => GateReport {
+            name: "cross-host-parity".to_owned(),
+            command: "compare terminal/native/browser generated DD protocol artifacts".to_owned(),
+            status: "failed".to_owned(),
+            duration_ms: started.elapsed().as_millis(),
+            artifacts: Vec::new(),
+            details: serde_json::json!({
+                "error": format!("{error:#}"),
+                "blockers": [
+                    "cross-host parity artifacts are missing or malformed"
+                ],
+            }),
+        },
     }
+}
+
+fn deterministic_cross_host_parity_gate_result(
+    _root: &Path,
+    started: Instant,
+) -> Result<GateReport> {
+    let dir = artifacts_dir()?;
+    let matrix_path = dir.join("example-matrix.json");
+    let native_path = dir.join("native-playground.json");
+    let browser_path = dir.join("browser-playground-result.json");
+    let matrix: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&matrix_path)
+            .with_context(|| format!("missing {}", matrix_path.display()))?,
+    )
+    .with_context(|| format!("invalid JSON {}", matrix_path.display()))?;
+    let native: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&native_path)
+            .with_context(|| format!("missing {}", native_path.display()))?,
+    )
+    .with_context(|| format!("invalid JSON {}", native_path.display()))?;
+    let browser: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&browser_path)
+            .with_context(|| format!("missing {}", browser_path.display()))?,
+    )
+    .with_context(|| format!("invalid JSON {}", browser_path.display()))?;
+
+    let terminal_outputs = matrix
+        .get("terminal_checked")
+        .and_then(serde_json::Value::as_array)
+        .context("example-matrix.json missing terminal_checked")?
+        .iter()
+        .filter_map(|entry| {
+            Some((
+                entry.get("example")?.as_str()?.to_owned(),
+                entry.get("output")?.clone(),
+            ))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let browser_outputs = browser
+        .get("wasm_smoke")
+        .and_then(serde_json::Value::as_array)
+        .context("browser-playground-result.json missing wasm_smoke")?
+        .iter()
+        .filter_map(|entry| {
+            let pair = entry.as_array()?;
+            Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let native_examples = native
+        .get("per_example")
+        .and_then(serde_json::Value::as_array)
+        .context("native-playground.json missing per_example")?;
+
+    let mut mismatches = Vec::new();
+    let mut missing = Vec::new();
+    let mut parity_rows = Vec::new();
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        let terminal = terminal_outputs.get(*example);
+        let browser = browser_outputs.get(*example);
+        match (terminal, browser) {
+            (Some(terminal), Some(browser)) => {
+                let terminal_sha256 = sha256_text(&serde_json::to_string(terminal)?)?;
+                let browser_sha256 = sha256_text(&serde_json::to_string(browser)?)?;
+                let matches = terminal == browser;
+                if !matches {
+                    mismatches.push(serde_json::json!({
+                        "example": example,
+                        "terminal_sha256": terminal_sha256,
+                        "browser_sha256": browser_sha256,
+                    }));
+                }
+                parity_rows.push(serde_json::json!({
+                    "example": example,
+                    "terminal_output_sha256": terminal_sha256,
+                    "browser_wasm_output_sha256": browser_sha256,
+                    "terminal_browser_match": matches,
+                }));
+            }
+            (None, Some(_)) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "terminal",
+            })),
+            (Some(_), None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "browser",
+            })),
+            (None, None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "terminal,browser",
+            })),
+        }
+    }
+
+    let native_structured_outputs = native_examples
+        .iter()
+        .filter(|entry| entry.get("output").is_some() || entry.get("generated_output").is_some())
+        .count();
+    let native_missing_structured_output =
+        native_structured_outputs != boon_dd::REQUIRED_EXAMPLES.len();
+    let passed = missing.is_empty() && mismatches.is_empty() && !native_missing_structured_output;
+    let details = serde_json::json!({
+        "verdict": if passed { "pass" } else { "fail" },
+        "terminal_examples": terminal_outputs.len(),
+        "browser_wasm_examples": browser_outputs.len(),
+        "native_visual_examples": native_examples.len(),
+        "native_structured_outputs": native_structured_outputs,
+        "missing": missing,
+        "terminal_browser_mismatches": mismatches,
+        "parity_rows": parity_rows,
+        "artifacts_compared": {
+            "terminal": matrix_path,
+            "native": native_path,
+            "browser": browser_path,
+        },
+        "blockers": if passed {
+            Vec::<String>::new()
+        } else {
+            vec![
+                "terminal and browser are not yet executing the same per-example scenario protocol".to_owned(),
+                "native playground proof is visual/per-example, but does not expose structured generated DD output for parity comparison".to_owned(),
+                "Firefox proof still uses the generated WASM smoke input matrix rather than the canonical scenario actions for each example".to_owned(),
+            ]
+        },
+    });
+    let artifact = write_artifact("cross-host-parity-report.json", &details)?;
+    Ok(GateReport {
+        name: "cross-host-parity".to_owned(),
+        command: "compare terminal/native/browser generated DD protocol artifacts".to_owned(),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
 }
 
 fn deterministic_verification_harness_self_test_gate(
