@@ -14,7 +14,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
         "#[allow(dead_code)]\n#[derive(Clone, Debug)]\nenum GeneratedValue {\n    Empty,\n    Text(String),\n    Number(i64),\n    Tag(String),\n    List(Vec<GeneratedValue>),\n    Record(Vec<(String, GeneratedValue)>),\n}\n\n",
     );
     code.push_str(
-        "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Empty => String::new(),\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Record(_) => String::new(),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse().unwrap_or(0),\n            _ => 0,\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or(GeneratedValue::Empty),\n            _ => GeneratedValue::Empty,\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => false,\n        }\n    }\n}\n\n",
+        "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Text\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Text\"),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| panic!(\"generated DD render failed to parse Text as Number: {error}\")),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Number\"),\n            GeneratedValue::Tag(_) => panic!(\"generated DD render tried to coerce Tag to Number\"),\n            GeneratedValue::List(_) => panic!(\"generated DD render tried to coerce List to Number\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Number\"),\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or_else(|| panic!(\"generated DD render missing record field {name}\")),\n            other => panic!(\"generated DD render tried to read field {name} from non-record value: {other:?}\"),\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Bool\"),\n        }\n    }\n}\n\n",
     );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
@@ -377,13 +377,13 @@ where
 
 fn value_expr_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>) -> String {
     match expr {
-        boon_dd::DdRenderExpr::Missing
-        | boon_dd::DdRenderExpr::Source
-        | boon_dd::DdRenderExpr::Skip => "GeneratedValue::Empty".to_owned(),
+        boon_dd::DdRenderExpr::Missing => unsupported_value_code("missing render expression"),
+        boon_dd::DdRenderExpr::Source => unsupported_value_code("unlowered SOURCE expression"),
+        boon_dd::DdRenderExpr::Skip => unsupported_value_code("unlowered SKIP expression"),
         boon_dd::DdRenderExpr::Path(path) => path_expr_code(path, env),
         boon_dd::DdRenderExpr::Number(number) => {
             format!(
-                "GeneratedValue::Number({}.parse::<i64>().unwrap_or(0))",
+                "GeneratedValue::Number({}.parse::<i64>().expect(\"checked DD numeric literal should parse\"))",
                 quote(number)
             )
         }
@@ -422,7 +422,7 @@ fn value_expr_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>)
         | boon_dd::DdRenderExpr::Hold { body: values, .. } => values
             .last()
             .map(|value| value_expr_code(value, env))
-            .unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+            .unwrap_or_else(|| unsupported_value_code("empty render expression list")),
         boon_dd::DdRenderExpr::Call { callee, args } => call_value_code(callee, None, args, env),
         boon_dd::DdRenderExpr::Pipe { input, stage } => {
             let input = value_expr_code(input, env);
@@ -437,7 +437,7 @@ fn value_expr_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>)
             .iter()
             .find(|arm| arm.pattern != "__")
             .map(|arm| value_expr_code(&arm.value, env))
-            .unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+            .unwrap_or_else(|| unsupported_value_code("render match has no non-default arm")),
     }
 }
 
@@ -460,23 +460,26 @@ fn call_value_code(
 ) -> String {
     match callee {
         "Document/new" | "Scene/new" => input.unwrap_or_else(|| {
-            named_arg_code(args, "root", env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned())
+            named_arg_code(args, "root", env)
+                .unwrap_or_else(|| unsupported_value_code("Document/new or Scene/new missing root"))
         }),
-        "Element/button" => {
-            named_arg_code(args, "label", env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned())
+        "Element/button" => named_arg_code(args, "label", env)
+            .unwrap_or_else(|| unsupported_value_code("Element/button missing label")),
+        "Text/from_number" => {
+            input.unwrap_or_else(|| unsupported_value_code("Text/from_number missing input"))
         }
-        "Text/from_number" => input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
         "Text/append" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
-            let suffix =
-                first_arg_code(args, env).unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/append missing input"));
+            let suffix = first_arg_code(args, env)
+                .unwrap_or_else(|| unsupported_value_code("Text/append missing suffix"));
             format!(
                 "GeneratedValue::Text(format!(\"{{}}{{}}\", ({}).text(), ({}).text()))",
                 input, suffix
             )
         }
         "Text/join" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input = input.unwrap_or_else(|| unsupported_value_code("Text/join missing input"));
             let separator = named_arg_code(args, "separator", env)
                 .unwrap_or_else(|| "GeneratedValue::Text(\",\".to_owned())".to_owned());
             format!(
@@ -485,23 +488,25 @@ fn call_value_code(
             )
         }
         "Text/uppercase" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/uppercase missing input"));
             format!("GeneratedValue::Text(({}).text().to_uppercase())", input)
         }
         "List/append" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("List/append missing input"));
             let item = named_arg_code(args, "item", env)
                 .or_else(|| first_arg_code(args, env))
-                .unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+                .unwrap_or_else(|| unsupported_value_code("List/append missing item"));
             format!(
                 "match {} {{ GeneratedValue::List(mut values) => {{ values.push({}); GeneratedValue::List(values) }}, other => other }}",
                 input, item
             )
         }
         "List/map" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input = input.unwrap_or_else(|| unsupported_value_code("List/map missing input"));
             let Some(new_expr) = named_arg_expr(args, "new") else {
-                return input;
+                return unsupported_value_code("List/map missing new expression");
             };
             let mut nested_env = env.clone();
             nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
@@ -512,7 +517,8 @@ fn call_value_code(
             )
         }
         "List/retain" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("List/retain missing input"));
             let predicate = named_arg_expr(args, "if")
                 .map(|expr| {
                     let mut nested_env = env.clone();
@@ -526,7 +532,7 @@ fn call_value_code(
             )
         }
         "List/count" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input = input.unwrap_or_else(|| unsupported_value_code("List/count missing input"));
             if let Some(expr) = named_arg_expr(args, "if") {
                 let mut nested_env = env.clone();
                 nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
@@ -543,32 +549,40 @@ fn call_value_code(
             }
         }
         "Temperature/c_to_f" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Temperature/c_to_f missing input"));
             format!("GeneratedValue::Number(({}).number() * 9 / 5 + 32)", input)
         }
         "Bool/not" => {
-            let input = input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned());
+            let input = input.unwrap_or_else(|| unsupported_value_code("Bool/not missing input"));
             format!(
                 "GeneratedValue::Tag((if ({}).truthy() {{ \"False\" }} else {{ \"True\" }}).to_owned())",
                 input
             )
         }
-        _ => input.unwrap_or_else(|| "GeneratedValue::Empty".to_owned()),
+        _ => unsupported_value_code(&format!("unsupported library call {callee}")),
     }
 }
 
 fn path_expr_code(path: &str, env: &BTreeMap<String, String>) -> String {
     let mut parts = path.split('.');
     let Some(root) = parts.next() else {
-        return "GeneratedValue::Empty".to_owned();
+        return unsupported_value_code("empty path expression");
     };
     let Some(mut code) = env.get(root).cloned() else {
-        return "GeneratedValue::Empty".to_owned();
+        return unsupported_value_code(&format!("unresolved generated render path root {root}"));
     };
     for part in parts {
         code = format!("({}).field({})", code, quote(part));
     }
     code
+}
+
+fn unsupported_value_code(reason: &str) -> String {
+    format!(
+        "panic!({})",
+        quote(&format!("unsupported generated DD render value: {reason}"))
+    )
 }
 
 fn first_arg_code(args: &[boon_dd::DdRenderArg], env: &BTreeMap<String, String>) -> Option<String> {

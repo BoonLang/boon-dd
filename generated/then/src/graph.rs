@@ -23,7 +23,6 @@ enum GeneratedValue {
 impl GeneratedValue {
     fn text(self) -> String {
         match self {
-            GeneratedValue::Empty => String::new(),
             GeneratedValue::Text(text) => text,
             GeneratedValue::Number(number) => number.to_string(),
             GeneratedValue::Tag(tag) => tag,
@@ -32,15 +31,25 @@ impl GeneratedValue {
                 .map(GeneratedValue::text)
                 .collect::<Vec<_>>()
                 .join(","),
-            GeneratedValue::Record(_) => String::new(),
+            GeneratedValue::Empty => panic!("generated DD render tried to coerce Empty to Text"),
+            GeneratedValue::Record(_) => {
+                panic!("generated DD render tried to coerce Record to Text")
+            }
         }
     }
 
     fn number(self) -> i64 {
         match self {
             GeneratedValue::Number(number) => number,
-            GeneratedValue::Text(text) => text.parse().unwrap_or(0),
-            _ => 0,
+            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| {
+                panic!("generated DD render failed to parse Text as Number: {error}")
+            }),
+            GeneratedValue::Empty => panic!("generated DD render tried to coerce Empty to Number"),
+            GeneratedValue::Tag(_) => panic!("generated DD render tried to coerce Tag to Number"),
+            GeneratedValue::List(_) => panic!("generated DD render tried to coerce List to Number"),
+            GeneratedValue::Record(_) => {
+                panic!("generated DD render tried to coerce Record to Number")
+            }
         }
     }
 
@@ -50,8 +59,10 @@ impl GeneratedValue {
                 .into_iter()
                 .find(|(field, _)| field == name)
                 .map(|(_, value)| value)
-                .unwrap_or(GeneratedValue::Empty),
-            _ => GeneratedValue::Empty,
+                .unwrap_or_else(|| panic!("generated DD render missing record field {name}")),
+            other => panic!(
+                "generated DD render tried to read field {name} from non-record value: {other:?}"
+            ),
         }
     }
 
@@ -62,7 +73,7 @@ impl GeneratedValue {
             GeneratedValue::Number(number) => number != 0,
             GeneratedValue::List(values) => !values.is_empty(),
             GeneratedValue::Record(fields) => !fields.is_empty(),
-            GeneratedValue::Empty => false,
+            GeneratedValue::Empty => panic!("generated DD render tried to coerce Empty to Bool"),
         }
     }
 }
@@ -195,8 +206,13 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered =
-            events.map(|_| (GeneratedValue::Number("1".parse::<i64>().unwrap_or(0))).text());
+        let rendered = events.map(|_| {
+            (GeneratedValue::Number(
+                "1".parse::<i64>()
+                    .expect("checked DD numeric literal should parse"),
+            ))
+            .text()
+        });
         rendered
             .inspect(move |(text, time, diff)| {
                 if *diff > 0 {

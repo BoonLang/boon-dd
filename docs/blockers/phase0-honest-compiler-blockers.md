@@ -83,6 +83,11 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
+- Generated render code no longer silently coerces unsupported or unresolved
+  render expressions to empty text, zero numbers, false booleans, missing fields,
+  passthrough values, or `GeneratedValue::Empty`. Those cases now panic in the
+  generated crate instead of pretending unsupported compiler output has valid
+  Boon semantics.
 - `examples/counter_hold/scenario.toml` is now exercised as a multi-step
   command/source protocol, including `enable_persistence`, source action, and
   `reload`. `examples/counter_hold/expected.render.json` now records the final
@@ -118,14 +123,20 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
   coverage artifact status; parser, resolver, shape, semantic IR, generated
   runtime, generated freshness, and no-shortcuts reports pass, while
   `lowering-coverage-report.json` still fails.
-- `target/boon-artifacts/lowering-coverage-report.json` reports verdict `fail`
-  because code generation still builds the executable Timely/DD render pipeline
-  from the render-expression program rather than fully constructing every
-  render/effect/persistence behavior from the expanded DD graph IR nodes.
+- `target/boon-artifacts/lowering-coverage-report.json` reports verdict `fail`.
+  It now checks 22 examples with 0 unsupported semantic nodes, all required sink
+  families seen, 0 missing sink kinds, and no legacy limited render operations.
+  The remaining blocker is stricter: code generation still builds the executable
+  Timely/DD render pipeline from the render-expression program rather than fully
+  constructing every render/effect/persistence behavior from the expanded DD
+  graph IR nodes.
 - `target/boon-artifacts/prompt-audit-report.json` reports verdict `fail`: 7
   audit JSON files found, 0 missing, 0 schema errors, 14 hash mismatches, and
   17 open critical findings. The audit outputs are stale against the current
-  repo/deterministic hashes and their findings are not all fixed.
+  repo/deterministic hashes. Some stale findings describe shortcuts already
+  removed in code, including source-hash fixture dispatch, first-step-only smoke
+  execution, and generated render fallback values; the prompt-audit gate must
+  remain failed until fresh independent audits accept the current checkout.
 
 ## Minimized Repro
 
