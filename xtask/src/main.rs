@@ -2739,10 +2739,15 @@ fn verify_generated_crates() -> Result<serde_json::Value> {
             "example": example,
             "manifest": manifest,
             "target_dir": target_dir,
+            "contract": "generated graph crate test injects first scenario step values in one epoch and compares the final SmokeOutput to examples/<example>/expected.render.json",
         }));
     }
     let artifact = artifacts_dir()?.join("generated-crates.json");
-    let details = serde_json::json!({ "checked": checked });
+    let details = serde_json::json!({
+        "verdict": "pass",
+        "checked_count": checked.len(),
+        "checked": checked,
+    });
     fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
     Ok(details)
 }
@@ -2895,11 +2900,22 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let scenario_path = example_dir.join("scenario.toml");
     let source_text = fs::read_to_string(&source_path)?;
     let scenario_text = fs::read_to_string(&scenario_path)?;
+    let expected_render_text = fs::read_to_string(example_dir.join("expected.render.json"))?;
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let outputs =
         boon_dd::execute_scenario(&plan.graph, &plan.dd_graph_ir.output_template, &scenario);
+    let first_step_action_texts = scenario
+        .steps
+        .first()
+        .map(|step| {
+            step.actions
+                .iter()
+                .map(boon_dd::source_action_text)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     let src_dir = generated_dir.join("src");
     fs::create_dir_all(generated_dir)?;
@@ -2907,10 +2923,13 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     fs::write(
         generated_dir.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
+            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nserde_json = \"1\"\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
         ),
     )?;
-    fs::write(src_dir.join("lib.rs"), generated_lib_rs())?;
+    fs::write(
+        src_dir.join("lib.rs"),
+        generated_lib_rs(&first_step_action_texts, &expected_render_text),
+    )?;
     fs::write(
         src_dir.join("graph.rs"),
         boon_codegen_rust::generated_graph_module(&plan),
@@ -3017,8 +3036,18 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn generated_lib_rs() -> &'static str {
-    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn generated_graph_emits_monitor_and_render_output() {\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let mut outputs = Vec::new();\n        for (epoch, value) in [(1, \"event\"), (2, \"Enter\"), (3, \"Active\")] {\n            outputs = graph\n                .submit_text_and_drain(&mut worker, value, epoch, 1024)\n                .expect(\"generated graph should drain\");\n            if outputs.iter().any(|output| !output.render.is_empty()) {\n                break;\n            }\n        }\n        assert!(!outputs.is_empty(), \"generated graph emitted no output\");\n        assert!(outputs.iter().any(|output| !output.monitor.is_empty()));\n        assert!(outputs.iter().any(|output| !output.render.is_empty()));\n    }\n}\n"
+fn generated_lib_rs(action_texts: &[String], expected_render_text: &str) -> String {
+    let mut actions = if action_texts.is_empty() {
+        vec![String::new()]
+    } else {
+        action_texts.to_vec()
+    };
+    actions.shrink_to_fit();
+    format!(
+        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let epoch = 1_u64;\n        for value in {actions:?} {{\n            graph.sources.submit_text(value, epoch);\n        }}\n        graph.sources.close_epoch(epoch);\n        let target = crate::graph::completion_time(epoch) + 1;\n        let mut steps = 0_usize;\n        while graph.probe.less_than(&target) {{\n            if steps == 1024 {{\n                panic!(\"generated graph probe stalled at {{target}} after {{steps}} steps\");\n            }}\n            worker.step();\n            steps += 1;\n        }}\n        let outputs = graph.sources.outputs();\n        let actual = outputs\n            .last()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
+        expected = expected_render_text.trim(),
+        actions = actions,
+    )
 }
 
 fn generated_ids_rs(graph: &boon_dd::StaticGraph) -> String {

@@ -10,24 +10,33 @@ pub mod values;
 #[cfg(test)]
 mod tests {
     #[test]
-    fn generated_graph_emits_monitor_and_render_output() {
+    fn generated_graph_matches_checked_scenario_output() {
+        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\"monitor\":[{\"NodeValue\":{\"epoch\":1,\"node\":\"ListRetainCount\",\"owner\":\"Root\",\"value_preview\":\"2\"}}],\"render\":[{\"PatchText\":{\"node\":\"DocumentText\",\"text\":\"2\"}}]}")
+            .expect("checked expected render JSON should deserialize");
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
         let mut worker =
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = crate::graph::build_dataflow(&mut worker);
-        let mut outputs = Vec::new();
-        for (epoch, value) in [(1, "event"), (2, "Enter"), (3, "Active")] {
-            outputs = graph
-                .submit_text_and_drain(&mut worker, value, epoch, 1024)
-                .expect("generated graph should drain");
-            if outputs.iter().any(|output| !output.render.is_empty()) {
-                break;
-            }
+        let epoch = 1_u64;
+        for value in ["Active"] {
+            graph.sources.submit_text(value, epoch);
         }
-        assert!(!outputs.is_empty(), "generated graph emitted no output");
-        assert!(outputs.iter().any(|output| !output.monitor.is_empty()));
-        assert!(outputs.iter().any(|output| !output.render.is_empty()));
+        graph.sources.close_epoch(epoch);
+        let target = crate::graph::completion_time(epoch) + 1;
+        let mut steps = 0_usize;
+        while graph.probe.less_than(&target) {
+            if steps == 1024 {
+                panic!("generated graph probe stalled at {target} after {steps} steps");
+            }
+            worker.step();
+            steps += 1;
+        }
+        let outputs = graph.sources.outputs();
+        let actual = outputs
+            .last()
+            .expect("generated graph emitted no scenario output");
+        assert_eq!(actual, &expected);
     }
 }

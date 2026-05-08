@@ -1499,6 +1499,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1509,6 +1510,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1519,6 +1521,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1529,6 +1532,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1539,6 +1543,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1549,6 +1554,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1559,6 +1565,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1569,6 +1576,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1579,6 +1587,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1589,6 +1598,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1599,6 +1609,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1609,6 +1620,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1619,6 +1631,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1629,6 +1642,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1639,6 +1653,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1649,6 +1664,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1659,6 +1675,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1669,6 +1686,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1679,6 +1697,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1689,6 +1708,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1699,6 +1719,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 
@@ -1709,6 +1730,7 @@ dependencies = [
  "boon_dd",
  "differential-dataflow",
  "serde",
+ "serde_json",
  "timely",
 ]
 

@@ -96,6 +96,11 @@ under `target/boon-artifacts/`.
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are
   current-corpus evidence, not full accepted-language completion.
+- `verify-generated-crates` now runs each generated crate's own Timely/DD graph
+  against the first checked scenario step for that example and compares the
+  final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
+  stronger than the earlier "emitted something" smoke test, but it is still not
+  full multi-step command/effect execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario and reports preserved command actions. It still fails because
   command/effect/persistence execution and skip-fault self-tests are incomplete.
