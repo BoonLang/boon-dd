@@ -228,10 +228,7 @@ pub enum DdOutputSink {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DdRenderOperation {
-    StaticText { expr: DdRenderExpr },
-    CountInputEvents { initial: i64 },
-    LatestInputText,
-    MatchTagText { tag: String, expr: DdRenderExpr },
+    Text { expr: DdRenderExpr },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

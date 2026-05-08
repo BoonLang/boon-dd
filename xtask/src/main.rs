@@ -1112,7 +1112,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code and backend smoke paths execute generated Timely/DD crates from render-expression IR, but the lowerer still emits scalar render programs instead of complete render/effect/persistence protocols",
+            "generated code and backend smoke paths execute generated Timely/DD crates from render-expression IR, but complete render/effect/persistence protocols are not lowered yet",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -2949,7 +2949,13 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             );
         }
         let render_operation = format!("{:?}", plan.dd_graph_ir.render_program.operation);
-        if !render_operation.starts_with("StaticText") {
+        if matches!(
+            render_operation.as_str(),
+            operation
+                if operation.starts_with("CountInputEvents")
+                    || operation.starts_with("LatestInputText")
+                    || operation.starts_with("MatchTagText")
+        ) {
             legacy_render_operations.insert(render_operation);
             limited_render_program_examples.push(example);
         }
@@ -2977,6 +2983,20 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         .filter(|kind| !sink_kinds.contains(**kind))
         .copied()
         .collect::<Vec<_>>();
+    let mut blockers = Vec::new();
+    if !missing_sink_kinds.is_empty() {
+        blockers.push(
+            "DD graph IR carries an explicit output protocol, but not every required sink family is lowered for the manifest corpus",
+        );
+    }
+    if !legacy_render_operations.is_empty() {
+        blockers.push(
+            "some examples still use legacy render-operation shortcuts instead of general semantic IR to DD output lowering",
+        );
+    }
+    blockers.push(
+        "full semantic render/effect/persistence protocols are not lowered into DD operators yet",
+    );
     let details = serde_json::json!({
         "verdict": "fail",
         "shortcut_scan": shortcuts,
@@ -2987,11 +3007,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "output_sink_kinds_seen": sink_kinds,
         "missing_output_sink_kinds": missing_sink_kinds,
         "examples": examples,
-        "blockers": [
-            "DD graph IR now carries an explicit output protocol, but not every required sink family is lowered for the manifest corpus",
-            "some examples still use legacy render-operation shortcuts instead of general semantic IR to DD output lowering",
-            "full semantic render/effect/persistence protocols are not lowered into DD operators yet"
-        ],
+        "blockers": blockers,
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
     bail!(

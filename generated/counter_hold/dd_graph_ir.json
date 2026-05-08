@@ -66,8 +66,42 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "CountInputEvents": {
-        "initial": 0
+      "Text": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Number": "0"
+            },
+            "stage": {
+              "Hold": {
+                "binder": "state",
+                "body": [
+                  {
+                    "Pipe": {
+                      "input": "Source",
+                      "stage": {
+                        "Then": {
+                          "body": [
+                            {
+                              "BinaryAdd": {
+                                "left": {
+                                  "Path": "state"
+                                },
+                                "right": {
+                                  "Number": "1"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     }
   },

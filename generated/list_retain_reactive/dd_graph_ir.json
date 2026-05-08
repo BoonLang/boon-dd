@@ -38,10 +38,30 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "MatchTagText": {
-        "tag": "Active",
+      "Text": {
         "expr": {
-          "Text": "active"
+          "Pipe": {
+            "input": {
+              "Path": "selected_filter"
+            },
+            "stage": {
+              "Match": {
+                "kind": "While",
+                "arms": [
+                  {
+                    "pattern": "Active",
+                    "value": {
+                      "Text": "active"
+                    }
+                  },
+                  {
+                    "pattern": "Completed",
+                    "value": "Skip"
+                  }
+                ]
+              }
+            }
+          }
         }
       }
     }

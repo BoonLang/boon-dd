@@ -411,33 +411,13 @@ fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) ->
         output_node: graph.render_node.clone(),
     };
     let operation = semantic_expr
-        .map(|expr| render_operation_from_syntax(expr, hir))
-        .unwrap_or_else(|| DdRenderOperation::StaticText {
+        .map(|expr| DdRenderOperation::Text {
+            expr: render_expr_from_syntax(expr, hir),
+        })
+        .unwrap_or_else(|| DdRenderOperation::Text {
             expr: DdRenderExpr::Text(String::new()),
         });
     DdRenderProgram { source, operation }
-}
-
-fn render_operation_from_syntax(
-    expr: &boon_syntax::Expr,
-    hir: &boon_hir::HirModule,
-) -> DdRenderOperation {
-    if tree_has_latest(expr) {
-        DdRenderOperation::LatestInputText
-    } else if let Some((tag, value)) = first_match_branch(expr, boon_syntax::MatchKind::When, hir) {
-        DdRenderOperation::MatchTagText { tag, expr: value }
-    } else if let Some((tag, value)) = first_match_branch(expr, boon_syntax::MatchKind::While, hir)
-    {
-        DdRenderOperation::MatchTagText { tag, expr: value }
-    } else if tree_has_callee(expr, "Math/sum") || tree_has_hold(expr) || tree_has_then(expr) {
-        DdRenderOperation::CountInputEvents {
-            initial: counter_seed(expr),
-        }
-    } else {
-        DdRenderOperation::StaticText {
-            expr: render_expr_from_syntax(expr, hir),
-        }
-    }
 }
 
 fn semantic_kind_for_operator(kind: &GraphOperatorKind) -> Option<SemanticNodeKind> {
@@ -869,62 +849,6 @@ fn tree_has_callee(expression: &boon_syntax::Expr, callee: &str) -> bool {
     )
 }
 
-fn tree_has_then(expression: &boon_syntax::Expr) -> bool {
-    walk_any(expression, &mut |expr| {
-        matches!(expr, boon_syntax::Expr::Then { .. })
-    })
-}
-
-fn tree_has_hold(expression: &boon_syntax::Expr) -> bool {
-    walk_any(expression, &mut |expr| {
-        matches!(expr, boon_syntax::Expr::Hold { .. })
-    })
-}
-
-fn tree_has_latest(expression: &boon_syntax::Expr) -> bool {
-    walk_any(expression, &mut |expr| {
-        matches!(expr, boon_syntax::Expr::Latest(_))
-    })
-}
-
-fn counter_seed(expression: &boon_syntax::Expr) -> i64 {
-    match expression {
-        boon_syntax::Expr::Pipe { input, stage }
-            if matches!(stage.as_ref(), boon_syntax::Expr::Hold { .. }) =>
-        {
-            if let boon_syntax::Expr::Number(number) = input.as_ref() {
-                return number.parse().unwrap_or(0);
-            }
-            0
-        }
-        _ => 0,
-    }
-}
-
-fn first_match_branch(
-    expression: &boon_syntax::Expr,
-    kind: boon_syntax::MatchKind,
-    hir: &boon_hir::HirModule,
-) -> Option<(String, DdRenderExpr)> {
-    let mut result = None;
-    walk(expression, &mut |expr| {
-        if result.is_some() {
-            return;
-        }
-        if let boon_syntax::Expr::Match { kind: found, arms } = expr {
-            if *found == kind {
-                result = arms.iter().find(|arm| arm.pattern != "__").map(|arm| {
-                    (
-                        arm.pattern.clone(),
-                        render_expr_from_syntax(&arm.value, hir),
-                    )
-                });
-            }
-        }
-    });
-    result
-}
-
 fn walk_any<F>(expression: &boon_syntax::Expr, predicate: &mut F) -> bool
 where
     F: FnMut(&boon_syntax::Expr) -> bool,
@@ -1053,7 +977,7 @@ mod tests {
         );
         assert!(matches!(
             plan.dd_graph_ir.render_program.operation,
-            DdRenderOperation::StaticText { .. }
+            DdRenderOperation::Text { .. }
         ));
     }
 }

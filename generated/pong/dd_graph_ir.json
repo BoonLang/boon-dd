@@ -52,7 +52,7 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "StaticText": {
+      "Text": {
         "expr": {
           "Pipe": {
             "input": {

@@ -59,8 +59,64 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "CountInputEvents": {
-        "initial": 0
+      "Text": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Number": "0"
+            },
+            "stage": {
+              "Hold": {
+                "binder": "state",
+                "body": [
+                  {
+                    "Pipe": {
+                      "input": {
+                        "Pipe": {
+                          "input": {
+                            "Constructor": {
+                              "callee": "Duration",
+                              "fields": [
+                                {
+                                  "name": "seconds",
+                                  "value": {
+                                    "Number": "1"
+                                  }
+                                }
+                              ]
+                            }
+                          },
+                          "stage": {
+                            "Call": {
+                              "callee": "Timer/interval",
+                              "args": []
+                            }
+                          }
+                        }
+                      },
+                      "stage": {
+                        "Then": {
+                          "body": [
+                            {
+                              "BinaryAdd": {
+                                "left": {
+                                  "Path": "state"
+                                },
+                                "right": {
+                                  "Number": "1"
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     }
   },

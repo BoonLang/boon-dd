@@ -195,10 +195,8 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered = events
-            .map(|_| ())
-            .count()
-            .map(|(_key, count)| (0 + count as i64).to_string());
+        let rendered =
+            events.map(|_| (GeneratedValue::Number("1".parse::<i64>().unwrap_or(0))).text());
         rendered
             .inspect(move |(text, time, diff)| {
                 if *diff > 0 {

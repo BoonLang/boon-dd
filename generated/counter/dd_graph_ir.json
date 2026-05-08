@@ -52,8 +52,31 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "CountInputEvents": {
-        "initial": 0
+      "Text": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Pipe": {
+                "input": "Source",
+                "stage": {
+                  "Then": {
+                    "body": [
+                      {
+                        "Number": "1"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "stage": {
+              "Call": {
+                "callee": "Math/sum",
+                "args": []
+              }
+            }
+          }
+        }
       }
     }
   },

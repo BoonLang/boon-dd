@@ -37,7 +37,20 @@
       "semantic_path": "value",
       "output_node": "DocumentText"
     },
-    "operation": "LatestInputText"
+    "operation": {
+      "Text": {
+        "expr": {
+          "Latest": [
+            {
+              "Path": "sources.a"
+            },
+            {
+              "Path": "sources.b"
+            }
+          ]
+        }
+      }
+    }
   },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",

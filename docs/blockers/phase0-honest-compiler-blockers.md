@@ -7,7 +7,7 @@ removed from compiler/runtime execution paths. The remaining compiler/runtime
 is still not honest enough to satisfy the full plan because the generated Rust
 consumes a DD graph IR output protocol and render program that are explicit,
 hashed, and carry render-expression IR instead of precomputed compiler text,
-but some examples still use legacy render-operation shortcuts and the output
+and the old legacy render-operation variants have been removed. The output
 protocol is still incomplete for effect execution.
 
 ## Failing Commands
@@ -60,10 +60,10 @@ under `target/boon-artifacts/`.
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
   semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
-  protocol and render program with render-expression IR, but legacy render
-  operations still cover reactive examples, runtime command/effect execution
-  remains incomplete, and deterministic/prompt audit verification remains
-  incomplete.
+  protocol and render-expression IR without the old `CountInputEvents`,
+  `LatestInputText`, or `MatchTagText` render-operation variants, but runtime
+  command/effect execution remains incomplete, and deterministic/prompt audit
+  verification remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates with current evidence, hashes, and tool versions.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
@@ -103,10 +103,11 @@ under `target/boon-artifacts/`.
   protocol currently proves `MonitorNodeValue`, `RenderPatchText`, and
   `Persistence` sink families, and reports missing `Effect` sink coverage.
   Generated crates now return the expanded `SmokeOutput` protocol with monitor,
-  render, effect, and persistence channels. Lowering still fails because 9
-  examples use legacy render-operation shortcuts (`CountInputEvents`,
-  `LatestInputText`, and `MatchTagText`) and full semantic render/effect/
-  persistence protocols are not lowered into DD operators yet.
+  render, effect, and persistence channels. Lowering still fails because effect
+  sink coverage is missing and full semantic render/effect/persistence protocols
+  are not lowered into DD operators yet. The latest focused lowering run reports
+  0 legacy render-operation examples, 0 legacy render operations, and 0
+  unsupported semantic nodes.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
@@ -189,12 +190,11 @@ Continue with the remaining Phase 3 and Phase 4 work in
 1. Expand the manifest from `accepted-incomplete` to `accepted` only when every
    feature has parser, resolver, shape, semantic IR, DD lowering, generated
    runtime, host parity, positive fixture, and negative diagnostic coverage.
-2. Replace the remaining legacy `DdRenderProgram` operations with semantic IR,
-   DD graph IR, and generated-only runtime execution for structured render,
-   effect, monitor, and persistence protocols.
+2. Add honest effect-positive corpus coverage and lower effect sinks through
+   semantic IR, DD graph IR, and generated-only runtime execution.
 3. Keep `verify-no-shortcuts`, `plan-coverage`, resolver/shape scans, generated
    freshness, and generated-crate checks passing while replacing the remaining
-   legacy render operations.
+   incomplete render/effect/persistence protocol paths.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.

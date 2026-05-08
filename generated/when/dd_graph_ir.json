@@ -38,10 +38,30 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "MatchTagText": {
-        "tag": "Enter",
+      "Text": {
         "expr": {
-          "Text": "accepted"
+          "Pipe": {
+            "input": {
+              "Path": "sources.key_down.key"
+            },
+            "stage": {
+              "Match": {
+                "kind": "When",
+                "arms": [
+                  {
+                    "pattern": "Enter",
+                    "value": {
+                      "Text": "accepted"
+                    }
+                  },
+                  {
+                    "pattern": "__",
+                    "value": "Skip"
+                  }
+                ]
+              }
+            }
+          }
         }
       }
     }

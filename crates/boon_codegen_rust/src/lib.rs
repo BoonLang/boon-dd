@@ -175,27 +175,157 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
 
 fn render_collection_from_program(program: &boon_dd::DdRenderProgram) -> String {
     match &program.operation {
-        boon_dd::DdRenderOperation::StaticText { expr } => {
-            let value = value_expr_code(expr, &BTreeMap::new());
-            format!(
-                "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| ({}).text());\n",
-                value
-            )
-        }
-        boon_dd::DdRenderOperation::CountInputEvents { initial } => format!(
+        boon_dd::DdRenderOperation::Text { expr } => render_collection_from_expr(expr),
+    }
+}
+
+fn render_collection_from_expr(expr: &boon_dd::DdRenderExpr) -> String {
+    if let Some(initial) = count_sum_initial(expr) {
+        return format!(
             "        let rendered = events.map(|_| ()).count().map(|(_key, count)| ({} + count as i64).to_string());\n",
             initial
-        ),
-        boon_dd::DdRenderOperation::LatestInputText => {
-            "        let rendered = events.map(|(sequence, event)| ((), (sequence, boon_dd::generated_source_event_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned()
+        );
+    }
+    if let Some(value) = then_body_value(expr) {
+        let value = value_expr_code(value, &BTreeMap::new());
+        return format!(
+            "        let rendered = events.map(|_| ({}).text());\n",
+            value
+        );
+    }
+    if has_latest(expr) {
+        return "        let rendered = events.map(|(sequence, event)| ((), (sequence, boon_dd::generated_source_event_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned();
+    }
+    if let Some((tag, value)) = first_match_arm(expr) {
+        let value = value_expr_code(value, &BTreeMap::new());
+        return format!(
+            "        let rendered = events.filter(|(_sequence, event)| boon_dd::generated_source_event_text(event) == {:?}).map(|_| ({}).text());\n",
+            tag, value
+        );
+    }
+    let value = value_expr_code(expr, &BTreeMap::new());
+    format!(
+        "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| ({}).text());\n",
+        value
+    )
+}
+
+fn count_sum_initial(expr: &boon_dd::DdRenderExpr) -> Option<i64> {
+    match expr {
+        boon_dd::DdRenderExpr::Pipe { input, stage } if call_callee(stage, "Math/sum") => Some(0),
+        boon_dd::DdRenderExpr::Pipe { input, stage }
+            if matches!(stage.as_ref(), boon_dd::DdRenderExpr::Hold { .. }) =>
+        {
+            Some(number_literal(input).unwrap_or(0))
         }
-        boon_dd::DdRenderOperation::MatchTagText { tag, expr } => {
-            let value = value_expr_code(expr, &BTreeMap::new());
-            format!(
-                "        let rendered = events.filter(|(_sequence, event)| boon_dd::generated_source_event_text(event) == {:?}).map(|_| ({}).text());\n",
-                tag, value
-            )
+        boon_dd::DdRenderExpr::Pipe { input, stage } => {
+            count_sum_initial(stage).or_else(|| count_sum_initial(input))
         }
+        _ => None,
+    }
+}
+
+fn then_body_value(expr: &boon_dd::DdRenderExpr) -> Option<&boon_dd::DdRenderExpr> {
+    match expr {
+        boon_dd::DdRenderExpr::Then { body } => body.last(),
+        boon_dd::DdRenderExpr::Pipe { stage, .. } => then_body_value(stage),
+        _ => None,
+    }
+}
+
+fn has_latest(expr: &boon_dd::DdRenderExpr) -> bool {
+    walk_render_expr(expr, &mut |value| {
+        matches!(value, boon_dd::DdRenderExpr::Latest(_))
+    })
+}
+
+fn first_match_arm(expr: &boon_dd::DdRenderExpr) -> Option<(&str, &boon_dd::DdRenderExpr)> {
+    match expr {
+        boon_dd::DdRenderExpr::Match { arms, .. } => arms
+            .iter()
+            .find(|arm| arm.pattern != "__")
+            .map(|arm| (arm.pattern.as_str(), &arm.value)),
+        boon_dd::DdRenderExpr::Record(fields)
+        | boon_dd::DdRenderExpr::Constructor { fields, .. } => fields
+            .iter()
+            .find_map(|field| first_match_arm(&field.value)),
+        boon_dd::DdRenderExpr::List(values)
+        | boon_dd::DdRenderExpr::Block(values)
+        | boon_dd::DdRenderExpr::Latest(values)
+        | boon_dd::DdRenderExpr::Then { body: values }
+        | boon_dd::DdRenderExpr::Hold { body: values, .. } => {
+            values.iter().find_map(first_match_arm)
+        }
+        boon_dd::DdRenderExpr::Call { args, .. } => args.iter().find_map(|arg| match arg {
+            boon_dd::DdRenderArg::Positional(value) | boon_dd::DdRenderArg::Named { value, .. } => {
+                first_match_arm(value)
+            }
+        }),
+        boon_dd::DdRenderExpr::Pipe { input, stage }
+        | boon_dd::DdRenderExpr::BinaryAdd {
+            left: input,
+            right: stage,
+        } => first_match_arm(input).or_else(|| first_match_arm(stage)),
+        boon_dd::DdRenderExpr::Missing
+        | boon_dd::DdRenderExpr::Path(_)
+        | boon_dd::DdRenderExpr::Number(_)
+        | boon_dd::DdRenderExpr::Source
+        | boon_dd::DdRenderExpr::Skip
+        | boon_dd::DdRenderExpr::Tag(_)
+        | boon_dd::DdRenderExpr::Text(_) => None,
+    }
+}
+
+fn call_callee(expr: &boon_dd::DdRenderExpr, expected: &str) -> bool {
+    matches!(expr, boon_dd::DdRenderExpr::Call { callee, .. } if callee == expected)
+}
+
+fn number_literal(expr: &boon_dd::DdRenderExpr) -> Option<i64> {
+    match expr {
+        boon_dd::DdRenderExpr::Number(number) => number.parse().ok(),
+        _ => None,
+    }
+}
+
+fn walk_render_expr<F>(expr: &boon_dd::DdRenderExpr, predicate: &mut F) -> bool
+where
+    F: FnMut(&boon_dd::DdRenderExpr) -> bool,
+{
+    if predicate(expr) {
+        return true;
+    }
+    match expr {
+        boon_dd::DdRenderExpr::Record(fields)
+        | boon_dd::DdRenderExpr::Constructor { fields, .. } => fields
+            .iter()
+            .any(|field| walk_render_expr(&field.value, predicate)),
+        boon_dd::DdRenderExpr::List(values)
+        | boon_dd::DdRenderExpr::Block(values)
+        | boon_dd::DdRenderExpr::Latest(values)
+        | boon_dd::DdRenderExpr::Then { body: values }
+        | boon_dd::DdRenderExpr::Hold { body: values, .. } => values
+            .iter()
+            .any(|value| walk_render_expr(value, predicate)),
+        boon_dd::DdRenderExpr::Call { args, .. } => args.iter().any(|arg| match arg {
+            boon_dd::DdRenderArg::Positional(value) | boon_dd::DdRenderArg::Named { value, .. } => {
+                walk_render_expr(value, predicate)
+            }
+        }),
+        boon_dd::DdRenderExpr::Pipe { input, stage }
+        | boon_dd::DdRenderExpr::BinaryAdd {
+            left: input,
+            right: stage,
+        } => walk_render_expr(input, predicate) || walk_render_expr(stage, predicate),
+        boon_dd::DdRenderExpr::Match { arms, .. } => arms
+            .iter()
+            .any(|arm| walk_render_expr(&arm.value, predicate)),
+        boon_dd::DdRenderExpr::Missing
+        | boon_dd::DdRenderExpr::Path(_)
+        | boon_dd::DdRenderExpr::Number(_)
+        | boon_dd::DdRenderExpr::Source
+        | boon_dd::DdRenderExpr::Skip
+        | boon_dd::DdRenderExpr::Tag(_)
+        | boon_dd::DdRenderExpr::Text(_) => false,
     }
 }
 

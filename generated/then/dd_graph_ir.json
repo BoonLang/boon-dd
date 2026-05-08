@@ -45,8 +45,23 @@
       "output_node": "DocumentText"
     },
     "operation": {
-      "CountInputEvents": {
-        "initial": 0
+      "Text": {
+        "expr": {
+          "Pipe": {
+            "input": {
+              "Path": "sources.press"
+            },
+            "stage": {
+              "Then": {
+                "body": [
+                  {
+                    "Number": "1"
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     }
   },
