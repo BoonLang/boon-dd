@@ -83,6 +83,10 @@ under `target/boon-artifacts/`.
   deterministic-report hash, verdict, and critical findings. It still fails
   because no audit outputs have been produced under
   `target/boon-artifacts/prompt-audit/`.
+- Phase-specific report commands now exist for the current manifest corpus:
+  `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
+  `verify-semantic-ir`, and `verify-generated-crates`. These reports are
+  current-corpus evidence, not full accepted-language completion.
 
 ## Minimized Repro
 

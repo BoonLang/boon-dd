@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         bail!(
-            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|write-honest-compiler-prompts|verify-prompt-audit|verify> ..."
+            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-syntax-corpus|verify-resolver-corpus|verify-shape-corpus|verify-semantic-ir|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|verify-generated-crates|write-honest-compiler-prompts|verify-prompt-audit|verify> ..."
         );
     }
 
@@ -76,6 +76,10 @@ fn main() -> Result<()> {
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
         "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
         "verify-playgrounds" => verify_playgrounds(&args).map(|_| ()),
+        "verify-syntax-corpus" => verify_syntax_corpus(&args).map(|_| ()),
+        "verify-resolver-corpus" => verify_resolver_corpus(&args).map(|_| ()),
+        "verify-shape-corpus" => verify_shape_corpus(&args).map(|_| ()),
+        "verify-semantic-ir" => verify_semantic_ir(&args).map(|_| ()),
         "verify-honest-compiler" => verify_honest_compiler(&args).map(|_| ()),
         "verify-no-shortcuts" => verify_no_shortcuts(&args).map(|_| ()),
         "verify-honesty-deterministic" => verify_honesty_deterministic(&args).map(|_| ()),
@@ -83,6 +87,7 @@ fn main() -> Result<()> {
         "verify-negative-corpus" => verify_negative_corpus(&args).map(|_| ()),
         "verify-lowering" => verify_lowering(&args).map(|_| ()),
         "verify-generated-freshness" => verify_generated_freshness(&args).map(|_| ()),
+        "verify-generated-crates" => verify_generated_crates().map(|_| ()),
         "write-honest-compiler-prompts" => write_honest_compiler_prompts(&args).map(|_| ()),
         "verify-prompt-audit" => verify_prompt_audit(&args).map(|_| ()),
         "verify" => verify(&args),
@@ -1568,6 +1573,125 @@ fn read_language_manifest() -> Result<LanguageManifest> {
     let text = fs::read_to_string(&path)
         .with_context(|| format!("missing language manifest {}", path.display()))?;
     toml::from_str(&text).with_context(|| format!("invalid TOML {}", path.display()))
+}
+
+fn verify_syntax_corpus(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = read_language_manifest()?;
+    let gate = deterministic_parser_gate(&root, &manifest);
+    let details = serde_json::json!({
+        "verdict": if gate.status == "passed" { "pass" } else { "fail" },
+        "gate": gate,
+        "scope": "current manifest examples",
+    });
+    let artifact = write_artifact("syntax-corpus-report.json", &details)?;
+    if details["verdict"] != "pass" {
+        bail!(
+            "syntax corpus verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn verify_resolver_corpus(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = read_language_manifest()?;
+    let mut cases = Vec::new();
+    let mut unresolved = Vec::new();
+    for example in &manifest.examples {
+        let text = fs::read_to_string(root.join(&example.source))
+            .with_context(|| format!("missing source {}", example.source))?;
+        let parsed = boon_syntax::parse_source(example.source.clone(), text);
+        let hir = boon_hir::lower(&parsed);
+        let unresolved_refs = boon_hir::unresolved_references(&hir);
+        if !unresolved_refs.is_empty() || !hir.diagnostics.is_empty() {
+            unresolved.push(serde_json::json!({
+                "example": example.id,
+                "diagnostics": hir.diagnostics,
+                "unresolved": unresolved_refs,
+            }));
+        }
+        cases.push(serde_json::json!({
+            "example": example.id,
+            "definitions": hir.definitions.len(),
+            "sources": hir.sources,
+        }));
+    }
+    let details = serde_json::json!({
+        "verdict": if unresolved.is_empty() { "pass" } else { "fail" },
+        "scope": "current manifest examples",
+        "cases": cases,
+        "unresolved": unresolved,
+        "coverage_caveat": "resolver corpus does not yet prove dynamic owner scopes, all host bindings, or full library-symbol coverage",
+    });
+    let artifact = write_artifact("resolver-corpus-report.json", &details)?;
+    if details["verdict"] != "pass" {
+        bail!(
+            "resolver corpus verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn verify_shape_corpus(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = read_language_manifest()?;
+    let mut cases = Vec::new();
+    let mut failures = Vec::new();
+    for example in &manifest.examples {
+        let text = fs::read_to_string(root.join(&example.source))
+            .with_context(|| format!("missing source {}", example.source))?;
+        let parsed = boon_syntax::parse_source(example.source.clone(), text);
+        let hir = boon_hir::lower(&parsed);
+        let shape = boon_shape::check_module(&hir);
+        if !shape.diagnostics.is_empty() {
+            failures.push(serde_json::json!({
+                "example": example.id,
+                "diagnostics": shape.diagnostics,
+            }));
+        }
+        cases.push(serde_json::json!({
+            "example": example.id,
+            "definitions": shape.definitions,
+            "sources": shape.sources,
+        }));
+    }
+    let details = serde_json::json!({
+        "verdict": if failures.is_empty() { "pass" } else { "fail" },
+        "scope": "current manifest examples",
+        "cases": cases,
+        "failures": failures,
+        "coverage_caveat": "shape corpus does not yet prove full unification, source leaf solving, or every library contract in the accepted language",
+    });
+    let artifact = write_artifact("shape-corpus-report.json", &details)?;
+    if details["verdict"] != "pass" {
+        bail!(
+            "shape corpus verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn verify_semantic_ir(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = read_language_manifest()?;
+    let gate = deterministic_semantic_ir_gate(&root, &manifest);
+    let details = serde_json::json!({
+        "verdict": if gate.status == "passed" { "pass" } else { "fail" },
+        "gate": gate,
+        "scope": "current manifest examples",
+    });
+    let artifact = write_artifact("semantic-ir-report.json", &details)?;
+    if details["verdict"] != "pass" {
+        bail!(
+            "semantic IR verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
 }
 
 fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
