@@ -2918,6 +2918,8 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
     let mut limited_render_program_examples = Vec::new();
+    let mut sink_kinds = std::collections::BTreeSet::new();
+    let mut legacy_render_operations = std::collections::BTreeSet::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let source_path = root.join("examples").join(example).join("source.bn");
         let source_text = fs::read_to_string(&source_path)
@@ -2937,7 +2939,20 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             .map(|node| format!("{:?}", node.operator))
             .collect::<std::collections::BTreeSet<_>>();
         unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
-        limited_render_program_examples.push(example);
+        for sink in &plan.dd_graph_ir.output_protocol.sinks {
+            sink_kinds.insert(
+                format!("{sink:?}")
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
+        }
+        let render_operation = format!("{:?}", plan.dd_graph_ir.render_program.operation);
+        if !render_operation.starts_with("StaticText") {
+            legacy_render_operations.insert(render_operation);
+            limited_render_program_examples.push(example);
+        }
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -2948,17 +2963,33 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "dd_operators": dd_operators,
             "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
             "dd_render_program": plan.dd_graph_ir.render_program,
+            "output_protocol": plan.dd_graph_ir.output_protocol,
         }));
     }
+    let required_sink_kinds = [
+        "MonitorNodeValue",
+        "RenderPatchText",
+        "Effect",
+        "Persistence",
+    ];
+    let missing_sink_kinds = required_sink_kinds
+        .iter()
+        .filter(|kind| !sink_kinds.contains(**kind))
+        .copied()
+        .collect::<Vec<_>>();
     let details = serde_json::json!({
         "verdict": "fail",
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
         "limited_render_program_examples": limited_render_program_examples,
+        "legacy_render_operations": legacy_render_operations,
+        "output_sink_kinds_seen": sink_kinds,
+        "missing_output_sink_kinds": missing_sink_kinds,
         "examples": examples,
         "blockers": [
-            "DD render program is now explicit in graph IR, but it still covers scalar monitor/render text only",
+            "DD graph IR now carries an explicit output protocol, but not every required sink family is lowered for the manifest corpus",
+            "some examples still use legacy render-operation shortcuts instead of general semantic IR to DD output lowering",
             "full semantic render/effect/persistence protocols are not lowered into DD operators yet"
         ],
     });

@@ -16,5 +16,7 @@
         "text": "a,b,c"
       }
     }
-  ]
+  ],
+  "effects": [],
+  "persistence": []
 }

@@ -5,10 +5,10 @@ implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
 removed from compiler/runtime execution paths. The remaining compiler/runtime
 is still not honest enough to satisfy the full plan because the generated Rust
-consumes a DD graph IR render program that is explicit, hashed, and carries
-render-expression IR instead of precomputed compiler text, but it is still
-scalar/text-only instead of a complete typed semantic-to-DD graph lowering for
-render, effect, and persistence protocols.
+consumes a DD graph IR output protocol and render program that are explicit,
+hashed, and carry render-expression IR instead of precomputed compiler text,
+but some examples still use legacy render-operation shortcuts and the output
+protocol is still incomplete for effect execution.
 
 ## Failing Commands
 
@@ -59,10 +59,11 @@ under `target/boon-artifacts/`.
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
-  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR render
-  program with render-expression IR, but that program is still scalar/text-only,
-  runtime command/effect execution remains incomplete, and deterministic/prompt
-  audit verification remains incomplete.
+  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
+  protocol and render program with render-expression IR, but legacy render
+  operations still cover reactive examples, runtime command/effect execution
+  remains incomplete, and deterministic/prompt audit verification remains
+  incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates with current evidence, hashes, and tool versions.
   Parser completeness, phase boundary, semantic IR coverage, generated-only
@@ -96,17 +97,16 @@ under `target/boon-artifacts/`.
   directory and comparing SHA-256 hashes against the checked-in generated tree.
   The current checked set is 374 generated artifacts with 0 stale and 0
   missing paths.
-- `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
-  and DD graph IR coverage for all 22 required examples. It reports zero
-  unsupported semantic nodes, and the old `DdOutputTemplate` execution symbol is
-  gone from compiler, runtime, codegen, xtask, and checked-in generated
-  artifacts. Generated crates now insert typed `GeneratedSourceEvent` facts
-  into Timely/DD instead of pre-collapsing `SourceAction` values into host text;
-  `source_action_text`, `submit_text`, `submit_text_and_drain`, and the removed
-  compiler constant/render helper functions are now forbidden shortcut
-  patterns. Lowering still fails because `DdRenderProgram` is scalar
-  monitor/render text only and full semantic render/effect/persistence
-  protocols are not lowered into DD operators yet.
+- `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR,
+  DD graph IR coverage, and explicit output protocol coverage for all 22
+  required examples. It reports zero unsupported semantic nodes. The output
+  protocol currently proves `MonitorNodeValue`, `RenderPatchText`, and
+  `Persistence` sink families, and reports missing `Effect` sink coverage.
+  Generated crates now return the expanded `SmokeOutput` protocol with monitor,
+  render, effect, and persistence channels. Lowering still fails because 9
+  examples use legacy render-operation shortcuts (`CountInputEvents`,
+  `LatestInputText`, and `MatchTagText`) and full semantic render/effect/
+  persistence protocols are not lowered into DD operators yet.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
@@ -189,12 +189,12 @@ Continue with the remaining Phase 3 and Phase 4 work in
 1. Expand the manifest from `accepted-incomplete` to `accepted` only when every
    feature has parser, resolver, shape, semantic IR, DD lowering, generated
    runtime, host parity, positive fixture, and negative diagnostic coverage.
-2. Replace the scalar `DdRenderProgram` path with semantic IR, DD graph IR, and
-   generated-only runtime execution for structured render, effect, monitor, and
-   persistence protocols.
+2. Replace the remaining legacy `DdRenderProgram` operations with semantic IR,
+   DD graph IR, and generated-only runtime execution for structured render,
+   effect, monitor, and persistence protocols.
 3. Keep `verify-no-shortcuts`, `plan-coverage`, resolver/shape scans, generated
    freshness, and generated-crate checks passing while replacing the remaining
-   scalar render program.
+   legacy render operations.
 
 No dependency fork is needed for this blocker. The next work is compiler and
 verification implementation inside this repo.

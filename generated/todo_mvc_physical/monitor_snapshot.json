@@ -17,6 +17,8 @@
           "text": "physical ready"
         }
       }
-    ]
+    ],
+    "effects": [],
+    "persistence": []
   }
 ]

@@ -78,6 +78,8 @@ fn empty_smoke_output() -> boon_dd::SmokeOutput {
     boon_dd::SmokeOutput {
         monitor: Vec::new(),
         render: Vec::new(),
+        effects: Vec::new(),
+        persistence: Vec::new(),
     }
 }
 

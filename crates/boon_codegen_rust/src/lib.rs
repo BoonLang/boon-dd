@@ -158,6 +158,8 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("                            node: render_node.clone(),\n");
     code.push_str("                            text: text.clone(),\n");
     code.push_str("                        }],\n");
+    code.push_str("                        effects: Vec::new(),\n");
+    code.push_str("                        persistence: Vec::new(),\n");
     code.push_str("                    });\n");
     code.push_str("                }\n");
     code.push_str("            })\n");

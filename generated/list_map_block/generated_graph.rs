@@ -239,6 +239,8 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                                 node: render_node.clone(),
                                 text: text.clone(),
                             }],
+                            effects: Vec::new(),
+                            persistence: Vec::new(),
                         });
                 }
             })

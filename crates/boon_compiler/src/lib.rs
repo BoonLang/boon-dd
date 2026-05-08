@@ -1,7 +1,7 @@
 use boon_dd::{
-    DdRenderArg, DdRenderExpr, DdRenderField, DdRenderMatchArm, DdRenderMatchKind,
-    DdRenderOperation, DdRenderProgram, DdRenderProgramSource, GraphNode, GraphOperator,
-    GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
+    DdOutputProtocol, DdOutputSink, DdRenderArg, DdRenderExpr, DdRenderField, DdRenderMatchArm,
+    DdRenderMatchKind, DdRenderOperation, DdRenderProgram, DdRenderProgramSource, GraphNode,
+    GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -67,6 +67,7 @@ pub struct DdGraphIr {
     pub nodes: Vec<DdGraphNode>,
     pub unsupported_semantic_nodes: Vec<NodeId>,
     pub render_program: DdRenderProgram,
+    pub output_protocol: DdOutputProtocol,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,6 +336,7 @@ fn lower_semantic_to_dd(
         })
         .map(|node| node.node.clone())
         .collect();
+    let render_program = dd_render_program_from_hir(hir, graph);
     DdGraphIr {
         graph_id: graph.graph_id.clone(),
         source_hash: graph.source_hash.clone(),
@@ -350,7 +352,46 @@ fn lower_semantic_to_dd(
             })
             .collect(),
         unsupported_semantic_nodes,
-        render_program: dd_render_program_from_hir(hir, graph),
+        output_protocol: dd_output_protocol(graph, &render_program),
+        render_program,
+    }
+}
+
+fn dd_output_protocol(graph: &StaticGraph, render_program: &DdRenderProgram) -> DdOutputProtocol {
+    let render_source = render_program.source.clone();
+    let mut sinks = vec![
+        DdOutputSink::MonitorNodeValue {
+            node: graph.monitor_node.clone(),
+            source: render_source.clone(),
+        },
+        DdOutputSink::RenderPatchText {
+            node: graph.render_node.clone(),
+            source: render_source.clone(),
+        },
+    ];
+    if graph
+        .operators
+        .iter()
+        .any(|operator| operator.kind == GraphOperatorKind::EffectSink)
+    {
+        sinks.push(DdOutputSink::Effect {
+            node: NodeId("EffectSink".to_owned()),
+            source: render_source.clone(),
+        });
+    }
+    if graph
+        .operators
+        .iter()
+        .any(|operator| operator.kind == GraphOperatorKind::PersistTap)
+    {
+        sinks.push(DdOutputSink::Persistence {
+            node: NodeId("PersistTap".to_owned()),
+            source: render_source,
+        });
+    }
+    DdOutputProtocol {
+        schema_version: "boon-dd-output-v1".to_owned(),
+        sinks,
     }
 }
 

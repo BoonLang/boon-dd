@@ -119,9 +119,26 @@ pub enum RenderCommand {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectCommand {
+    Requested { node: NodeId, name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PersistenceCommand {
+    SaveText { node: NodeId, value: String },
+    LoadText { node: NodeId },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmokeOutput {
+    #[serde(default)]
     pub monitor: Vec<MonitorRecord>,
+    #[serde(default)]
     pub render: Vec<RenderCommand>,
+    #[serde(default)]
+    pub effects: Vec<EffectCommand>,
+    #[serde(default)]
+    pub persistence: Vec<PersistenceCommand>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +198,32 @@ pub struct DdRenderProgram {
 pub struct DdRenderProgramSource {
     pub semantic_path: Option<String>,
     pub output_node: NodeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdOutputProtocol {
+    pub schema_version: String,
+    pub sinks: Vec<DdOutputSink>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdOutputSink {
+    MonitorNodeValue {
+        node: NodeId,
+        source: DdRenderProgramSource,
+    },
+    RenderPatchText {
+        node: NodeId,
+        source: DdRenderProgramSource,
+    },
+    Effect {
+        node: NodeId,
+        source: DdRenderProgramSource,
+    },
+    Persistence {
+        node: NodeId,
+        source: DdRenderProgramSource,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -458,6 +501,8 @@ pub fn run_counter_hold_smoke() -> SmokeOutput {
             node: NodeId("DocumentText".to_owned()),
             text: final_value.to_string(),
         }],
+        effects: Vec::new(),
+        persistence: Vec::new(),
     }
 }
 

@@ -56,5 +56,28 @@
         "initial": 0
       }
     }
+  },
+  "output_protocol": {
+    "schema_version": "boon-dd-output-v1",
+    "sinks": [
+      {
+        "MonitorNodeValue": {
+          "node": "Counter",
+          "source": {
+            "semantic_path": "store.counter",
+            "output_node": "DocumentText"
+          }
+        }
+      },
+      {
+        "RenderPatchText": {
+          "node": "DocumentText",
+          "source": {
+            "semantic_path": "store.counter",
+            "output_node": "DocumentText"
+          }
+        }
+      }
+    ]
   }
 }

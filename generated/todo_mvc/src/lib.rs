@@ -11,7 +11,7 @@ pub mod values;
 mod tests {
     #[test]
     fn generated_graph_matches_checked_scenario_output() {
-        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"2 todos\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"2 todos\"\n      }\n    }\n  ]\n}")
+        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"2 todos\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"2 todos\"\n      }\n    }\n  ],\n  \"effects\": [],\n  \"persistence\": []\n}")
             .expect("checked expected render JSON should deserialize");
         let actions: Vec<boon_dd::SourceAction> = serde_json::from_str("[{\"source\":\"store.sources.new_todo_input.text\",\"owner\":null,\"generation\":null,\"value\":{\"Text\":\"Buy milk\"}},{\"source\":\"store.sources.new_todo_input.event.key_down.key\",\"owner\":null,\"generation\":null,\"value\":{\"Tag\":{\"name\":\"Enter\",\"payload\":null}}}]")
             .expect("checked scenario actions should deserialize");
