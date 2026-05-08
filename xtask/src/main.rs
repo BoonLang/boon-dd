@@ -1956,6 +1956,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let root = repo_root()?;
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
+    let mut compatibility_scalar_plan_examples = Vec::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let source_path = root.join("examples").join(example).join("source.bn");
         let source_text = fs::read_to_string(&source_path)
@@ -1975,6 +1976,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             .map(|node| format!("{:?}", node.operator))
             .collect::<std::collections::BTreeSet<_>>();
         unsupported_total += plan.dd_graph_ir.unsupported_semantic_nodes.len();
+        compatibility_scalar_plan_examples.push(example);
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -1992,10 +1994,10 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
+        "compatibility_scalar_plan_examples": compatibility_scalar_plan_examples,
         "examples": examples,
         "blockers": [
             "codegen still selects dataflow from a compatibility scalar DD plan",
-            "semantic IR and DD graph IR are now reportable, but accepted semantic nodes are not fully lowered",
             "generated Rust still consumes compatibility_scalar_plan instead of DD graph IR templates"
         ],
     });

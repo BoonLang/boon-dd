@@ -69,9 +69,9 @@ under `target/boon-artifacts/`.
   `pass` after regenerating every required generated artifact into a temporary
   directory and comparing SHA-256 hashes against the checked-in generated tree.
 - `target/boon-artifacts/lowering-coverage-report.json` now reports semantic IR
-  and DD graph IR coverage for all 22 required examples. It still fails because
-  unsupported semantic nodes remain and generated Rust still consumes the
-  compatibility scalar plan.
+  and DD graph IR coverage for all 22 required examples. It now reports zero
+  unsupported semantic nodes, but still fails because generated Rust still
+  consumes the compatibility scalar plan instead of DD graph IR templates.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   but still fails because features and examples are explicitly

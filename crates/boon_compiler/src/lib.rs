@@ -321,6 +321,7 @@ fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGrap
                 SemanticNodeKind::ConstantText
                     | SemanticNodeKind::ConstantNumber
                     | SemanticNodeKind::PathReference
+                    | SemanticNodeKind::Pipe
                     | SemanticNodeKind::Skip
                     | SemanticNodeKind::Tag
                     | SemanticNodeKind::Record
@@ -364,6 +365,7 @@ fn semantic_kind_for_operator(kind: &GraphOperatorKind) -> Option<SemanticNodeKi
         GraphOperatorKind::EffectSink | GraphOperatorKind::PersistTap => return None,
         GraphOperatorKind::MonitorTap => SemanticNodeKind::MonitorTap,
         GraphOperatorKind::LibraryCall => SemanticNodeKind::LibraryCall,
+        GraphOperatorKind::BinaryAdd => SemanticNodeKind::BinaryAdd,
     })
 }
 
@@ -520,6 +522,7 @@ impl OperatorBuilder {
                 self.visit(stage);
             }
             boon_syntax::Expr::Binary { left, right, .. } => {
+                self.add(GraphOperatorKind::BinaryAdd);
                 self.visit(left);
                 self.visit(right);
             }
@@ -563,6 +566,7 @@ impl OperatorBuilder {
             (GraphOperatorKind::ListMap, "ListMap", 42),
             (GraphOperatorKind::ListRetain, "ListRetain", 43),
             (GraphOperatorKind::LibraryCall, "LibraryCall", 70),
+            (GraphOperatorKind::BinaryAdd, "BinaryAdd", 80),
             (GraphOperatorKind::PersistTap, "PersistTap", 90),
             (GraphOperatorKind::RenderSink, "RenderSink", 100),
             (GraphOperatorKind::MonitorTap, "MonitorTap", 101),

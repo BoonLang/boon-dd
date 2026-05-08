@@ -79,6 +79,7 @@ pub fn build_dataflow_description() -> &'static [(&'static str, &'static str)] {
         ("Then", "Then"),
         ("Hold", "Hold"),
         ("LibraryCall", "LibraryCall"),
+        ("BinaryAdd", "BinaryAdd"),
         ("PersistTap", "PersistTap"),
         ("RenderSink", "RenderSink"),
         ("MonitorTap", "MonitorTap"),

@@ -142,6 +142,7 @@ pub enum GraphOperatorKind {
     PersistTap,
     MonitorTap,
     LibraryCall,
+    BinaryAdd,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

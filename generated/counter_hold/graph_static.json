@@ -60,6 +60,13 @@
       "order": 70
     },
     {
+      "node": "BinaryAdd",
+      "kind": "BinaryAdd",
+      "inputs": [],
+      "output": "BinaryAdd",
+      "order": 80
+    },
+    {
       "node": "PersistTap",
       "kind": "PersistTap",
       "inputs": [],
