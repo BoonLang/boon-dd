@@ -87,6 +87,9 @@ under `target/boon-artifacts/`.
   `verify-syntax-corpus`, `verify-resolver-corpus`, `verify-shape-corpus`,
   `verify-semantic-ir`, and `verify-generated-crates`. These reports are
   current-corpus evidence, not full accepted-language completion.
+- The deterministic scenario-protocol gate now strictly parses every manifest
+  scenario and reports preserved command actions. It still fails because
+  command/effect/persistence execution and skip-fault self-tests are incomplete.
 
 ## Minimized Repro
 

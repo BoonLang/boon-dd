@@ -1172,16 +1172,7 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
                 ]
             }),
         ),
-        deterministic_static_failed_gate(
-            "scenario-protocol",
-            "inspect examples/*/scenario.toml and runtime protocol",
-            serde_json::json!({
-                "blockers": [
-                    "scenario parser keeps command actions, but command/effect/persistence execution is incomplete",
-                    "no fault-injection check proves command actions cannot be skipped"
-                ]
-            }),
-        ),
+        deterministic_scenario_protocol_gate(&root, &manifest),
         adversarial_gate,
         generated_freshness_gate,
         deterministic_static_failed_gate(
@@ -1526,6 +1517,57 @@ fn deterministic_semantic_ir_gate(root: &Path, manifest: &LanguageManifest) -> G
                     "semantic IR still contains Unknown nodes for accepted examples".to_owned()
                 ]
             },
+        }),
+    }
+}
+
+fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest) -> GateReport {
+    let mut cases = Vec::new();
+    let mut failures = Vec::new();
+    let mut command_count = 0_usize;
+    for example in &manifest.examples {
+        match fs::read_to_string(root.join(&example.scenario)) {
+            Ok(text) => match boon_runtime_host::parse_scenario_result(&text) {
+                Ok(scenario) => {
+                    let commands = scenario
+                        .steps
+                        .iter()
+                        .map(|step| step.commands.len())
+                        .sum::<usize>();
+                    command_count += commands;
+                    cases.push(serde_json::json!({
+                        "example": example.id,
+                        "steps": scenario.steps.len(),
+                        "actions": scenario.steps.iter().map(|step| step.actions.len()).sum::<usize>(),
+                        "commands": commands,
+                    }));
+                }
+                Err(error) => failures.push(serde_json::json!({
+                    "example": example.id,
+                    "error": error,
+                })),
+            },
+            Err(error) => failures.push(serde_json::json!({
+                "example": example.id,
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    GateReport {
+        name: "scenario-protocol".to_owned(),
+        command: "strictly parse every manifest scenario and preserve command actions".to_owned(),
+        status: "failed".to_owned(),
+        duration_ms: 0,
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "cases": cases,
+            "failures": failures,
+            "command_count": command_count,
+            "parser_strict": true,
+            "blockers": [
+                "scenario parser is strict and preserves command actions, but command/effect/persistence execution is incomplete",
+                "no fault-injection check proves command actions cannot be skipped by runtime execution"
+            ],
         }),
     }
 }
