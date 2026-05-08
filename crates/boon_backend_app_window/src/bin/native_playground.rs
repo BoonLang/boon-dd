@@ -69,9 +69,8 @@ struct SmokeRequest {
 }
 
 struct PlaygroundExample {
+    fixture_index: usize,
     name: String,
-    graph: boon_dd::StaticGraph,
-    output_template: boon_dd::DdOutputTemplate,
     scenario_actions: Vec<SourceAction>,
     actions: Vec<SourceAction>,
     output: SmokeOutput,
@@ -339,23 +338,16 @@ fn surface_config_size(size: Size, scale: f64) -> (u32, u32) {
 fn build_playground_examples() -> Vec<PlaygroundExample> {
     boon_examples::REQUIRED_FIXTURES
         .iter()
-        .map(|fixture| {
-            let plan = boon_compiler::compile_source(
-                &format!("examples/{}/source.bn", fixture.name),
-                fixture.source,
-            );
-            let scenario = boon_runtime_host::parse_scenario(fixture.scenario);
-            let output =
-                boon_dd::run_dd_graph_template(&plan.graph, &plan.dd_graph_ir.output_template, &[]);
+        .enumerate()
+        .map(|(fixture_index, fixture)| {
+            let scenario_actions = boon_examples::scenario_actions_for_text(fixture.scenario);
+            let output = boon_examples::run_generated_actions_at(fixture_index, &[])
+                .unwrap_or_else(|| panic!("missing generated fixture {}", fixture.name))
+                .1;
             PlaygroundExample {
+                fixture_index,
                 name: fixture.name.to_owned(),
-                graph: plan.graph,
-                output_template: plan.dd_graph_ir.output_template,
-                scenario_actions: scenario
-                    .steps
-                    .first()
-                    .map(|step| step.actions.clone())
-                    .unwrap_or_default(),
+                scenario_actions,
                 actions: Vec::new(),
                 output,
                 last_auto_tick: Instant::now(),
@@ -454,9 +446,9 @@ fn update_auto_tick(example: &mut PlaygroundExample) {
 fn trigger_example_action(example: &mut PlaygroundExample) {
     if let Some(action) = example.scenario_actions.first().cloned() {
         example.actions.push(action);
-    } else if let Some(binding) = example.graph.source_bindings.first() {
+    } else {
         example.actions.push(SourceAction {
-            source: binding.path.clone(),
+            source: "manual".to_owned(),
             owner: None,
             generation: None,
             value: BoonValue::EmptyRecord,
@@ -467,7 +459,9 @@ fn trigger_example_action(example: &mut PlaygroundExample) {
 
 fn refresh_example_output(example: &mut PlaygroundExample) {
     example.output =
-        boon_dd::run_dd_graph_template(&example.graph, &example.output_template, &example.actions);
+        boon_examples::run_generated_actions_at(example.fixture_index, &example.actions)
+            .unwrap_or_else(|| panic!("missing generated fixture {}", example.name))
+            .1;
 }
 
 fn render_frame(

@@ -8,7 +8,6 @@ rust-version.workspace = true
 [dependencies]
 boon_dd = { path = "../boon_dd" }
 boon_examples = { path = "../boon_examples" }
-boon_runtime_host = { path = "../boon_runtime_host" }
 crossterm.workspace = true
 ratatui.workspace = true
 serde_json.workspace = true

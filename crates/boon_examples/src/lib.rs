@@ -43,13 +43,27 @@ pub fn required_examples() -> &'static [&'static str] {
     boon_dd::REQUIRED_EXAMPLES
 }
 
-macro_rules! run_generated_fixture {
-    ($expected_name:literal, $fixture:expr, $crate_name:ident) => {{
+fn sha256_text(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    let digest = Sha256::digest(text.as_bytes());
+    format!("{digest:x}")
+}
+
+pub fn scenario_actions_for_text(scenario_text: &str) -> Vec<boon_dd::SourceAction> {
+    boon_runtime_host::parse_scenario(scenario_text)
+        .steps
+        .first()
+        .map(|step| step.actions.clone())
+        .unwrap_or_default()
+}
+
+macro_rules! run_generated_fixture_actions {
+    ($expected_name:literal, $fixture:expr, $crate_name:ident, $actions:expr) => {{
         assert_eq!(
             $fixture.name, $expected_name,
             "generated fixture registry order drifted"
         );
-        let scenario = boon_runtime_host::parse_scenario($fixture.scenario);
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
@@ -58,13 +72,9 @@ macro_rules! run_generated_fixture {
         let mut graph = $crate_name::graph::build_dataflow(&mut worker);
         let epoch = 1_u64;
         let mut submitted = false;
-        if let Some(step) = scenario.steps.first() {
-            for action in &step.actions {
-                graph
-                    .sources
-                    .submit_text(boon_dd::source_action_text(action), epoch);
-                submitted = true;
-            }
+        for action in $actions {
+            graph.sources.submit_action(action, epoch);
+            submitted = true;
         }
         if !submitted {
             graph.sources.submit_text("", epoch);
@@ -87,84 +97,164 @@ macro_rules! run_generated_fixture {
             .outputs()
             .into_iter()
             .last()
-            .unwrap_or_else(|| panic!("generated fixture {} emitted no output", $fixture.name));
+            .unwrap_or_else(|| boon_dd::SmokeOutput {
+                monitor: Vec::new(),
+                render: Vec::new(),
+            });
         ($fixture.name.to_owned(), output)
     }};
 }
 
-pub fn run_embedded_matrix() -> Vec<(String, boon_dd::SmokeOutput)> {
-    vec![
-        run_generated_fixture!("counter", &REQUIRED_FIXTURES[0], generated_counter),
-        run_generated_fixture!(
+pub fn run_generated_actions_at(
+    index: usize,
+    actions: &[boon_dd::SourceAction],
+) -> Option<(String, boon_dd::SmokeOutput)> {
+    Some(match index {
+        0 => run_generated_fixture_actions!(
+            "counter",
+            &REQUIRED_FIXTURES[0],
+            generated_counter,
+            actions
+        ),
+        1 => run_generated_fixture_actions!(
             "counter_hold",
             &REQUIRED_FIXTURES[1],
-            generated_counter_hold
+            generated_counter_hold,
+            actions
         ),
-        run_generated_fixture!("interval", &REQUIRED_FIXTURES[2], generated_interval),
-        run_generated_fixture!(
+        2 => run_generated_fixture_actions!(
+            "interval",
+            &REQUIRED_FIXTURES[2],
+            generated_interval,
+            actions
+        ),
+        3 => run_generated_fixture_actions!(
             "interval_hold",
             &REQUIRED_FIXTURES[3],
-            generated_interval_hold
+            generated_interval_hold,
+            actions
         ),
-        run_generated_fixture!("latest", &REQUIRED_FIXTURES[4], generated_latest),
-        run_generated_fixture!("when", &REQUIRED_FIXTURES[5], generated_when),
-        run_generated_fixture!("while", &REQUIRED_FIXTURES[6], generated_while),
-        run_generated_fixture!("then", &REQUIRED_FIXTURES[7], generated_then),
-        run_generated_fixture!(
+        4 => run_generated_fixture_actions!(
+            "latest",
+            &REQUIRED_FIXTURES[4],
+            generated_latest,
+            actions
+        ),
+        5 => run_generated_fixture_actions!("when", &REQUIRED_FIXTURES[5], generated_when, actions),
+        6 => {
+            run_generated_fixture_actions!("while", &REQUIRED_FIXTURES[6], generated_while, actions)
+        }
+        7 => run_generated_fixture_actions!("then", &REQUIRED_FIXTURES[7], generated_then, actions),
+        8 => run_generated_fixture_actions!(
             "list_map_block",
             &REQUIRED_FIXTURES[8],
-            generated_list_map_block
+            generated_list_map_block,
+            actions
         ),
-        run_generated_fixture!(
+        9 => run_generated_fixture_actions!(
             "list_map_external_dep",
             &REQUIRED_FIXTURES[9],
-            generated_list_map_external_dep
+            generated_list_map_external_dep,
+            actions
         ),
-        run_generated_fixture!(
+        10 => run_generated_fixture_actions!(
             "list_object_state",
             &REQUIRED_FIXTURES[10],
-            generated_list_object_state
+            generated_list_object_state,
+            actions
         ),
-        run_generated_fixture!(
+        11 => run_generated_fixture_actions!(
             "list_retain_count",
             &REQUIRED_FIXTURES[11],
-            generated_list_retain_count
+            generated_list_retain_count,
+            actions
         ),
-        run_generated_fixture!(
+        12 => run_generated_fixture_actions!(
             "list_retain_reactive",
             &REQUIRED_FIXTURES[12],
-            generated_list_retain_reactive
+            generated_list_retain_reactive,
+            actions
         ),
-        run_generated_fixture!(
+        13 => run_generated_fixture_actions!(
             "list_retain_remove",
             &REQUIRED_FIXTURES[13],
-            generated_list_retain_remove
+            generated_list_retain_remove,
+            actions
         ),
-        run_generated_fixture!(
+        14 => run_generated_fixture_actions!(
             "shopping_list",
             &REQUIRED_FIXTURES[14],
-            generated_shopping_list
+            generated_shopping_list,
+            actions
         ),
-        run_generated_fixture!("todo_mvc", &REQUIRED_FIXTURES[15], generated_todo_mvc),
-        run_generated_fixture!("crud", &REQUIRED_FIXTURES[16], generated_crud),
-        run_generated_fixture!(
+        15 => run_generated_fixture_actions!(
+            "todo_mvc",
+            &REQUIRED_FIXTURES[15],
+            generated_todo_mvc,
+            actions
+        ),
+        16 => {
+            run_generated_fixture_actions!("crud", &REQUIRED_FIXTURES[16], generated_crud, actions)
+        }
+        17 => run_generated_fixture_actions!(
             "flight_booker",
             &REQUIRED_FIXTURES[17],
-            generated_flight_booker
+            generated_flight_booker,
+            actions
         ),
-        run_generated_fixture!(
+        18 => run_generated_fixture_actions!(
             "temperature_converter",
             &REQUIRED_FIXTURES[18],
-            generated_temperature_converter
+            generated_temperature_converter,
+            actions
         ),
-        run_generated_fixture!("pong", &REQUIRED_FIXTURES[19], generated_pong),
-        run_generated_fixture!("cells", &REQUIRED_FIXTURES[20], generated_cells),
-        run_generated_fixture!(
+        19 => {
+            run_generated_fixture_actions!("pong", &REQUIRED_FIXTURES[19], generated_pong, actions)
+        }
+        20 => run_generated_fixture_actions!(
+            "cells",
+            &REQUIRED_FIXTURES[20],
+            generated_cells,
+            actions
+        ),
+        21 => run_generated_fixture_actions!(
             "todo_mvc_physical",
             &REQUIRED_FIXTURES[21],
-            generated_todo_mvc_physical
+            generated_todo_mvc_physical,
+            actions
         ),
-    ]
+        _ => return None,
+    })
+}
+
+pub fn run_generated_scenario_at(
+    index: usize,
+    scenario_text: &str,
+) -> Option<(String, boon_dd::SmokeOutput)> {
+    let actions = scenario_actions_for_text(scenario_text);
+    run_generated_actions_at(index, &actions)
+}
+
+pub fn run_generated_for_source(
+    source_text: &str,
+    scenario_text: &str,
+) -> Option<(String, boon_dd::SmokeOutput)> {
+    let source_hash = sha256_text(source_text);
+    REQUIRED_FIXTURES
+        .iter()
+        .position(|fixture| sha256_text(fixture.source) == source_hash)
+        .and_then(|index| run_generated_scenario_at(index, scenario_text))
+}
+
+pub fn run_embedded_matrix() -> Vec<(String, boon_dd::SmokeOutput)> {
+    REQUIRED_FIXTURES
+        .iter()
+        .enumerate()
+        .map(|(index, fixture)| {
+            run_generated_scenario_at(index, fixture.scenario)
+                .unwrap_or_else(|| panic!("missing generated fixture {}", fixture.name))
+        })
+        .collect()
 }
 
 pub fn run_embedded_matrix_json() -> Result<String, serde_json::Error> {

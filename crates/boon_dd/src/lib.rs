@@ -205,18 +205,6 @@ pub struct Scenario {
     pub steps: Vec<ScenarioStep>,
 }
 
-pub fn execute_scenario(
-    graph: &StaticGraph,
-    output_template: &DdOutputTemplate,
-    scenario: &Scenario,
-) -> Vec<SmokeOutput> {
-    scenario
-        .steps
-        .iter()
-        .map(|step| run_dd_graph_template(graph, output_template, &step.actions))
-        .collect()
-}
-
 pub fn value_to_text(value: &BoonValue) -> String {
     match value {
         BoonValue::EmptyRecord => String::new(),
@@ -238,107 +226,6 @@ pub fn value_to_text(value: &BoonValue) -> String {
 
 pub fn source_action_text(action: &SourceAction) -> String {
     value_to_text(&action.value)
-}
-
-pub fn run_dd_graph_template(
-    graph: &StaticGraph,
-    output_template: &DdOutputTemplate,
-    actions: &[SourceAction],
-) -> SmokeOutput {
-    let output = Arc::new(Mutex::new(SmokeOutput {
-        monitor: Vec::new(),
-        render: Vec::new(),
-    }));
-
-    let graph = graph.clone();
-    let output_template = output_template.clone();
-    let output_in_graph = Arc::clone(&output);
-    let allocator = timely::communication::Allocator::Thread(
-        timely::communication::allocator::Thread::default(),
-    );
-    let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
-
-    {
-        let mut input = InputSession::<EncodedTime, (u64, String), Diff>::new();
-        let mut probe = ProbeHandle::new();
-
-        worker.dataflow::<EncodedTime, _, _>(|scope| {
-            let events = input.to_collection(scope);
-            let rendered = match &output_template {
-                DdOutputTemplate::ConstantText(text) => {
-                    let text = text.clone();
-                    events
-                        .map(|_| ())
-                        .count()
-                        .filter(|(_key, count)| *count > 0)
-                        .map(move |_| text.clone())
-                }
-                DdOutputTemplate::CountInputEvents { initial } => {
-                    let initial = *initial;
-                    events
-                        .map(|_| ())
-                        .count()
-                        .map(move |(_key, count)| (initial + count as i64).to_string())
-                }
-                DdOutputTemplate::LatestInputText => events
-                    .map(|(sequence, value)| ((), (sequence, value)))
-                    .reduce(|_, inputs, output| {
-                        if let Some(((_sequence, value), _diff)) =
-                            inputs.iter().max_by_key(|((sequence, _), _)| *sequence)
-                        {
-                            output.push((value.clone(), 1));
-                        }
-                    })
-                    .map(|(_key, value)| value),
-                DdOutputTemplate::MatchTagText { tag, text } => {
-                    let tag = tag.clone();
-                    let text = text.clone();
-                    events
-                        .filter(move |(_sequence, value)| value == &tag)
-                        .map(move |_| text.clone())
-                }
-            };
-            rendered
-                .inspect(move |(value, time, diff)| {
-                    if *diff > 0 {
-                        let epoch = BoonTime::decode(*time).epoch;
-                        let mut output = output_in_graph.lock().expect("output lock poisoned");
-                        output.monitor.push(MonitorRecord::NodeValue {
-                            epoch,
-                            node: graph.monitor_node.clone(),
-                            owner: OwnerKey("Root".to_owned()),
-                            value_preview: value.clone(),
-                        });
-                        output.render.push(RenderCommand::PatchText {
-                            node: graph.render_node.clone(),
-                            text: value.clone(),
-                        });
-                    }
-                })
-                .probe_with(&mut probe);
-        });
-
-        let command_time = BoonTime { epoch: 1, phase: 3 }.encode();
-        input.advance_to(command_time);
-        for (sequence, action) in actions.iter().enumerate() {
-            input.insert((sequence as u64, source_action_text(action)));
-        }
-        if actions.is_empty() && matches!(output_template, DdOutputTemplate::ConstantText(_)) {
-            input.insert((0, String::new()));
-        }
-        input.advance_to(command_time + 1);
-        input.flush();
-
-        let target = command_time + 1;
-        let mut steps = 0;
-        while probe.less_than(&target) {
-            worker.step();
-            steps += 1;
-            assert!(steps <= 1024, "probe did not drain by target timestamp");
-        }
-    }
-
-    output.lock().expect("output lock poisoned").clone()
 }
 
 pub const REQUIRED_EXAMPLES: &[&str] = &[
@@ -452,39 +339,6 @@ mod tests {
         let output = run_counter_hold_smoke();
         assert_eq!(output.monitor.len(), 1);
         assert_eq!(output.render.len(), 1);
-        assert_eq!(
-            output.render[0],
-            RenderCommand::PatchText {
-                node: NodeId("DocumentText".to_owned()),
-                text: "1".to_owned(),
-            }
-        );
-    }
-
-    #[test]
-    fn static_graph_executes_from_generic_behavior() {
-        let graph = StaticGraph {
-            graph_id: "example".to_owned(),
-            source_path: "examples/example/source.bn".to_owned(),
-            source_hash: "test-source-hash".to_owned(),
-            source_bindings: Vec::new(),
-            nodes: Vec::new(),
-            operators: Vec::new(),
-            monitor_node: NodeId("ThenValue".to_owned()),
-            render_node: NodeId("DocumentText".to_owned()),
-            initial_text: "0".to_owned(),
-            physical_scene: false,
-        };
-        let output = run_dd_graph_template(
-            &graph,
-            &DdOutputTemplate::CountInputEvents { initial: 0 },
-            &[SourceAction {
-                source: "press".to_owned(),
-                owner: None,
-                generation: None,
-                value: BoonValue::EmptyRecord,
-            }],
-        );
         assert_eq!(
             output.render[0],
             RenderCommand::PatchText {

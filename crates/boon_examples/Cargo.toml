@@ -31,4 +31,5 @@ generated_todo_mvc_physical = { path = "../../generated/todo_mvc_physical" }
 generated_when = { path = "../../generated/when" }
 generated_while = { path = "../../generated/while" }
 serde_json.workspace = true
+sha2.workspace = true
 timely.workspace = true

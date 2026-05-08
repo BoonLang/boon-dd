@@ -1,23 +1,7 @@
 use boon_dd::{
-    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioCommand, ScenarioStep, SmokeOutput,
-    SourceAction,
+    BoonNumber, BoonValue, NodeId, OwnerKey, Scenario, ScenarioCommand, ScenarioStep, SourceAction,
 };
 use std::collections::BTreeMap;
-
-#[derive(Default)]
-pub struct RuntimeHost;
-
-impl RuntimeHost {
-    pub fn compile_and_run_scenario(
-        &self,
-        source_path: &str,
-        source_text: &str,
-        scenario: &Scenario,
-    ) -> Vec<SmokeOutput> {
-        let plan = boon_compiler::compile_source(source_path, source_text);
-        boon_dd::execute_scenario(&plan.graph, &plan.dd_graph_ir.output_template, scenario)
-    }
-}
 
 pub fn parse_scenario(text: &str) -> Scenario {
     parse_scenario_result(text).expect("scenario TOML must be structurally valid")

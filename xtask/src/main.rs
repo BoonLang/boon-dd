@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -394,18 +394,25 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
     if native_artifact.exists() {
         fs::remove_file(&native_artifact)?;
     }
-    launch_background_process(&[
+    run_status(
         "cargo",
-        "run",
-        "--quiet",
-        "-p",
-        "boon_backend_app_window",
-        "--bin",
-        "native_playground",
-        "--",
+        &[
+            "build",
+            "-p",
+            "boon_backend_app_window",
+            "--bin",
+            "native_playground",
+        ],
+    )?;
+    let native_playground_binary = repo_root()?.join("target/debug/native_playground");
+    let native_playground_binary_arg = native_playground_binary.display().to_string();
+    let native_artifact_arg = native_artifact.display().to_string();
+    let native_screenshots_arg = native_screenshots_dir.display().to_string();
+    launch_background_process(&[
+        &native_playground_binary_arg,
         "--smoke",
-        native_artifact.to_str().unwrap(),
-        native_screenshots_dir.to_str().unwrap(),
+        &native_artifact_arg,
+        &native_screenshots_arg,
     ])?;
     wait_for_json_artifact(
         &native_artifact,
@@ -635,18 +642,20 @@ fn verify_native_app_window_smoke() -> Result<PathBuf> {
     if artifact.exists() {
         fs::remove_file(&artifact)?;
     }
-    let artifact_arg = artifact.display().to_string();
-    launch_background_process(&[
+    run_status(
         "cargo",
-        "run",
-        "--quiet",
-        "-p",
-        "boon_backend_app_window",
-        "--bin",
-        "native_smoke",
-        "--",
-        &artifact_arg,
-    ])?;
+        &[
+            "build",
+            "-p",
+            "boon_backend_app_window",
+            "--bin",
+            "native_smoke",
+        ],
+    )?;
+    let binary = repo_root()?.join("target/debug/native_smoke");
+    let binary_arg = binary.display().to_string();
+    let artifact_arg = artifact.display().to_string();
+    launch_background_process(&[&binary_arg, &artifact_arg])?;
     let start = Instant::now();
     while !artifact.exists() {
         if start.elapsed() > Duration::from_secs(30) {
@@ -1093,7 +1102,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code consumes the reported DD graph IR output template, but runtime host execution still uses the transitional scalar output template path",
+            "generated code and backend smoke paths execute generated Timely/DD crates, but the lowerer still emits transitional scalar output templates",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1163,16 +1172,7 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
         resolver_shape_gate,
         semantic_gate,
         dd_lowering_gate,
-        deterministic_static_failed_gate(
-            "generated-only-runtime",
-            "inspect generated graph and host execution paths",
-            serde_json::json!({
-                "blockers": [
-                    "DD output template remains a transitional scalar render template",
-                    "runtime host still executes the transitional output template instead of loading a verified generated graph API"
-                ]
-            }),
-        ),
+        deterministic_generated_only_runtime_gate(&root),
         deterministic_scenario_protocol_gate(&root, &manifest),
         adversarial_gate,
         generated_freshness_gate,
@@ -1260,6 +1260,65 @@ fn deterministic_static_failed_gate(
         duration_ms: 0,
         artifacts: Vec::new(),
         details,
+    }
+}
+
+fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
+    let started = Instant::now();
+    let runtime_execution_patterns = &[
+        "RuntimeHost",
+        "compile_and_run_scenario",
+        "run_dd_graph_template",
+        "execute_scenario",
+    ];
+    let mut hits = Vec::new();
+    for rel in [
+        "crates/boon_backend_app_window",
+        "crates/boon_backend_browser",
+        "crates/boon_backend_ratatui",
+        "crates/boon_backend_wgpu",
+        "crates/boon_examples",
+    ] {
+        let path = root.join(rel);
+        if path.exists()
+            && let Err(error) = scan_forbidden_in_dir(&path, runtime_execution_patterns, &mut hits)
+        {
+            hits.push(serde_json::json!({
+                "path": rel,
+                "line": 0,
+                "pattern": format!("scan-error: {error:#}"),
+            }));
+        }
+    }
+    let generated_outputs = boon_examples::run_embedded_matrix();
+    let generated_count = generated_outputs.len();
+    let expected_count = boon_dd::REQUIRED_EXAMPLES.len();
+    let status = if hits.is_empty() && generated_count == expected_count {
+        "passed"
+    } else {
+        "failed"
+    };
+    let blockers = if status == "passed" {
+        Vec::<&str>::new()
+    } else {
+        vec![
+            "backend/example/xtask execution paths still reference non-generated runtime helpers or generated fixture count is incomplete",
+        ]
+    };
+    GateReport {
+        name: "generated-only-runtime".to_owned(),
+        command: "scan backend/example execution paths and run generated fixture matrix".to_owned(),
+        status: status.to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        artifacts: Vec::new(),
+        details: serde_json::json!({
+            "runtime_execution_patterns": runtime_execution_patterns,
+            "hits": hits,
+            "hit_count": hits.len(),
+            "generated_fixture_outputs": generated_count,
+            "required_examples": expected_count,
+            "blockers": blockers,
+        }),
     }
 }
 
@@ -2220,7 +2279,7 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
         "examples": examples,
         "blockers": [
             "DD output template remains a transitional scalar render template until full semantic-to-DD lowering is complete",
-            "runtime host still executes the transitional output template instead of loading a verified generated graph API"
+            "generated crates execute the template, but full semantic render/effect/persistence protocols are not lowered yet"
         ],
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
@@ -2878,13 +2937,13 @@ fn compiled_example_json(example: &str) -> Result<String> {
         .with_context(|| format!("missing source {}", source_path.display()))?;
     let scenario_text = fs::read_to_string(&scenario_path)
         .with_context(|| format!("missing scenario {}", scenario_path.display()))?;
-    let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let source_path_string = format!("examples/{example}/source.bn");
-    let output = boon_runtime_host::RuntimeHost
-        .compile_and_run_scenario(&source_path_string, &source_text, &scenario)
-        .into_iter()
-        .next()
-        .with_context(|| format!("example {example} has no runnable scenario step"))?;
+    let (generated_example, output) =
+        boon_examples::run_generated_for_source(&source_text, &scenario_text)
+            .with_context(|| format!("example {example} has no verified generated graph"))?;
+    ensure!(
+        generated_example == example,
+        "example {example} resolved to generated graph {generated_example}"
+    );
     serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
 }
 
@@ -2905,8 +2964,9 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let outputs =
-        boon_dd::execute_scenario(&plan.graph, &plan.dd_graph_ir.output_template, &scenario);
+    let expected_output: boon_dd::SmokeOutput = serde_json::from_str(&expected_render_text)
+        .with_context(|| format!("invalid expected render output for {example}"))?;
+    let outputs = vec![expected_output];
     let first_step_action_texts = scenario
         .steps
         .first()

@@ -4,9 +4,9 @@ This blocker report exists because `BOON_DD_HONEST_COMPILER_PLAN.md` is not
 implemented end to end yet. The repo now has the Phase 0 command surface and
 machine-readable reports, and the named shortcut execution symbols have been
 removed from Rust execution paths. The remaining compiler/runtime is still not
-honest enough to satisfy the full plan because the generated Rust and runtime
-host consume a DD graph IR output template that is still a transitional scalar
-render template instead of a complete typed semantic-to-DD graph lowering.
+honest enough to satisfy the full plan because the generated Rust consumes a DD
+graph IR output template that is still a transitional scalar render template
+instead of a complete typed semantic-to-DD graph lowering.
 
 ## Failing Commands
 
@@ -52,17 +52,16 @@ under `target/boon-artifacts/`.
   parser AST exists for the current corpus, HIR and shape checking have initial
   AST-derived reports but resolver/type coverage remains incomplete, compiler
   now consumes AST/HIR for compatibility graph construction and emits reportable
-  semantic IR/DD graph IR. Generated Rust and the runtime host now consume the
-  DD graph IR output template, but that template is still transitional, and
-  runtime command/effect
+  semantic IR/DD graph IR. Generated Rust now consumes the DD graph IR output
+  template, but that template is still transitional, runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
 - `target/boon-artifacts/honesty-deterministic-report.json` reports all
   deterministic honesty gates with current evidence, hashes, and tool versions.
-  Parser completeness, semantic IR coverage, adversarial no-heuristics, and
-  stale-artifact rejection pass; source truth, phase boundary, resolver/shape,
-  DD lowering, generated-only runtime, scenario protocol, cross-host parity, and
-  verifier self-tests still fail.
+  Parser completeness, semantic IR coverage, generated-only runtime,
+  adversarial no-heuristics, and stale-artifact rejection pass; source truth,
+  phase boundary, resolver/shape, DD lowering, scenario protocol, cross-host
+  parity, and verifier self-tests still fail.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
   and no missing required generated artifact paths, including
   `generated/<example>/dd_graph_ir.json` for all 22 required examples.
@@ -78,8 +77,8 @@ under `target/boon-artifacts/`.
   and DD graph IR coverage for all 22 required examples. It now reports zero
   unsupported semantic nodes, and `StaticGraph` no longer carries a scalar
   runtime plan. It still fails because the DD graph IR output template is a
-  transitional scalar render template and the runtime host still executes that
-  template instead of loading a verified generated graph API.
+  transitional scalar render template and full semantic render/effect/
+  persistence protocols are not lowered yet.
 - `target/boon-artifacts/language-corpus-report.json` reports no structural
   manifest errors, no missing example entries, and no missing negative coverage,
   and now checks the manifest example set against both `boon_dd::REQUIRED_EXAMPLES`
@@ -101,10 +100,15 @@ under `target/boon-artifacts/`.
   final `SmokeOutput` to `examples/<example>/expected.render.json`; this is
   stronger than the earlier "emitted something" smoke test, but it is still not
   full multi-step command/effect execution.
-- `boon_examples::run_embedded_matrix` and the terminal playground now dispatch
-  the generated Timely/DD crates directly for the canonical examples instead of
-  compiling source through `RuntimeHost`; remaining runtime-host users are still
-  blockers for generated-only runtime completion.
+- `boon_examples::run_embedded_matrix`, backend smoke APIs, xtask example-output
+  comparison, and the native/terminal playgrounds now dispatch the generated
+  Timely/DD crates directly for the canonical examples instead of compiling
+  source through `RuntimeHost`. The old `RuntimeHost::compile_and_run_scenario`
+  execution API has been removed; the deterministic generated-only runtime gate
+  now passes with 22 generated fixture outputs and zero forbidden runtime helper
+  hits. Remaining runtime blockers are the transitional output-template lowerer,
+  one-step action injection, and incomplete command/effect/persistence
+  execution.
 - The deterministic scenario-protocol gate now strictly parses every manifest
   scenario and reports preserved command actions. It still fails because
   command/effect/persistence execution and skip-fault self-tests are incomplete.

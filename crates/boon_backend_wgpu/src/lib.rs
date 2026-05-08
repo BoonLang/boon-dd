@@ -1,11 +1,8 @@
 pub fn render_commands(
-    source_path: &str,
+    _source_path: &str,
     source_text: &str,
     scenario_text: &str,
 ) -> Option<boon_dd::SmokeOutput> {
-    let scenario = boon_runtime_host::parse_scenario(scenario_text);
-    boon_runtime_host::RuntimeHost
-        .compile_and_run_scenario(source_path, source_text, &scenario)
-        .into_iter()
-        .next()
+    boon_examples::run_generated_for_source(source_text, scenario_text)
+        .map(|(_name, output)| output)
 }
