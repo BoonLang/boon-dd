@@ -1,0 +1,208 @@
+# Phase 0 language/corpus inventory for BOON_DD_HONEST_COMPILER_PLAN.md.
+#
+# This is not a completion claim. It is the checked-in source of truth that
+# future phases must expand until every accepted syntax and semantic feature has
+# parser, resolver, shape, semantic IR, DD lowering, generated runtime, host
+# parity, positive fixture, and negative diagnostic coverage.
+
+[language]
+name = "Boon"
+accepted_language_version = "phase0-inventory"
+status = "incomplete"
+plan = "BOON_DD_HONEST_COMPILER_PLAN.md"
+
+[[features]]
+id = "source-marker"
+status = "accepted-incomplete"
+positive_examples = ["counter", "counter_hold", "latest", "todo_mvc"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[features]]
+id = "pipes-and-library-calls"
+status = "accepted-incomplete"
+positive_examples = ["counter", "temperature_converter", "list_map_block"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[features]]
+id = "then-when-while-latest-hold"
+status = "accepted-incomplete"
+positive_examples = ["then", "when", "while", "latest", "counter_hold", "interval_hold"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[features]]
+id = "lists-records-blocks"
+status = "accepted-incomplete"
+positive_examples = ["list_map_block", "list_object_state", "list_retain_count", "shopping_list", "todo_mvc"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[features]]
+id = "document-element-rendering"
+status = "accepted-incomplete"
+positive_examples = ["counter", "crud", "flight_booker", "todo_mvc", "todo_mvc_physical"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[features]]
+id = "time-frame-and-physical-scene"
+status = "accepted-incomplete"
+positive_examples = ["interval", "interval_hold", "pong", "cells", "todo_mvc_physical"]
+negative_examples = []
+required_coverage = ["parser", "resolver", "shape", "semantic_ir", "dd_lowering", "generated_runtime", "host_parity"]
+
+[[examples]]
+id = "cells"
+source = "examples/cells/source.bn"
+scenario = "examples/cells/scenario.toml"
+expected_render = "examples/cells/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "counter"
+source = "examples/counter/source.bn"
+scenario = "examples/counter/scenario.toml"
+expected_render = "examples/counter/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "counter_hold"
+source = "examples/counter_hold/source.bn"
+scenario = "examples/counter_hold/scenario.toml"
+expected_render = "examples/counter_hold/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "crud"
+source = "examples/crud/source.bn"
+scenario = "examples/crud/scenario.toml"
+expected_render = "examples/crud/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "flight_booker"
+source = "examples/flight_booker/source.bn"
+scenario = "examples/flight_booker/scenario.toml"
+expected_render = "examples/flight_booker/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "interval"
+source = "examples/interval/source.bn"
+scenario = "examples/interval/scenario.toml"
+expected_render = "examples/interval/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "interval_hold"
+source = "examples/interval_hold/source.bn"
+scenario = "examples/interval_hold/scenario.toml"
+expected_render = "examples/interval_hold/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "latest"
+source = "examples/latest/source.bn"
+scenario = "examples/latest/scenario.toml"
+expected_render = "examples/latest/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_map_block"
+source = "examples/list_map_block/source.bn"
+scenario = "examples/list_map_block/scenario.toml"
+expected_render = "examples/list_map_block/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_map_external_dep"
+source = "examples/list_map_external_dep/source.bn"
+scenario = "examples/list_map_external_dep/scenario.toml"
+expected_render = "examples/list_map_external_dep/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_object_state"
+source = "examples/list_object_state/source.bn"
+scenario = "examples/list_object_state/scenario.toml"
+expected_render = "examples/list_object_state/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_retain_count"
+source = "examples/list_retain_count/source.bn"
+scenario = "examples/list_retain_count/scenario.toml"
+expected_render = "examples/list_retain_count/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_retain_reactive"
+source = "examples/list_retain_reactive/source.bn"
+scenario = "examples/list_retain_reactive/scenario.toml"
+expected_render = "examples/list_retain_reactive/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "list_retain_remove"
+source = "examples/list_retain_remove/source.bn"
+scenario = "examples/list_retain_remove/scenario.toml"
+expected_render = "examples/list_retain_remove/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "pong"
+source = "examples/pong/source.bn"
+scenario = "examples/pong/scenario.toml"
+expected_render = "examples/pong/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "shopping_list"
+source = "examples/shopping_list/source.bn"
+scenario = "examples/shopping_list/scenario.toml"
+expected_render = "examples/shopping_list/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "temperature_converter"
+source = "examples/temperature_converter/source.bn"
+scenario = "examples/temperature_converter/scenario.toml"
+expected_render = "examples/temperature_converter/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "then"
+source = "examples/then/source.bn"
+scenario = "examples/then/scenario.toml"
+expected_render = "examples/then/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "todo_mvc"
+source = "examples/todo_mvc/source.bn"
+scenario = "examples/todo_mvc/scenario.toml"
+expected_render = "examples/todo_mvc/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "todo_mvc_physical"
+source = "examples/todo_mvc_physical/source.bn"
+scenario = "examples/todo_mvc_physical/scenario.toml"
+expected_render = "examples/todo_mvc_physical/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "when"
+source = "examples/when/source.bn"
+scenario = "examples/when/scenario.toml"
+expected_render = "examples/when/expected.render.json"
+status = "accepted-incomplete"
+
+[[examples]]
+id = "while"
+source = "examples/while/source.bn"
+scenario = "examples/while/scenario.toml"
+expected_render = "examples/while/expected.render.json"
+status = "accepted-incomplete"

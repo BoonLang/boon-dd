@@ -11,6 +11,38 @@ use std::time::{Duration, Instant};
 
 const WASM_BINDGEN_VERSION: &str = "0.2.120";
 const COSMIC_WORKSPACE: &str = "boon-dd";
+const HONEST_COMPILER_PLAN: &str = "BOON_DD_HONEST_COMPILER_PLAN.md";
+const LANGUAGE_MANIFEST: &str = "docs/language/boon-language-manifest.toml";
+
+const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
+    concat!("detect", "_operators"),
+    concat!("infer", "_sources"),
+    concat!("infer", "_source_paths"),
+    concat!("infer", "_source_shape"),
+    concat!("infer", "_monitor_node"),
+    concat!("infer", "_initial_text"),
+    concat!("infer", "_text_behavior"),
+    concat!("infer", "_document_text"),
+    concat!("infer", "_constant_text"),
+    concat!("infer", "_document_target"),
+    concat!("definition", "_block"),
+    concat!("text", "_literals"),
+    concat!("Text", "Behavior"),
+    concat!("execute", "_static_graph"),
+    concat!("evaluate", "_text"),
+    concat!("generated", "_text_collection"),
+    concat!("smoke", "_input_text"),
+    concat!("compile", "_and_run_step"),
+    concat!("line.contains", "(\"command =\")"),
+    concat!("contains", "(\"SOURCE\")"),
+    concat!("contains", "(\"THEN\")"),
+    concat!("contains", "(\"WHEN\")"),
+    concat!("contains", "(\"WHILE\")"),
+    concat!("contains", "(\"LATEST\")"),
+    concat!("contains", "(\"HOLD\")"),
+    concat!("contains", "(\"List/"),
+    concat!("contains", "(\"Scene/new(\")"),
+];
 
 #[derive(Debug, Serialize)]
 struct GateReport {
@@ -32,7 +64,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         bail!(
-            "usage: cargo xtask <bootstrap|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify> ..."
+            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|write-honest-compiler-prompts|verify-prompt-audit|verify> ..."
         );
     }
 
@@ -44,6 +76,15 @@ fn main() -> Result<()> {
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
         "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
         "verify-playgrounds" => verify_playgrounds(&args).map(|_| ()),
+        "verify-honest-compiler" => verify_honest_compiler(&args).map(|_| ()),
+        "verify-no-shortcuts" => verify_no_shortcuts(&args).map(|_| ()),
+        "verify-honesty-deterministic" => verify_honesty_deterministic(&args).map(|_| ()),
+        "verify-language-corpus" => verify_language_corpus(&args).map(|_| ()),
+        "verify-negative-corpus" => verify_negative_corpus(&args).map(|_| ()),
+        "verify-lowering" => verify_lowering(&args).map(|_| ()),
+        "verify-generated-freshness" => verify_generated_freshness(&args).map(|_| ()),
+        "write-honest-compiler-prompts" => write_honest_compiler_prompts(&args).map(|_| ()),
+        "verify-prompt-audit" => verify_prompt_audit(&args).map(|_| ()),
         "verify" => verify(&args),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -701,6 +742,51 @@ fn verify(args: &[String]) -> Result<()> {
         verify_plan_coverage,
     ));
     gates.push(capture_simple_gate(
+        "verify-honest-compiler",
+        "cargo xtask verify-honest-compiler --format json",
+        || verify_honest_compiler(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-no-shortcuts",
+        "cargo xtask verify-no-shortcuts --format json",
+        || verify_no_shortcuts(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-honesty-deterministic",
+        "cargo xtask verify-honesty-deterministic --format json",
+        || verify_honesty_deterministic(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-language-corpus",
+        "cargo xtask verify-language-corpus --format json",
+        || verify_language_corpus(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-negative-corpus",
+        "cargo xtask verify-negative-corpus --format json",
+        || verify_negative_corpus(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-lowering",
+        "cargo xtask verify-lowering --format json",
+        || verify_lowering(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-generated-freshness",
+        "cargo xtask verify-generated-freshness --format json",
+        || verify_generated_freshness(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "write-honest-compiler-prompts",
+        "cargo xtask write-honest-compiler-prompts --format json",
+        || write_honest_compiler_prompts(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-prompt-audit",
+        "cargo xtask verify-prompt-audit --format json",
+        || verify_prompt_audit(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
         "generated-crates",
         "cargo test --manifest-path generated/<example>/Cargo.toml",
         verify_generated_crates,
@@ -730,6 +816,14 @@ fn verify(args: &[String]) -> Result<()> {
                 &fs::read_to_string(&matrix_path).unwrap_or_else(|_| "{}".to_owned())
             )?,
             "forbidden_pattern_scan": forbidden_scan,
+            "honest_compiler_report": read_artifact_json("honest-compiler-report.json")?,
+            "honesty_deterministic_report": read_artifact_json("honesty-deterministic-report.json")?,
+            "language_corpus_report": read_artifact_json("language-corpus-report.json")?,
+            "lowering_coverage_report": read_artifact_json("lowering-coverage-report.json")?,
+            "generated_freshness_report": read_artifact_json("generated-freshness-report.json")?,
+            "no_shortcuts_report": read_artifact_json("no-shortcuts-report.json")?,
+            "honest_compiler_prompt_pack": read_artifact_json("honest-compiler-prompt-pack.json")?,
+            "prompt_audit_report": read_artifact_json("prompt-audit-report.json")?,
         }))?,
     )?;
     if !success {
@@ -857,6 +951,323 @@ fn scan_forbidden_in_dir(
         }
     }
     Ok(())
+}
+
+fn write_artifact(name: &str, details: &serde_json::Value) -> Result<PathBuf> {
+    let artifact = artifacts_dir()?.join(name);
+    fs::write(&artifact, serde_json::to_vec_pretty(details)?)?;
+    Ok(artifact)
+}
+
+fn read_artifact_json(name: &str) -> Result<serde_json::Value> {
+    let artifact = artifacts_dir()?.join(name);
+    if !artifact.exists() {
+        return Ok(serde_json::json!({
+            "missing": true,
+            "path": artifact,
+        }));
+    }
+    serde_json::from_str(&fs::read_to_string(&artifact)?)
+        .with_context(|| format!("artifact is not JSON: {}", artifact.display()))
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let path_string = path
+        .to_str()
+        .with_context(|| format!("path is not UTF-8: {}", path.display()))?;
+    let output = run_capture("sha256sum", &[path_string])
+        .with_context(|| format!("failed to hash {}", path.display()))?;
+    output
+        .split_whitespace()
+        .next()
+        .map(str::to_owned)
+        .with_context(|| format!("sha256sum output was empty for {}", path.display()))
+}
+
+fn repo_state() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let status = run_capture("git", &["status", "--short"])?;
+    let plan = root.join(HONEST_COMPILER_PLAN);
+    Ok(serde_json::json!({
+        "commit": run_capture("git", &["rev-parse", "HEAD"])?,
+        "dirty": !status.trim().is_empty(),
+        "status_short": status,
+        "plan_path": HONEST_COMPILER_PLAN,
+        "plan_sha256": sha256_file(&plan).unwrap_or_else(|error| format!("unavailable: {error:#}")),
+    }))
+}
+
+fn scan_honest_shortcuts() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let mut hits = Vec::new();
+    for base in ["crates", "xtask/src", "generated"] {
+        let dir = root.join(base);
+        if !dir.exists() {
+            continue;
+        }
+        scan_forbidden_in_dir(&dir, HONEST_SHORTCUT_PATTERNS, &mut hits)?;
+    }
+    Ok(serde_json::json!({
+        "patterns": HONEST_SHORTCUT_PATTERNS,
+        "hits": hits,
+        "hit_count": hits.len(),
+    }))
+}
+
+fn required_examples_from_disk() -> Result<Vec<String>> {
+    let examples_dir = repo_root()?.join("examples");
+    let mut examples = Vec::new();
+    for entry in fs::read_dir(examples_dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() && entry.path().join("source.bn").exists() {
+            examples.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    examples.sort();
+    Ok(examples)
+}
+
+fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
+    let shortcuts = scan_honest_shortcuts()?;
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "phase": "phase0",
+        "repo_state": repo_state()?,
+        "plan": HONEST_COMPILER_PLAN,
+        "blockers": [
+            "parser/HIR/shape are skeletal",
+            "compiler still derives semantic graph from raw source text",
+            "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
+            "generated code still uses smoke_input_text/generated_text_collection",
+            "scenario parser still drops command actions",
+            "full deterministic and prompt-audit verification are not implemented yet"
+        ],
+        "shortcut_scan": shortcuts,
+        "required_next_command": "cargo xtask verify-no-shortcuts --format json",
+    });
+    let artifact = write_artifact("honest-compiler-report.json", &details)?;
+    bail!(
+        "honest compiler is not implemented yet; see {}",
+        artifact.display()
+    )
+}
+
+fn verify_no_shortcuts(_args: &[String]) -> Result<serde_json::Value> {
+    let shortcuts = scan_honest_shortcuts()?;
+    let hit_count = shortcuts["hit_count"].as_u64().unwrap_or(0);
+    let details = serde_json::json!({
+        "verdict": if hit_count == 0 { "pass" } else { "fail" },
+        "repo_state": repo_state()?,
+        "shortcut_symbols_in_execution_paths": hit_count,
+        "scan": shortcuts,
+        "allowlist": [
+            HONEST_COMPILER_PLAN,
+            "docs/blockers/**",
+            "tests that assert the guardrail catches forbidden patterns"
+        ],
+    });
+    let artifact = write_artifact("no-shortcuts-report.json", &details)?;
+    if hit_count != 0 {
+        bail!(
+            "shortcut execution patterns are still present; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
+    let shortcuts = scan_honest_shortcuts()?;
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "repo_state": repo_state()?,
+        "shortcut_symbols_in_execution_paths": shortcuts["hit_count"],
+        "accepted_features_without_full_coverage": "unknown_until_language_manifest_and_phase_reports_are_complete",
+        "stale_artifact_failures": "unknown_until_verify_generated_freshness_is_implemented",
+        "host_semantics_violations": "present_until_backend_execution_paths_use_generated_graph_only",
+        "adversarial_heuristic_cases_failed": "unknown_until_negative_corpus_exists",
+        "prompt_audit_required": true,
+        "missing_deterministic_gates": [
+            "source-truth",
+            "parser-completeness",
+            "phase-boundary",
+            "resolver-and-shape",
+            "semantic-ir-coverage",
+            "dd-lowering-coverage",
+            "generated-only-runtime",
+            "scenario-protocol",
+            "adversarial-no-heuristics",
+            "stale-artifact-rejection",
+            "cross-host-parity",
+            "verification-harness-self-test"
+        ],
+    });
+    let artifact = write_artifact("honesty-deterministic-report.json", &details)?;
+    bail!(
+        "deterministic honesty verification is not complete; see {}",
+        artifact.display()
+    )
+}
+
+fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let manifest = root.join(LANGUAGE_MANIFEST);
+    let examples = required_examples_from_disk()?;
+    let manifest_text = fs::read_to_string(&manifest).unwrap_or_default();
+    let missing_examples = examples
+        .iter()
+        .filter(|example| !manifest_text.contains(&format!("id = \"{example}\"")))
+        .cloned()
+        .collect::<Vec<_>>();
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "manifest": LANGUAGE_MANIFEST,
+        "manifest_exists": manifest.exists(),
+        "examples_on_disk": examples,
+        "missing_examples_in_manifest": missing_examples,
+        "blockers": [
+            "manifest is Phase 0 inventory, not full accepted-language coverage",
+            "positive and negative feature coverage IDs are not complete",
+            "parser/resolver/shape/semantic IR/DD lowering coverage reports do not exist yet"
+        ],
+    });
+    let artifact = write_artifact("language-corpus-report.json", &details)?;
+    bail!(
+        "language corpus coverage is not complete; see {}",
+        artifact.display()
+    )
+}
+
+fn verify_negative_corpus(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let negative_dir = root.join("docs/language/negative-corpus");
+    let case_count = if negative_dir.exists() {
+        fs::read_dir(&negative_dir)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("bn"))
+            .count()
+    } else {
+        0
+    };
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "negative_corpus_dir": "docs/language/negative-corpus",
+        "negative_bn_case_count": case_count,
+        "blockers": [
+            "negative syntax/resolver/type/heuristic fixtures are not implemented",
+            "adversarial no-heuristics transformations are not implemented"
+        ],
+    });
+    let artifact = write_artifact("negative-corpus-report.json", &details)?;
+    bail!("negative corpus is incomplete; see {}", artifact.display())
+}
+
+fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
+    let shortcuts = scan_honest_shortcuts()?;
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "shortcut_scan": shortcuts,
+        "blockers": [
+            "semantic IR does not exist yet",
+            "DD graph IR does not exist yet",
+            "codegen still selects dataflow from TextBehavior",
+            "accepted semantic feature to DD lowering coverage is not measurable yet"
+        ],
+    });
+    let artifact = write_artifact("lowering-coverage-report.json", &details)?;
+    bail!(
+        "DD lowering coverage is incomplete; see {}",
+        artifact.display()
+    )
+}
+
+fn verify_generated_freshness(_args: &[String]) -> Result<serde_json::Value> {
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "blockers": [
+            "non-mutating temporary regeneration is not implemented",
+            "canonical SHA-256 generated artifact manifest is not implemented",
+            "stale/missing/extra/wrong-hash negative checks are not implemented"
+        ],
+    });
+    let artifact = write_artifact("generated-freshness-report.json", &details)?;
+    bail!(
+        "generated freshness verification is incomplete; see {}",
+        artifact.display()
+    )
+}
+
+fn write_honest_compiler_prompts(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let prompt_dir = root.join("docs/prompts/honest-compiler");
+    let manifest = root.join(LANGUAGE_MANIFEST);
+    let deterministic_report = artifacts_dir()?.join("honesty-deterministic-report.json");
+    let required = [
+        "01_shortcut_and_fallback_audit.md",
+        "02_language_completeness_audit.md",
+        "03_runtime_boundary_audit.md",
+        "04_verifier_fake_pass_audit.md",
+        "05_cross_repo_semantics_audit.md",
+    ];
+    let prompts = required
+        .iter()
+        .map(|file| {
+            let path = prompt_dir.join(file);
+            serde_json::json!({
+                "path": format!("docs/prompts/honest-compiler/{file}"),
+                "exists": path.exists(),
+                "sha256": path.exists().then(|| sha256_file(&path).unwrap_or_else(|error| format!("unavailable: {error:#}"))),
+            })
+        })
+        .collect::<Vec<_>>();
+    let details = serde_json::json!({
+        "verdict": "pass",
+        "repo_state": repo_state()?,
+        "manifest": LANGUAGE_MANIFEST,
+        "manifest_sha256": manifest.exists().then(|| sha256_file(&manifest).unwrap_or_else(|error| format!("unavailable: {error:#}"))),
+        "deterministic_report": "target/boon-artifacts/honesty-deterministic-report.json",
+        "deterministic_report_sha256": deterministic_report.exists().then(|| sha256_file(&deterministic_report).unwrap_or_else(|error| format!("unavailable: {error:#}"))),
+        "audits_required": [
+            "01_shortcut_and_fallback_audit",
+            "01_shortcut_and_fallback_audit_second_independent_auditor",
+            "02_language_completeness_audit",
+            "03_runtime_boundary_audit",
+            "04_verifier_fake_pass_audit",
+            "04_verifier_fake_pass_audit_second_independent_auditor",
+            "05_cross_repo_semantics_audit"
+        ],
+        "prompt_dir": "docs/prompts/honest-compiler",
+        "prompts": prompts,
+    });
+    write_artifact("honest-compiler-prompt-pack.json", &details)?;
+    Ok(details)
+}
+
+fn verify_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
+    let audit_dir = artifacts_dir()?.join("prompt-audit");
+    let audit_count = if audit_dir.exists() {
+        fs::read_dir(&audit_dir)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .count()
+    } else {
+        0
+    };
+    let details = serde_json::json!({
+        "verdict": "fail",
+        "audits_required": 7,
+        "audits_passed": 0,
+        "audit_json_files_found": audit_count,
+        "critical_findings_open": "unknown",
+        "inconclusive_audits": "unknown",
+        "hash_mismatches": "unknown",
+        "blockers": [
+            "prompt audits have not been run against the deterministic report",
+            "audit outputs with prompt/repo/deterministic-report hashes are missing"
+        ],
+    });
+    let artifact = write_artifact("prompt-audit-report.json", &details)?;
+    bail!("prompt audit is incomplete; see {}", artifact.display())
 }
 
 fn verify_example_matrix() -> Result<serde_json::Value> {
