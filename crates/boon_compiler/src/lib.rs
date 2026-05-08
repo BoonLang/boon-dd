@@ -32,6 +32,8 @@ pub struct SemanticNode {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SemanticNodeKind {
     SourceLeaf,
+    PathReference,
+    Skip,
     ConstantText,
     ConstantNumber,
     Tag,
@@ -277,7 +279,8 @@ impl SemanticBuilder<'_> {
 fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
     match expression {
         boon_syntax::Expr::Missing => SemanticNodeKind::Unknown,
-        boon_syntax::Expr::Path(_) | boon_syntax::Expr::Skip => SemanticNodeKind::Unknown,
+        boon_syntax::Expr::Path(_) => SemanticNodeKind::PathReference,
+        boon_syntax::Expr::Skip => SemanticNodeKind::Skip,
         boon_syntax::Expr::Number(_) => SemanticNodeKind::ConstantNumber,
         boon_syntax::Expr::Source => SemanticNodeKind::SourceLeaf,
         boon_syntax::Expr::Tag(_) => SemanticNodeKind::Tag,
@@ -317,6 +320,8 @@ fn lower_semantic_to_dd(semantic_ir: &SemanticIr, graph: &StaticGraph) -> DdGrap
                 node.kind,
                 SemanticNodeKind::ConstantText
                     | SemanticNodeKind::ConstantNumber
+                    | SemanticNodeKind::PathReference
+                    | SemanticNodeKind::Skip
                     | SemanticNodeKind::Tag
                     | SemanticNodeKind::Record
                     | SemanticNodeKind::List

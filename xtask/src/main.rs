@@ -1484,18 +1484,23 @@ fn deterministic_semantic_ir_gate(root: &Path, manifest: &LanguageManifest) -> G
             }
         }
     }
+    let passed = unknown_nodes.is_empty();
     GateReport {
         name: "semantic-ir-coverage".to_owned(),
         command: "compile manifest examples into boon_compiler semantic IR".to_owned(),
-        status: "failed".to_owned(),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
         duration_ms: 0,
         artifacts: Vec::new(),
         details: serde_json::json!({
             "semantic_kinds": semantic_kinds,
             "unknown_nodes": unknown_nodes,
-            "blockers": [
-                "semantic IR exists but still contains Unknown nodes and is not the sole input accepted by generated DD lowering"
-            ],
+            "blockers": if passed {
+                Vec::<String>::new()
+            } else {
+                vec![
+                    "semantic IR still contains Unknown nodes for accepted examples".to_owned()
+                ]
+            },
         }),
     }
 }
