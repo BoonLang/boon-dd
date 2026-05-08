@@ -845,6 +845,7 @@ fn verify(args: &[String]) -> Result<()> {
             "honesty_deterministic_report": read_artifact_json("honesty-deterministic-report.json")?,
             "language_corpus_report": read_artifact_json("language-corpus-report.json")?,
             "lowering_coverage_report": read_artifact_json("lowering-coverage-report.json")?,
+            "generated_crates_report": read_artifact_json("generated-crates.json")?,
             "generated_freshness_report": read_artifact_json("generated-freshness-report.json")?,
             "no_shortcuts_report": read_artifact_json("no-shortcuts-report.json")?,
             "honest_compiler_prompt_pack": read_artifact_json("honest-compiler-prompt-pack.json")?,
