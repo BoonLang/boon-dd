@@ -20,10 +20,7 @@ impl RuntimeHost {
 }
 
 pub fn parse_scenario(text: &str) -> Scenario {
-    parse_scenario_result(text).unwrap_or_else(|_| Scenario {
-        initial_expect_text: String::new(),
-        steps: Vec::new(),
-    })
+    parse_scenario_result(text).expect("scenario TOML must be structurally valid")
 }
 
 pub fn parse_scenario_result(text: &str) -> Result<Scenario, String> {
@@ -179,5 +176,11 @@ mod tests {
                 payload: None
             } if name.0 == "Enter"
         ));
+    }
+
+    #[test]
+    fn invalid_scenario_toml_is_not_silently_emptied() {
+        let error = parse_scenario_result("[[step]\n").expect_err("invalid TOML must fail");
+        assert!(error.contains("invalid scenario TOML"));
     }
 }
