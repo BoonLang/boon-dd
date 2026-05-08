@@ -61,7 +61,8 @@ under `target/boon-artifacts/`.
   Parser completeness, semantic IR coverage, generated-only runtime,
   adversarial no-heuristics, and stale-artifact rejection pass; source truth,
   phase boundary, resolver/shape, DD lowering, scenario protocol, cross-host
-  parity, and verifier self-tests still fail.
+  parity still fail. The verifier self-test gate now passes with synthetic
+  injected-fault checks.
 - `target/boon-artifacts/plan-coverage.json` reports no forbidden-pattern hits
   and no missing required generated artifact paths, including
   `generated/<example>/dd_graph_ir.json` for all 22 required examples.
@@ -86,6 +87,10 @@ under `target/boon-artifacts/`.
   are explicitly `accepted-incomplete`.
 - `target/boon-artifacts/honest-compiler-prompt-pack.json` reports the checked-in
   prompt pack hashes, repo-state hash, and deterministic-report hash.
+- `target/boon-artifacts/verification-harness-self-test-report.json` now reports
+  verdict `pass` for synthetic injected faults covering shortcut insertion,
+  stale artifact hashes, skipped multi-step scenarios, wrong generated fixture
+  outputs, and disabled DD lowering.
 - `target/boon-artifacts/prompt-audit-report.json` now validates the required
   seven prompt-audit JSON outputs against prompt hashes, repo-state hash,
   deterministic-report hash, verdict, and critical findings. It still fails

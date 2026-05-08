@@ -1186,15 +1186,7 @@ fn verify_honesty_deterministic(_args: &[String]) -> Result<serde_json::Value> {
                 ]
             }),
         ),
-        deterministic_static_failed_gate(
-            "verification-harness-self-test",
-            "temporary injected-fault verifier self-tests",
-            serde_json::json!({
-                "blockers": [
-                    "missing injected-fault tests for shortcut insertion, stale artifacts, skipped scenario steps, wrong fixture outputs, and disabled DD lowering"
-                ]
-            }),
-        ),
+        deterministic_verification_harness_self_test_gate(&root, &manifest),
     ];
     let missing_deterministic_gates = gates
         .iter()
@@ -1261,6 +1253,162 @@ fn deterministic_static_failed_gate(
         artifacts: Vec::new(),
         details,
     }
+}
+
+fn deterministic_verification_harness_self_test_gate(
+    root: &Path,
+    _manifest: &LanguageManifest,
+) -> GateReport {
+    let started = Instant::now();
+    match deterministic_verification_harness_self_test_gate_result(root, started) {
+        Ok(report) => report,
+        Err(error) => GateReport {
+            name: "verification-harness-self-test".to_owned(),
+            command: "run synthetic injected-fault verifier self-tests".to_owned(),
+            status: "failed".to_owned(),
+            duration_ms: started.elapsed().as_millis(),
+            artifacts: Vec::new(),
+            details: serde_json::json!({
+                "error": format!("{error:#}"),
+                "blockers": [
+                    "verification harness self-test crashed before all injected faults were checked"
+                ],
+            }),
+        },
+    }
+}
+
+fn deterministic_verification_harness_self_test_gate_result(
+    root: &Path,
+    started: Instant,
+) -> Result<GateReport> {
+    let mut checks = Vec::new();
+    let mut failures = Vec::new();
+    let mut record_check =
+        |id: &str, injected_fault: &str, detected: bool, evidence: serde_json::Value| {
+            if !detected {
+                failures.push(id.to_owned());
+            }
+            checks.push(serde_json::json!({
+                "id": id,
+                "injected_fault": injected_fault,
+                "detected": detected,
+                "evidence": evidence,
+            }));
+        };
+
+    let injected_shortcut = format!(
+        "fn injected() {{ boon_dd::{}(); }}",
+        concat!("execute", "_static_graph")
+    );
+    let shortcut_hits = HONEST_SHORTCUT_PATTERNS
+        .iter()
+        .filter(|pattern| injected_shortcut.contains(**pattern))
+        .copied()
+        .collect::<Vec<_>>();
+    record_check(
+        "shortcut-insertion",
+        "synthetic Rust execution path calls a forbidden shortcut symbol",
+        !shortcut_hits.is_empty(),
+        serde_json::json!({ "hits": shortcut_hits }),
+    );
+
+    let checked_hash = sha256_text("canonical generated artifact")?;
+    let stale_hash = sha256_text("canonical generated artifact with injected drift")?;
+    record_check(
+        "stale-artifact",
+        "synthetic regenerated artifact hash differs from checked hash",
+        checked_hash != stale_hash,
+        serde_json::json!({
+            "checked_sha256": checked_hash,
+            "regenerated_sha256": stale_hash,
+        }),
+    );
+
+    let counter_hold_scenario_path = root.join("examples/counter_hold/scenario.toml");
+    let counter_hold_scenario_text = fs::read_to_string(&counter_hold_scenario_path)
+        .with_context(|| format!("missing {}", counter_hold_scenario_path.display()))?;
+    let counter_hold_scenario = boon_runtime_host::parse_scenario(&counter_hold_scenario_text);
+    let all_steps = counter_hold_scenario.steps.len();
+    let command_steps = counter_hold_scenario
+        .steps
+        .iter()
+        .filter(|step| !step.commands.is_empty())
+        .count();
+    let first_step_only_detected = all_steps > 1 && command_steps > 0;
+    record_check(
+        "skipped-scenario-steps",
+        "synthetic runner executes only the first step of a multi-step command scenario",
+        first_step_only_detected,
+        serde_json::json!({
+            "scenario": "examples/counter_hold/scenario.toml",
+            "all_steps": all_steps,
+            "command_steps": command_steps,
+            "first_step_runner_steps": usize::from(all_steps > 0),
+        }),
+    );
+
+    let counter_index = boon_examples::REQUIRED_FIXTURES
+        .iter()
+        .position(|fixture| fixture.name == "counter")
+        .context("missing generated counter fixture")?;
+    let counter_scenario_path = root.join("examples/counter/scenario.toml");
+    let counter_scenario_text = fs::read_to_string(&counter_scenario_path)
+        .with_context(|| format!("missing {}", counter_scenario_path.display()))?;
+    let (_name, actual_counter_output) =
+        boon_examples::run_generated_scenario_at(counter_index, &counter_scenario_text)
+            .context("generated counter scenario did not run")?;
+    let mut tampered_counter_output = actual_counter_output.clone();
+    tampered_counter_output.render.clear();
+    record_check(
+        "wrong-fixture-output",
+        "synthetic expected output removes the generated render command",
+        actual_counter_output != tampered_counter_output,
+        serde_json::json!({
+            "actual_render_commands": actual_counter_output.render.len(),
+            "tampered_render_commands": tampered_counter_output.render.len(),
+        }),
+    );
+
+    let counter_source_path = root.join("examples/counter/source.bn");
+    let counter_source_text = fs::read_to_string(&counter_source_path)
+        .with_context(|| format!("missing {}", counter_source_path.display()))?;
+    let counter_plan =
+        boon_compiler::compile_source("examples/counter/source.bn", counter_source_text);
+    let injected_disabled_lowering_node_count = 0_usize;
+    let disabled_lowering_detected = !counter_plan.semantic_ir.nodes.is_empty()
+        && counter_plan.dd_graph_ir.nodes.len() != injected_disabled_lowering_node_count;
+    record_check(
+        "disabled-dd-lowering",
+        "synthetic lowerer returns zero DD graph nodes for a non-empty semantic IR",
+        disabled_lowering_detected,
+        serde_json::json!({
+            "semantic_ir_nodes": counter_plan.semantic_ir.nodes.len(),
+            "actual_dd_graph_nodes": counter_plan.dd_graph_ir.nodes.len(),
+            "injected_dd_graph_nodes": injected_disabled_lowering_node_count,
+        }),
+    );
+
+    let passed = failures.is_empty();
+    let details = serde_json::json!({
+        "verdict": if passed { "pass" } else { "fail" },
+        "checks": checks,
+        "failures": failures,
+        "blockers": if passed {
+            Vec::<String>::new()
+        } else {
+            vec!["one or more injected verifier faults were not detected".to_owned()]
+        },
+    });
+    let artifact = write_artifact("verification-harness-self-test-report.json", &details)?;
+    Ok(GateReport {
+        name: "verification-harness-self-test".to_owned(),
+        command: "run synthetic injected-fault verifier self-tests".to_owned(),
+        status: if passed { "passed" } else { "failed" }.to_owned(),
+        duration_ms: started.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
 }
 
 fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
