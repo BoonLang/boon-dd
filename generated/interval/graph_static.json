@@ -6,7 +6,7 @@
     {
       "source_id": "Tick",
       "path": "tick",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "dynamic": false
     }
   ],
@@ -26,7 +26,7 @@
     {
       "node": "Tick",
       "kind": "source.leaf",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "source_span": "examples/interval/source.bn:tick"
     }
   ],

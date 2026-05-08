@@ -1,3 +1,3 @@
 pub fn source_shapes() -> &'static [(&'static str, &'static str)] {
-    &[("frame", "EmptyRecord")]
+    &[("frame", "SourceMarker")]
 }

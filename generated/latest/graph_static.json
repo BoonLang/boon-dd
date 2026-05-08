@@ -6,13 +6,13 @@
     {
       "source_id": "A",
       "path": "a",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "dynamic": false
     },
     {
       "source_id": "B",
       "path": "b",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "dynamic": false
     }
   ],
@@ -32,13 +32,13 @@
     {
       "node": "A",
       "kind": "source.leaf",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "source_span": "examples/latest/source.bn:a"
     },
     {
       "node": "B",
       "kind": "source.leaf",
-      "shape": "EmptyRecord",
+      "shape": "SourceMarker",
       "source_span": "examples/latest/source.bn:b"
     }
   ],

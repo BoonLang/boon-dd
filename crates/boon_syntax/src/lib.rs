@@ -549,7 +549,13 @@ impl Parser<'_, '_> {
         self.source
             .get(relative_start..relative_end)
             .unwrap_or_default()
-            .trim()
+            .strip_prefix(' ')
+            .and_then(|value| value.strip_suffix(' '))
+            .unwrap_or_else(|| {
+                self.source
+                    .get(relative_start..relative_end)
+                    .unwrap_or_default()
+            })
             .to_owned()
     }
 

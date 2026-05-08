@@ -1035,9 +1035,9 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
         "repo_state": repo_state()?,
         "plan": HONEST_COMPILER_PLAN,
         "blockers": [
-            "parser AST exists for the current corpus, but compiler semantics still do not consume it",
-            "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete and compiler semantics still do not consume them",
-            "compiler still derives semantic graph from raw source text",
+            "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
+            "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
+            "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
             "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
             "generated code still uses smoke_input_text/generated_text_collection",
             "scenario parser still drops command actions",

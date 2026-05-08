@@ -6,13 +6,13 @@
     {
       "source_id": "StoreSourcesNewTodoInputEventKeyDownKey",
       "path": "store.sources.new_todo_input.event.key_down.key",
-      "shape": "TagSet",
+      "shape": "SourceMarker",
       "dynamic": false
     },
     {
       "source_id": "StoreSourcesNewTodoInputText",
       "path": "store.sources.new_todo_input.text",
-      "shape": "Text",
+      "shape": "SourceMarker",
       "dynamic": false
     }
   ],
@@ -32,13 +32,13 @@
     {
       "node": "StoreSourcesNewTodoInputEventKeyDownKey",
       "kind": "source.leaf",
-      "shape": "TagSet",
+      "shape": "SourceMarker",
       "source_span": "examples/todo_mvc/source.bn:store.sources.new_todo_input.event.key_down.key"
     },
     {
       "node": "StoreSourcesNewTodoInputText",
       "kind": "source.leaf",
-      "shape": "Text",
+      "shape": "SourceMarker",
       "source_span": "examples/todo_mvc/source.bn:store.sources.new_todo_input.text"
     }
   ],

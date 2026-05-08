@@ -600,6 +600,7 @@ version = "0.1.0"
 dependencies = [
  "boon_dd",
  "boon_hir",
+ "boon_shape",
  "boon_syntax",
  "serde",
 ]

@@ -50,13 +50,13 @@ under `target/boon-artifacts/`.
 
 ## Current Evidence
 
-- `target/boon-artifacts/no-shortcuts-report.json` reports `175` shortcut
+- `target/boon-artifacts/no-shortcuts-report.json` reports `118` shortcut
   pattern hits in execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
-  parser AST exists for the current corpus but compiler semantics still do not
-  consume it, HIR and shape checking have initial AST-derived reports but
-  resolver/type coverage remains incomplete and compiler semantics still do not
-  consume them, source-text compiler heuristics remain,
+  parser AST exists for the current corpus, HIR and shape checking have initial
+  AST-derived reports but resolver/type coverage remains incomplete, compiler
+  now consumes AST/HIR for compatibility graph construction but real semantic IR
+  and DD graph IR are not implemented,
   `TextBehavior` runtime semantics remain, smoke codegen remains,
   command-dropping scenario parsing remains, and deterministic/prompt audit
   verification remains incomplete.
@@ -85,8 +85,8 @@ Continue with the remaining Phase 2 and Phase 3 work in
 1. Finish resolver diagnostics and name/source resolution.
 2. Expand shape/type checking from initial reports into full accepted-language
    coverage.
-3. Make compiler semantics consume structured AST/HIR rather than raw source
-   text.
+3. Replace the compatibility `StaticGraph`/`TextBehavior` path with semantic IR,
+   DD graph IR, and generated-only runtime execution.
 4. Keep `verify-no-shortcuts` failing until the execution paths no longer use
    text heuristics, smoke runtime semantics, or host-side Boon behavior.
 

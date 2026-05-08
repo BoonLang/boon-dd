@@ -8,5 +8,6 @@ rust-version.workspace = true
 [dependencies]
 boon_dd = { path = "../boon_dd" }
 boon_hir = { path = "../boon_hir" }
+boon_shape = { path = "../boon_shape" }
 boon_syntax = { path = "../boon_syntax" }
 serde.workspace = true
