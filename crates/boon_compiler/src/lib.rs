@@ -3,8 +3,7 @@ use boon_dd::{
     StaticGraph,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompilePlan {
@@ -76,7 +75,7 @@ fn build_static_graph(
     StaticGraph {
         graph_id,
         source_path: hir.source_path.clone(),
-        source_hash: stable_u64(&parsed.source.text),
+        source_hash: sha256_text(&parsed.source.text),
         source_bindings,
         nodes,
         operators,
@@ -870,10 +869,9 @@ fn to_pascal_identifier(value: &str) -> String {
     }
 }
 
-fn stable_u64(text: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
+fn sha256_text(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]

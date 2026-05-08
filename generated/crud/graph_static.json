@@ -1,7 +1,7 @@
 {
   "graph_id": "crud",
   "source_path": "examples/crud/source.bn",
-  "source_hash": 4393315833593944045,
+  "source_hash": "f760154427ea497f56c3c255239e192fe56b094a54ea1f455f81ff8f6c71f3e7",
   "source_bindings": [
     {
       "source_id": "StoreSourcesSaveButtonEventPress",

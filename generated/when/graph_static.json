@@ -1,7 +1,7 @@
 {
   "graph_id": "when",
   "source_path": "examples/when/source.bn",
-  "source_hash": 451659559582543046,
+  "source_hash": "f8883b1c8f4a4dfb67dbb790cc130ed9ded87d8d77bf10a68cd93e5ff95412ba",
   "source_bindings": [
     {
       "source_id": "KeyDownKey",

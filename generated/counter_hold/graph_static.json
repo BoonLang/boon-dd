@@ -1,7 +1,7 @@
 {
   "graph_id": "counter_hold",
   "source_path": "examples/counter_hold/source.bn",
-  "source_hash": 4929524148008013500,
+  "source_hash": "95bff9fa06b9e74b54ed29f113093777aa31a33886e0c389b70733970ae53ea2",
   "source_bindings": [
     {
       "source_id": "StoreSourcesIncrementButtonEventPress",

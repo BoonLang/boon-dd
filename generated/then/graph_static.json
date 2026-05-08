@@ -1,7 +1,7 @@
 {
   "graph_id": "then",
   "source_path": "examples/then/source.bn",
-  "source_hash": 17176259832093224962,
+  "source_hash": "1380010dd36446aef52b3399a94b0e8ea80379cef4b3fa696da21ce949833816",
   "source_bindings": [
     {
       "source_id": "Press",

@@ -1,7 +1,7 @@
 {
   "graph_id": "latest",
   "source_path": "examples/latest/source.bn",
-  "source_hash": 4249837718771980915,
+  "source_hash": "03a354802943c2b640b6017e3de2a57c989a9c332d13d1494fd8e30b2575d925",
   "source_bindings": [
     {
       "source_id": "A",

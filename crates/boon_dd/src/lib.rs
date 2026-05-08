@@ -165,7 +165,7 @@ pub enum DdScalarPlan {
 pub struct StaticGraph {
     pub graph_id: String,
     pub source_path: String,
-    pub source_hash: u64,
+    pub source_hash: String,
     pub source_bindings: Vec<SourceBinding>,
     pub nodes: Vec<GraphNode>,
     pub operators: Vec<GraphOperator>,
@@ -457,7 +457,7 @@ mod tests {
         let graph = StaticGraph {
             graph_id: "example".to_owned(),
             source_path: "examples/example/source.bn".to_owned(),
-            source_hash: 1,
+            source_hash: "test-source-hash".to_owned(),
             source_bindings: Vec::new(),
             nodes: Vec::new(),
             operators: Vec::new(),

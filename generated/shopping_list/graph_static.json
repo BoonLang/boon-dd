@@ -1,7 +1,7 @@
 {
   "graph_id": "shopping_list",
   "source_path": "examples/shopping_list/source.bn",
-  "source_hash": 12181515890171701497,
+  "source_hash": "6abdc5068f907d026016b35a6beec362d978fe79a9fcc42153b5f3a64cb05a4f",
   "source_bindings": [],
   "nodes": [
     {

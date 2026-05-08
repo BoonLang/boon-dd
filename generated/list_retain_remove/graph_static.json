@@ -1,7 +1,7 @@
 {
   "graph_id": "list_retain_remove",
   "source_path": "examples/list_retain_remove/source.bn",
-  "source_hash": 3335787741367088173,
+  "source_hash": "02ef4c67dcce12f97aee49bba2db778b12d8c842fc0bfaafbd3722d0da2d6089",
   "source_bindings": [],
   "nodes": [
     {

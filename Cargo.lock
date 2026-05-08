@@ -603,6 +603,7 @@ dependencies = [
  "boon_shape",
  "boon_syntax",
  "serde",
+ "sha2",
 ]
 
 [[package]]

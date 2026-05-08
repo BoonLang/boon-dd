@@ -1,7 +1,7 @@
 {
   "graph_id": "list_retain_reactive",
   "source_path": "examples/list_retain_reactive/source.bn",
-  "source_hash": 10181089958348202602,
+  "source_hash": "052f0d5e5e1ebe051a9b0141c6a311149bb90c46e61cd0c384b7583138b359e0",
   "source_bindings": [
     {
       "source_id": "SelectedFilter",
