@@ -1036,7 +1036,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
         "plan": HONEST_COMPILER_PLAN,
         "blockers": [
             "parser AST exists for the current corpus, but compiler semantics still do not consume it",
-            "HIR/shape are still skeletal",
+            "HIR has initial AST/source lowering, but resolver and shape/type checking are incomplete",
             "compiler still derives semantic graph from raw source text",
             "runtime still exposes TextBehavior/execute_static_graph/evaluate_text",
             "generated code still uses smoke_input_text/generated_text_collection",
