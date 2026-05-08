@@ -90,6 +90,10 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
 - The Firefox/browser proof still runs through the generated WASM graph path in
   the aggregate verifier. Browser/native launch-sensitive verification must keep
   using `cosmic-background-launch --workspace boon-dd -- ...`.
+- `target/boon-artifacts/honesty-deterministic-report.json` now hashes and
+  compares structured generated outputs across terminal, Firefox/WASM, and
+  native proof artifacts. Cross-host parity reports 22 native structured
+  outputs and no terminal/browser or terminal/native mismatches.
 
 ## Current Blockers
 
@@ -104,7 +108,10 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
 - `target/boon-artifacts/language-corpus-report.json` reports verdict `fail`
   because 6 manifest features remain `accepted-incomplete`: source markers,
   pipes/library calls, then/when/while/latest/hold, lists/records/blocks,
-  document rendering, and time/frame/physical scene.
+  document rendering, and time/frame/physical scene. It now reports actual
+  coverage artifact status; parser, resolver, shape, semantic IR, generated
+  runtime, generated freshness, and no-shortcuts reports pass, while
+  `lowering-coverage-report.json` still fails.
 - `target/boon-artifacts/lowering-coverage-report.json` reports verdict `fail`
   because the DD lowering still does not cover the full semantic
   render/effect/persistence protocol required by the plan.

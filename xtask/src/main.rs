@@ -1350,54 +1350,89 @@ fn deterministic_cross_host_parity_gate_result(
         .get("per_example")
         .and_then(serde_json::Value::as_array)
         .context("native-playground.json missing per_example")?;
+    let native_outputs = native_examples
+        .iter()
+        .filter_map(|entry| {
+            let output = entry
+                .get("generated_output")
+                .or_else(|| entry.get("output"))?;
+            Some((entry.get("example")?.as_str()?.to_owned(), output.clone()))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
 
-    let mut mismatches = Vec::new();
+    let mut terminal_browser_mismatches = Vec::new();
+    let mut native_mismatches = Vec::new();
     let mut missing = Vec::new();
     let mut parity_rows = Vec::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
         let terminal = terminal_outputs.get(*example);
         let browser = browser_outputs.get(*example);
-        match (terminal, browser) {
-            (Some(terminal), Some(browser)) => {
+        let native = native_outputs.get(*example);
+        match (terminal, browser, native) {
+            (Some(terminal), Some(browser), Some(native)) => {
                 let terminal_sha256 = sha256_text(&serde_json::to_string(terminal)?)?;
                 let browser_sha256 = sha256_text(&serde_json::to_string(browser)?)?;
-                let matches = terminal == browser;
-                if !matches {
-                    mismatches.push(serde_json::json!({
+                let native_sha256 = sha256_text(&serde_json::to_string(native)?)?;
+                let terminal_browser_match = terminal == browser;
+                let terminal_native_match = terminal == native;
+                if !terminal_browser_match {
+                    terminal_browser_mismatches.push(serde_json::json!({
                         "example": example,
                         "terminal_sha256": terminal_sha256,
                         "browser_sha256": browser_sha256,
+                    }));
+                }
+                if !terminal_native_match {
+                    native_mismatches.push(serde_json::json!({
+                        "example": example,
+                        "terminal_sha256": terminal_sha256,
+                        "native_sha256": native_sha256,
                     }));
                 }
                 parity_rows.push(serde_json::json!({
                     "example": example,
                     "terminal_output_sha256": terminal_sha256,
                     "browser_wasm_output_sha256": browser_sha256,
-                    "terminal_browser_match": matches,
+                    "native_generated_output_sha256": native_sha256,
+                    "terminal_browser_match": terminal_browser_match,
+                    "terminal_native_match": terminal_native_match,
                 }));
             }
-            (None, Some(_)) => missing.push(serde_json::json!({
+            (None, Some(_), Some(_)) => missing.push(serde_json::json!({
                 "example": example,
                 "host": "terminal",
             })),
-            (Some(_), None) => missing.push(serde_json::json!({
+            (Some(_), None, Some(_)) => missing.push(serde_json::json!({
                 "example": example,
                 "host": "browser",
             })),
-            (None, None) => missing.push(serde_json::json!({
+            (Some(_), Some(_), None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "native",
+            })),
+            (None, None, Some(_)) => missing.push(serde_json::json!({
                 "example": example,
                 "host": "terminal,browser",
+            })),
+            (None, Some(_), None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "terminal,native",
+            })),
+            (Some(_), None, None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "browser,native",
+            })),
+            (None, None, None) => missing.push(serde_json::json!({
+                "example": example,
+                "host": "terminal,browser,native",
             })),
         }
     }
 
-    let native_structured_outputs = native_examples
-        .iter()
-        .filter(|entry| entry.get("output").is_some() || entry.get("generated_output").is_some())
-        .count();
-    let native_missing_structured_output =
-        native_structured_outputs != boon_dd::REQUIRED_EXAMPLES.len();
-    let passed = missing.is_empty() && mismatches.is_empty() && !native_missing_structured_output;
+    let native_structured_outputs = native_outputs.len();
+    let passed = missing.is_empty()
+        && terminal_browser_mismatches.is_empty()
+        && native_mismatches.is_empty();
     let details = serde_json::json!({
         "verdict": if passed { "pass" } else { "fail" },
         "terminal_examples": terminal_outputs.len(),
@@ -1405,7 +1440,8 @@ fn deterministic_cross_host_parity_gate_result(
         "native_visual_examples": native_examples.len(),
         "native_structured_outputs": native_structured_outputs,
         "missing": missing,
-        "terminal_browser_mismatches": mismatches,
+        "terminal_browser_mismatches": terminal_browser_mismatches,
+        "terminal_native_mismatches": native_mismatches,
         "parity_rows": parity_rows,
         "artifacts_compared": {
             "terminal": matrix_path,
@@ -1416,9 +1452,8 @@ fn deterministic_cross_host_parity_gate_result(
             Vec::<String>::new()
         } else {
             vec![
-                "terminal and browser are not yet executing the same per-example scenario protocol".to_owned(),
-                "native playground proof is visual/per-example, but does not expose structured generated DD output for parity comparison".to_owned(),
-                "Firefox proof still uses the generated WASM smoke input matrix rather than the canonical scenario actions for each example".to_owned(),
+                "terminal, native, and browser are not yet executing the same per-example scenario protocol".to_owned(),
+                "one or more hosts are missing structured generated DD output or have mismatched output hashes".to_owned(),
             ]
         },
     });

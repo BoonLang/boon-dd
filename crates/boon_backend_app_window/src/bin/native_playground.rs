@@ -71,6 +71,7 @@ struct SmokeRequest {
 struct PlaygroundExample {
     fixture_index: usize,
     name: String,
+    scenario_text: &'static str,
     scenario_actions: Vec<SourceAction>,
     actions: Vec<SourceAction>,
     output: SmokeOutput,
@@ -348,6 +349,7 @@ fn build_playground_examples() -> Vec<PlaygroundExample> {
             PlaygroundExample {
                 fixture_index,
                 name: fixture.name.to_owned(),
+                scenario_text: fixture.scenario,
                 scenario_actions,
                 actions: Vec::new(),
                 output,
@@ -1324,11 +1326,9 @@ fn write_per_example_screenshots(
         let pixels = rasterize_vertices(WIDTH, HEIGHT, &vertices);
         let screenshot = screenshots_dir.join(format!("{:02}-{}.png", index + 1, example.name));
         write_png_rgb(&screenshot, WIDTH, HEIGHT, &pixels)?;
-        let generated_output = boon_examples::run_generated_actions_at(
-            example.fixture_index,
-            &example.scenario_actions,
-        )
-        .map(|(_name, output)| output);
+        let generated_output =
+            boon_examples::run_generated_scenario_at(example.fixture_index, example.scenario_text)
+                .map(|(_name, output)| output);
         entries.push(serde_json::json!({
             "example": &example.name,
             "selected_index": index,
