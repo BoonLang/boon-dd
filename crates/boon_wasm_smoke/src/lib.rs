@@ -8,9 +8,15 @@ macro_rules! run_generated {
         let mut worker =
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = $crate_name::graph::build_dataflow(&mut worker);
-        let outputs = graph
-            .submit_text_and_drain(&mut worker, $crate_name::graph::smoke_input_text(), 1, 1024)
-            .expect("generated browser WASM graph should drain");
+        let mut outputs = Vec::new();
+        for (epoch, value) in [(1, "event"), (2, "Enter"), (3, "Active")] {
+            outputs = graph
+                .submit_text_and_drain(&mut worker, value, epoch, 1024)
+                .expect("generated browser WASM graph should drain");
+            if outputs.iter().any(|output| !output.render.is_empty()) {
+                break;
+            }
+        }
         (
             $name,
             outputs

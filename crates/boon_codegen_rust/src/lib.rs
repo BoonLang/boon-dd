@@ -74,12 +74,6 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("pub fn completion_time(epoch: u64) -> u64 {\n");
     code.push_str("    BoonTime { epoch, phase: 3 }.encode()\n");
     code.push_str("}\n\n");
-    code.push_str("pub fn smoke_input_text() -> &'static str {\n");
-    code.push_str(&format!(
-        "    {:?}\n",
-        smoke_input_text(&graph.text_behavior)
-    ));
-    code.push_str("}\n\n");
     code.push_str("pub fn build_dataflow(\n");
     code.push_str("    worker: &mut timely::worker::Worker,\n");
     code.push_str(") -> GeneratedGraphHandles {\n");
@@ -142,12 +136,5 @@ fn generated_text_collection(behavior: &boon_dd::TextBehavior) -> String {
             "        let rendered = events.filter(|value| value == {:?}).map(|_| {:?}.to_owned());\n",
             tag, text
         ),
-    }
-}
-
-fn smoke_input_text(behavior: &boon_dd::TextBehavior) -> &str {
-    match behavior {
-        boon_dd::TextBehavior::BranchOnTag { tag, .. } => tag,
-        _ => "event",
     }
 }

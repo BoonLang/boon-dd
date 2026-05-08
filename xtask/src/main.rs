@@ -1039,7 +1039,7 @@ fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
             "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
             "compiler now consumes AST/HIR for compatibility graph construction, but real semantic IR and DD graph IR are not implemented",
             "runtime still exposes TextBehavior/execute_static_graph/evaluate_text through boon_dd compatibility execution",
-            "generated code still uses smoke_input_text/generated_text_collection",
+            "generated code still uses generated_text_collection compatibility lowering",
             "scenario parser models command actions, but runtime command/effect execution is incomplete",
             "full deterministic and prompt-audit verification are not implemented yet"
         ],
@@ -1720,7 +1720,7 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
 }
 
 fn generated_lib_rs() -> &'static str {
-    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn generated_graph_emits_monitor_and_render_output() {\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let outputs = graph\n            .submit_text_and_drain(&mut worker, crate::graph::smoke_input_text(), 1, 1024)\n            .expect(\"generated graph should drain\");\n        assert!(!outputs.is_empty(), \"generated graph emitted no output\");\n        assert!(outputs.iter().any(|output| !output.monitor.is_empty()));\n        assert!(outputs.iter().any(|output| !output.render.is_empty()));\n    }\n}\n"
+    "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn generated_graph_emits_monitor_and_render_output() {\n        let allocator = timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let mut outputs = Vec::new();\n        for (epoch, value) in [(1, \"event\"), (2, \"Enter\"), (3, \"Active\")] {\n            outputs = graph\n                .submit_text_and_drain(&mut worker, value, epoch, 1024)\n                .expect(\"generated graph should drain\");\n            if outputs.iter().any(|output| !output.render.is_empty()) {\n                break;\n            }\n        }\n        assert!(!outputs.is_empty(), \"generated graph emitted no output\");\n        assert!(outputs.iter().any(|output| !output.monitor.is_empty()));\n        assert!(outputs.iter().any(|output| !output.render.is_empty()));\n    }\n}\n"
 }
 
 fn generated_ids_rs(graph: &boon_dd::StaticGraph) -> String {

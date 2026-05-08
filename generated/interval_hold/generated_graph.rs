@@ -85,10 +85,6 @@ pub fn completion_time(epoch: u64) -> u64 {
     BoonTime { epoch, phase: 3 }.encode()
 }
 
-pub fn smoke_input_text() -> &'static str {
-    "event"
-}
-
 pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHandles {
     let mut input = InputSession::<EncodedTime, String, Diff>::new();
     let mut probe = ProbeHandle::new();

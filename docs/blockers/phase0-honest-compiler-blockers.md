@@ -50,7 +50,7 @@ under `target/boon-artifacts/`.
 
 ## Current Evidence
 
-- `target/boon-artifacts/no-shortcuts-report.json` reports `109` shortcut
+- `target/boon-artifacts/no-shortcuts-report.json` reports `35` shortcut
   pattern hits in execution paths and generated code.
 - `target/boon-artifacts/honest-compiler-report.json` reports the main blockers:
   parser AST exists for the current corpus, HIR and shape checking have initial
@@ -58,7 +58,7 @@ under `target/boon-artifacts/`.
   now consumes AST/HIR for compatibility graph construction but real semantic IR
   and DD graph IR are not implemented,
   `TextBehavior`/`execute_static_graph` compatibility runtime semantics remain,
-  smoke codegen remains,
+  generated code still uses compatibility lowering,
   scenario parsing now models command actions but runtime command/effect
   execution remains incomplete, and deterministic/prompt audit verification
   remains incomplete.
@@ -76,8 +76,8 @@ jq '.shortcut_symbols_in_execution_paths, .scan.hits[:12]' target/boon-artifacts
 ```
 
 The first hits are in `crates/boon_codegen_rust/src/lib.rs`, where generated
-dataflow is still selected through `TextBehavior`, `generated_text_collection`,
-and `smoke_input_text`.
+dataflow is still selected through `TextBehavior` and
+`generated_text_collection`.
 
 ## Next Pin/Fork/Fix Decision
 

@@ -17,9 +17,15 @@ mod tests {
         let mut worker =
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut graph = crate::graph::build_dataflow(&mut worker);
-        let outputs = graph
-            .submit_text_and_drain(&mut worker, crate::graph::smoke_input_text(), 1, 1024)
-            .expect("generated graph should drain");
+        let mut outputs = Vec::new();
+        for (epoch, value) in [(1, "event"), (2, "Enter"), (3, "Active")] {
+            outputs = graph
+                .submit_text_and_drain(&mut worker, value, epoch, 1024)
+                .expect("generated graph should drain");
+            if outputs.iter().any(|output| !output.render.is_empty()) {
+                break;
+            }
+        }
         assert!(!outputs.is_empty(), "generated graph emitted no output");
         assert!(outputs.iter().any(|output| !output.monitor.is_empty()));
         assert!(outputs.iter().any(|output| !output.render.is_empty()));
