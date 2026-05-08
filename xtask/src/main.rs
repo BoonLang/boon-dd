@@ -1510,30 +1510,52 @@ fn deterministic_verification_harness_self_test_gate_result(
             }));
         };
 
-    let injected_shortcut = format!(
-        "fn injected() {{ boon_dd::{}(); }}",
-        concat!("execute", "_static_graph")
-    );
-    let shortcut_hits = HONEST_SHORTCUT_PATTERNS
-        .iter()
-        .filter(|pattern| injected_shortcut.contains(**pattern))
-        .copied()
-        .collect::<Vec<_>>();
+    let self_test_dir = artifacts_dir()?.join("verification-self-test");
+    if self_test_dir.exists() {
+        fs::remove_dir_all(&self_test_dir)?;
+    }
+    fs::create_dir_all(self_test_dir.join("shortcut/src"))?;
+    fs::write(
+        self_test_dir.join("shortcut/src/lib.rs"),
+        format!(
+            "pub fn injected() {{ boon_dd::{}(); }}\n",
+            concat!("execute", "_static_graph")
+        ),
+    )?;
+    let mut shortcut_hits = Vec::new();
+    scan_forbidden_in_dir(
+        &self_test_dir.join("shortcut"),
+        HONEST_SHORTCUT_PATTERNS,
+        &mut shortcut_hits,
+    )?;
     record_check(
         "shortcut-insertion",
-        "synthetic Rust execution path calls a forbidden shortcut symbol",
+        "temporary Rust execution path calls a forbidden shortcut symbol",
         !shortcut_hits.is_empty(),
         serde_json::json!({ "hits": shortcut_hits }),
     );
 
-    let checked_hash = sha256_text("canonical generated artifact")?;
-    let stale_hash = sha256_text("canonical generated artifact with injected drift")?;
+    fs::create_dir_all(self_test_dir.join("freshness"))?;
+    let checked_path = self_test_dir.join("freshness/checked.rs");
+    let regenerated_path = self_test_dir.join("freshness/regenerated.rs");
+    fs::write(
+        &checked_path,
+        "pub const GENERATED: &str = \"canonical\";\n",
+    )?;
+    fs::write(
+        &regenerated_path,
+        "pub const GENERATED: &str = \"canonical with injected drift\";\n",
+    )?;
+    let checked_hash = sha256_file(&checked_path)?;
+    let stale_hash = sha256_file(&regenerated_path)?;
     record_check(
         "stale-artifact",
-        "synthetic regenerated artifact hash differs from checked hash",
+        "temporary regenerated artifact hash differs from checked hash",
         checked_hash != stale_hash,
         serde_json::json!({
+            "checked_path": checked_path,
             "checked_sha256": checked_hash,
+            "regenerated_path": regenerated_path,
             "regenerated_sha256": stale_hash,
         }),
     );
