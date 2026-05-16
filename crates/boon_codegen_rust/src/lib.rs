@@ -369,6 +369,7 @@ fn call_graph_collection_code(
         | "List/range"
         | "List/retain"
         | "List/sort_by"
+        | "List/zip"
         | "List/count"
         | "List/sum"
         | "Temperature/c_to_f"
@@ -749,6 +750,16 @@ fn call_graph_value_code(
             format!(
                 "match {} {{ GeneratedValue::List(values) => values.into_iter().last().unwrap_or_else(|| panic!(\"generated DD render List/latest expected non-empty List\")), other => panic!(\"generated DD render List/latest expected List, got {{other:?}}\") }}",
                 input
+            )
+        }
+        "List/zip" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("List/zip missing input"));
+            let right = named_graph_arg_code(graph, args, "with", env)
+                .or_else(|| first_graph_arg_code(graph, args, env))
+                .unwrap_or_else(|| unsupported_value_code("List/zip missing with"));
+            format!(
+                "match ({}, {}) {{ (GeneratedValue::List(left), GeneratedValue::List(right)) => GeneratedValue::List(left.into_iter().zip(right).map(|(first, second)| GeneratedValue::Record(vec![(\"first\".to_owned(), first), (\"second\".to_owned(), second)])).collect()), (left, right) => panic!(\"generated DD render List/zip expected two Lists, got {{left:?}} and {{right:?}}\") }}",
+                input, right
             )
         }
         "List/is_empty" => {
@@ -1227,7 +1238,7 @@ mod tests {
     fn list_helpers_lower_without_generated_fallback() {
         let plan = boon_compiler::compile_source(
             "list_helpers.bn",
-            "document: Document/new(root: Element/stripe(items: LIST { List/range(from: 1, to: 3) |> List/get(index: 1) List/range(from: 1, to: 3) |> List/latest() List/range(from: 1, to: 3) |> List/is_empty() List/range(from: 1, to: 3) |> List/sum() List/range(from: 1, to: 3) |> List/any(item, if: Number/greater_than(left: item, right: 2)) List/range(from: 1, to: 3) |> List/every(item, if: Number/greater_than(left: item, right: 0)) List/range(from: 1, to: 3) |> List/sort_by(item, key: item) }))\n",
+            "document: Document/new(root: Element/stripe(items: LIST { List/range(from: 1, to: 3) |> List/get(index: 1) List/range(from: 1, to: 3) |> List/latest() List/range(from: 1, to: 3) |> List/is_empty() List/range(from: 1, to: 3) |> List/sum() List/range(from: 1, to: 3) |> List/any(item, if: Number/greater_than(left: item, right: 2)) List/range(from: 1, to: 3) |> List/every(item, if: Number/greater_than(left: item, right: 0)) List/range(from: 1, to: 3) |> List/sort_by(item, key: item) List/range(from: 1, to: 3) |> List/zip(with: LIST { TEXT { A } TEXT { B } }) }))\n",
         );
         let module = generated_graph_module(&plan);
         assert!(!module.contains(&format!("{}{}", "unsupported library call ", "List/")));
@@ -1240,6 +1251,8 @@ mod tests {
         assert!(module.contains(".any(|item_value|"));
         assert!(module.contains(".all(|item_value|"));
         assert!(module.contains("sort_by_key"));
+        assert!(module.contains("\"first\".to_owned()"));
+        assert!(module.contains("\"second\".to_owned()"));
     }
 
     #[test]

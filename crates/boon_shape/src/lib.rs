@@ -321,6 +321,41 @@ impl ShapeContext {
                     Shape::Unknown
                 }
             },
+            "List/zip" => match input {
+                Shape::List(left_shape) => {
+                    let right_shape = named_arg(args, "with")
+                        .or_else(|| first_positional_arg(args))
+                        .map(|expr| self.shape_expr(expr))
+                        .unwrap_or_else(|| {
+                            self.diagnostics.push(ShapeDiagnostic {
+                                message: "List/zip requires a with argument".to_owned(),
+                            });
+                            Shape::Unknown
+                        });
+                    match right_shape {
+                        Shape::List(right_item_shape) => {
+                            Shape::List(Box::new(Shape::Record(BTreeMap::from([
+                                ("first".to_owned(), (*left_shape).clone()),
+                                ("second".to_owned(), (*right_item_shape).clone()),
+                            ]))))
+                        }
+                        other => {
+                            self.diagnostics.push(ShapeDiagnostic {
+                                message: format!(
+                                    "List/zip expected List with argument, got {other:?}"
+                                ),
+                            });
+                            Shape::Unknown
+                        }
+                    }
+                }
+                other => {
+                    self.diagnostics.push(ShapeDiagnostic {
+                        message: format!("List/zip expected List input, got {other:?}"),
+                    });
+                    Shape::Unknown
+                }
+            },
             "List/is_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/sum" => Shape::Number,
             "List/any" | "List/every" => match input {
@@ -384,9 +419,8 @@ impl ShapeContext {
             | "Text/is_not_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/range" => Shape::List(Box::new(Shape::Number)),
             "List/append" | "List/any" | "List/every" | "List/get" | "List/is_empty"
-            | "List/latest" | "List/map" | "List/remove" | "List/retain" | "List/sort_by" => {
-                Shape::Unknown
-            }
+            | "List/latest" | "List/map" | "List/remove" | "List/retain" | "List/sort_by"
+            | "List/zip" => Shape::Unknown,
             _ => {
                 if let Some(shape) = typed_library_signature(callee) {
                     return shape;
@@ -714,7 +748,7 @@ mod tests {
     fn checks_list_helper_shapes() {
         let parsed = boon_syntax::parse_source(
             "list_helpers.bn",
-            "items: List/range(from: 1, to: 3)\nfirst: items |> List/get(index: 1)\nlatest: items |> List/latest()\nempty: items |> List/is_empty()\nsum: items |> List/sum()\nany_big: items |> List/any(item, if: Number/greater_than(left: item, right: 2))\nevery_big: items |> List/every(item, if: Number/greater_than(left: item, right: 0))\nsorted: items |> List/sort_by(item, key: item)\n",
+            "items: List/range(from: 1, to: 3)\nfirst: items |> List/get(index: 1)\nlatest: items |> List/latest()\nempty: items |> List/is_empty()\nsum: items |> List/sum()\nany_big: items |> List/any(item, if: Number/greater_than(left: item, right: 2))\nevery_big: items |> List/every(item, if: Number/greater_than(left: item, right: 0))\nsorted: items |> List/sort_by(item, key: item)\nzipped: items |> List/zip(with: LIST { TEXT { A } TEXT { B } })\n",
         );
         let hir = boon_hir::lower(&parsed);
         let report = check_module(&hir);
@@ -729,6 +763,13 @@ mod tests {
         assert_eq!(
             report.definitions.get("sorted"),
             Some(&Shape::List(Box::new(Shape::Number)))
+        );
+        assert_eq!(
+            report.definitions.get("zipped"),
+            Some(&Shape::List(Box::new(Shape::Record(BTreeMap::from([
+                ("first".to_owned(), Shape::Number),
+                ("second".to_owned(), Shape::Text),
+            ])))))
         );
         let bool_shape = Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]);
         assert_eq!(report.definitions.get("empty"), Some(&bool_shape));
