@@ -38,6 +38,21 @@ impl GeneratedValue {
         }
     }
 
+    fn render_text(self) -> String {
+        match self {
+            GeneratedValue::Text(text) => text,
+            GeneratedValue::Number(number) => number.to_string(),
+            GeneratedValue::Tag(tag) => tag,
+            GeneratedValue::List(values) => values
+                .into_iter()
+                .map(GeneratedValue::render_text)
+                .collect::<Vec<_>>()
+                .join(""),
+            GeneratedValue::Empty => String::new(),
+            GeneratedValue::Record(_) => String::new(),
+        }
+    }
+
     fn number(self) -> i64 {
         match self {
             GeneratedValue::Number(number) => number,

@@ -1036,9 +1036,14 @@ fn document_target_path(expression: &boon_syntax::Expr) -> Option<String> {
                 _ => None,
             })
         }
-        boon_syntax::Expr::Call { callee, args } if callee == "Element/button" => {
+        boon_syntax::Expr::Call { callee, args } if is_element_render_call(callee) => {
             args.iter().find_map(|arg| match arg {
-                boon_syntax::CallArg::Named { name, value } if name == "label" => {
+                boon_syntax::CallArg::Named { name, value }
+                    if matches!(
+                        name.as_str(),
+                        "label" | "text" | "value" | "items" | "children" | "contents" | "child"
+                    ) =>
+                {
                     document_target_path(value)
                 }
                 _ => None,
@@ -1046,6 +1051,28 @@ fn document_target_path(expression: &boon_syntax::Expr) -> Option<String> {
         }
         _ => reference_path(expression),
     }
+}
+
+fn is_element_render_call(callee: &str) -> bool {
+    matches!(
+        callee,
+        "Element/block"
+            | "Element/button"
+            | "Element/checkbox"
+            | "Element/container"
+            | "Element/grid"
+            | "Element/label"
+            | "Element/link"
+            | "Element/panel"
+            | "Element/paragraph"
+            | "Element/select"
+            | "Element/slider"
+            | "Element/stack"
+            | "Element/stripe"
+            | "Element/svg"
+            | "Element/text"
+            | "Element/text_input"
+    )
 }
 
 fn reference_path(expression: &boon_syntax::Expr) -> Option<String> {

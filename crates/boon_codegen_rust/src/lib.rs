@@ -14,7 +14,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
         "#[allow(dead_code)]\n#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]\nenum GeneratedValue {\n    Empty,\n    Text(String),\n    Number(i64),\n    Tag(String),\n    List(Vec<GeneratedValue>),\n    Record(Vec<(String, GeneratedValue)>),\n}\n\n",
     );
     code.push_str(
-        "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Text\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Text\"),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| panic!(\"generated DD render failed to parse Text as Number: {error}\")),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Number\"),\n            GeneratedValue::Tag(_) => panic!(\"generated DD render tried to coerce Tag to Number\"),\n            GeneratedValue::List(_) => panic!(\"generated DD render tried to coerce List to Number\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Number\"),\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or_else(|| panic!(\"generated DD render missing record field {name}\")),\n            other => panic!(\"generated DD render tried to read field {name} from non-record value: {other:?}\"),\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Bool\"),\n        }\n    }\n}\n\n",
+        "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Text\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Text\"),\n        }\n    }\n\n    fn render_text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::render_text).collect::<Vec<_>>().join(\"\"),\n            GeneratedValue::Empty => String::new(),\n            GeneratedValue::Record(_) => String::new(),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| panic!(\"generated DD render failed to parse Text as Number: {error}\")),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Number\"),\n            GeneratedValue::Tag(_) => panic!(\"generated DD render tried to coerce Tag to Number\"),\n            GeneratedValue::List(_) => panic!(\"generated DD render tried to coerce List to Number\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Number\"),\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or_else(|| panic!(\"generated DD render missing record field {name}\")),\n            other => panic!(\"generated DD render tried to read field {name} from non-record value: {other:?}\"),\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Bool\"),\n        }\n    }\n}\n\n",
     );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
@@ -342,9 +342,11 @@ fn call_graph_collection_code(
         "Timer/interval" | "Window/animation_frame" => input.to_owned(),
         "Document/new"
         | "Scene/new"
+        | "Text/empty"
         | "Text/from_number"
         | "Text/append"
         | "Text/join"
+        | "Text/space"
         | "Text/uppercase"
         | "List/append"
         | "List/map"
@@ -361,6 +363,18 @@ fn call_graph_collection_code(
         | "Number/less_than"
         | "Number/greater_than"
         | "Geometry/intersects" => {
+            let mut nested_env = env.clone();
+            nested_env.insert("pipe_input".to_owned(), "pipe_input".to_owned());
+            let value = call_graph_value_code(
+                graph,
+                callee,
+                Some("pipe_input".to_owned()),
+                args,
+                &nested_env,
+            );
+            format!("({input}).map(|pipe_input| {value})")
+        }
+        callee if is_element_call(callee) => {
             let mut nested_env = env.clone();
             nested_env.insert("pipe_input".to_owned(), "pipe_input".to_owned());
             let value = call_graph_value_code(
@@ -543,8 +557,32 @@ fn call_graph_value_code(
             named_graph_arg_code(graph, args, "root", env)
                 .unwrap_or_else(|| unsupported_value_code("Document/new or Scene/new missing root"))
         }),
-        "Element/button" => named_graph_arg_code(graph, args, "label", env)
+        "Element/button" => element_render_text_call(graph, args, env, &["label"])
             .unwrap_or_else(|| unsupported_value_code("Element/button missing label")),
+        "Element/label" | "Element/link" => {
+            element_render_text_call(graph, args, env, &["label", "text", "child", "contents"])
+                .unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing label")))
+        }
+        "Element/text" => {
+            element_render_text_call(graph, args, env, &["text", "value", "contents", "child"])
+                .unwrap_or_else(|| unsupported_value_code("Element/text missing text"))
+        }
+        "Element/text_input" => element_render_text_call(graph, args, env, &["text", "value"])
+            .unwrap_or_else(|| "GeneratedValue::Text(String::new())".to_owned()),
+        callee if is_element_container_call(callee) => element_render_text_call(
+            graph,
+            args,
+            env,
+            &[
+                "items", "children", "contents", "child", "text", "label", "icon",
+            ],
+        )
+        .unwrap_or_else(|| "GeneratedValue::Text(String::new())".to_owned()),
+        callee if is_element_decorative_call(callee) => {
+            "GeneratedValue::Text(String::new())".to_owned()
+        }
+        "Text/empty" => "GeneratedValue::Text(String::new())".to_owned(),
+        "Text/space" => "GeneratedValue::Text(\" \".to_owned())".to_owned(),
         "Text/from_number" => {
             input.unwrap_or_else(|| unsupported_value_code("Text/from_number missing input"))
         }
@@ -753,6 +791,52 @@ fn geometry_intersects_call(
     )
 }
 
+fn element_render_text_call(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+    names: &[&str],
+) -> Option<String> {
+    names.iter().find_map(|name| {
+        named_graph_arg_code(graph, args, name, env)
+            .map(|value| format!("GeneratedValue::Text(({}).render_text())", value))
+    })
+}
+
+fn is_element_call(callee: &str) -> bool {
+    is_element_container_call(callee)
+        || is_element_decorative_call(callee)
+        || matches!(
+            callee,
+            "Element/button"
+                | "Element/label"
+                | "Element/link"
+                | "Element/text"
+                | "Element/text_input"
+        )
+}
+
+fn is_element_container_call(callee: &str) -> bool {
+    matches!(
+        callee,
+        "Element/block"
+            | "Element/checkbox"
+            | "Element/container"
+            | "Element/grid"
+            | "Element/panel"
+            | "Element/paragraph"
+            | "Element/select"
+            | "Element/slider"
+            | "Element/stack"
+            | "Element/stripe"
+            | "Element/svg"
+    )
+}
+
+fn is_element_decorative_call(callee: &str) -> bool {
+    matches!(callee, "Element/rect" | "Element/svg_circle")
+}
+
 fn first_graph_arg_code(
     graph: &boon_dd::DdRenderGraph,
     args: &[boon_dd::DdRenderGraphArg],
@@ -839,5 +923,18 @@ mod tests {
         let module = generated_graph_module(&plan);
         assert!(!module.contains("unlowered SOURCE target expression"));
         assert!(module.contains("GeneratedValue::Text(\"A\".to_owned())"));
+    }
+
+    #[test]
+    fn common_element_calls_lower_to_render_text_projection() {
+        let plan = boon_compiler::compile_source(
+            "elements.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { Element/label(label: TEXT { A }) Element/container(child: Element/text(text: Text/space())) Element/text_input(text: TEXT { B }) Element/svg(children: LIST { Element/svg_circle(cx: 1, cy: 2, r: 3) }) }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Element/"));
+        assert!(!module.contains("unsupported collection library call Element/"));
+        assert!(module.contains(".render_text()"));
+        assert!(module.contains("GeneratedValue::Text(\"B\".to_owned())"));
     }
 }

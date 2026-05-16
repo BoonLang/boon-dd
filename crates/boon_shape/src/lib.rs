@@ -219,7 +219,9 @@ impl ShapeContext {
     ) -> Shape {
         match callee {
             "Document/new" => Shape::Document,
-            "Text/from_number" | "Text/join" | "Text/append" | "Text/uppercase" => Shape::Text,
+            callee if is_element_call(callee) => Shape::Element,
+            "Text/empty" | "Text/from_number" | "Text/join" | "Text/append" | "Text/space"
+            | "Text/uppercase" => Shape::Text,
             "Math/sum" | "Temperature/c_to_f" => Shape::Number,
             "Bool/not" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/append" => {
@@ -318,9 +320,10 @@ impl ShapeContext {
         }
         match callee {
             "Document/new" => Shape::Document,
-            "Element/button" => Shape::Element,
+            callee if is_element_call(callee) => Shape::Element,
             "Scene/new" => Shape::Scene,
-            "Text/from_number" | "Text/join" | "Text/append" | "Text/uppercase" => Shape::Text,
+            "Text/empty" | "Text/from_number" | "Text/join" | "Text/append" | "Text/space"
+            | "Text/uppercase" => Shape::Text,
             "Math/sum"
             | "List/count"
             | "Temperature/c_to_f"
@@ -432,6 +435,30 @@ fn typed_library_signature(callee: &str) -> Option<Shape> {
     }
 }
 
+fn is_element_call(callee: &str) -> bool {
+    matches!(
+        callee,
+        "Element/block"
+            | "Element/button"
+            | "Element/checkbox"
+            | "Element/container"
+            | "Element/grid"
+            | "Element/label"
+            | "Element/link"
+            | "Element/panel"
+            | "Element/paragraph"
+            | "Element/rect"
+            | "Element/select"
+            | "Element/slider"
+            | "Element/stack"
+            | "Element/stripe"
+            | "Element/svg"
+            | "Element/svg_circle"
+            | "Element/text"
+            | "Element/text_input"
+    )
+}
+
 fn named_arg<'a>(args: &'a [boon_syntax::CallArg], name: &str) -> Option<&'a boon_syntax::Expr> {
     args.iter().find_map(|arg| match arg {
         boon_syntax::CallArg::Named {
@@ -520,5 +547,17 @@ mod tests {
         let report = check_module(&hir);
         assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
         assert_eq!(report.definitions.get("button"), Some(&Shape::Element));
+    }
+
+    #[test]
+    fn checks_common_element_and_text_helper_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "elements.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { Element/label(label: TEXT { A }) Element/container(child: Element/text(text: Text/space())) Element/text_input(text: Text/empty()) Element/svg(children: LIST { Element/svg_circle(cx: 1, cy: 2, r: 3) }) }))\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("document"), Some(&Shape::Document));
     }
 }

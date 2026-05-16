@@ -146,6 +146,15 @@ schema_errors: []
   `Number/abs`, `Number/neg_abs`, `Number/max`, `Number/clamp`,
   `Number/percent_of_range`, `Number/scale_percent`, `Number/less_than`,
   `Number/greater_than`, and `Geometry/intersects`.
+- Shape checking and generated DD render code now cover the common sibling-repo
+  element/text helper surface as an explicit render-text projection:
+  `Element/block`, `Element/button`, `Element/checkbox`, `Element/container`,
+  `Element/grid`, `Element/label`, `Element/link`, `Element/panel`,
+  `Element/paragraph`, `Element/rect`, `Element/select`, `Element/slider`,
+  `Element/stack`, `Element/stripe`, `Element/svg`, `Element/svg_circle`,
+  `Element/text`, `Element/text_input`, `Text/empty`, and `Text/space`. This is
+  a typed generated-code path, not a source-text or example-name heuristic, but
+  it is still only a text projection of the render tree.
 - `SOURCE { target }` and `LINK { target }` used as render pipe stages now
   preserve the piped render value instead of falling into unsupported generated
   runtime code, while still leaving explicit source/link nodes in the DD render
@@ -197,8 +206,9 @@ schema_errors: []
   blockers.
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
   semantics from local sibling repos. Current open gaps include executable
-  host event propagation for linked/source-targeted elements, complete
-  cross-phase `PASS`/`PASSED` coverage, and any remaining unimported
+  host event propagation for linked/source-targeted elements, structured
+  non-text element render output beyond the current render-text projection,
+  complete cross-phase `PASS`/`PASSED` coverage, and any remaining unimported
   sibling-repo language surface. Marking the manifest accepted before either
   implementing these or explicitly excluding them as a product decision would
   make the verifier dishonest.
@@ -231,7 +241,8 @@ No dependency fork is needed for the current blocker. Continue implementation
 inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
-   host event propagation for linked/source-targeted elements, full
+   host event propagation for linked/source-targeted elements, structured
+   element render output beyond the current render-text projection, full
    `PASS`/`PASSED` coverage, and any remaining sibling-repo syntax or library
    semantics not represented in `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
