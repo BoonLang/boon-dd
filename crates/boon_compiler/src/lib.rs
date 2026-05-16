@@ -7,6 +7,7 @@ use boon_dd::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompilePlan {
@@ -1088,60 +1089,80 @@ fn render_expr_from_syntax(
     expression: &boon_syntax::Expr,
     hir: &boon_hir::HirModule,
 ) -> DdRenderExpr {
+    render_expr_from_syntax_with_env(expression, hir, &RenderEnv::default())
+}
+
+#[derive(Clone, Default)]
+struct RenderEnv {
+    bindings: BTreeMap<String, boon_syntax::Expr>,
+    inline_depth: usize,
+}
+
+fn render_expr_from_syntax_with_env(
+    expression: &boon_syntax::Expr,
+    hir: &boon_hir::HirModule,
+    env: &RenderEnv,
+) -> DdRenderExpr {
     match expression {
         boon_syntax::Expr::Missing => DdRenderExpr::Missing,
-        boon_syntax::Expr::Path(path) => target_expression(path, hir)
-            .map(|expr| render_expr_from_syntax(expr, hir))
+        boon_syntax::Expr::Path(path) => substituted_path(path, env)
+            .as_ref()
+            .map(|expr| render_expr_from_syntax_with_env(expr, hir, env))
+            .or_else(|| {
+                target_expression(path, hir)
+                    .map(|expr| render_expr_from_syntax_with_env(expr, hir, env))
+            })
             .unwrap_or_else(|| DdRenderExpr::Path(path.clone())),
         boon_syntax::Expr::Number(number) => DdRenderExpr::Number(number.clone()),
         boon_syntax::Expr::Source => DdRenderExpr::Source,
         boon_syntax::Expr::SourceAt { target } => DdRenderExpr::SourceAt {
-            target: Box::new(render_expr_from_syntax(target, hir)),
+            target: Box::new(render_expr_from_syntax_with_env(target, hir, env)),
         },
         boon_syntax::Expr::Link { target } => DdRenderExpr::Link {
             target: target
                 .as_ref()
-                .map(|target| Box::new(render_expr_from_syntax(target, hir))),
+                .map(|target| Box::new(render_expr_from_syntax_with_env(target, hir, env))),
         },
         boon_syntax::Expr::Skip => DdRenderExpr::Skip,
         boon_syntax::Expr::Tag(tag) => DdRenderExpr::Tag(tag.clone()),
         boon_syntax::Expr::Text(text) => DdRenderExpr::Text(text.clone()),
-        boon_syntax::Expr::Record(fields) => DdRenderExpr::Record(render_fields(fields, hir)),
-        boon_syntax::Expr::List(values) => DdRenderExpr::List(render_exprs(values, hir)),
-        boon_syntax::Expr::Block(values) => DdRenderExpr::Block(render_exprs(values, hir)),
-        boon_syntax::Expr::Latest(values) => DdRenderExpr::Latest(render_exprs(values, hir)),
+        boon_syntax::Expr::Record(fields) => DdRenderExpr::Record(render_fields(fields, hir, env)),
+        boon_syntax::Expr::List(values) => DdRenderExpr::List(render_exprs(values, hir, env)),
+        boon_syntax::Expr::Block(values) => DdRenderExpr::Block(render_exprs(values, hir, env)),
+        boon_syntax::Expr::Latest(values) => DdRenderExpr::Latest(render_exprs(values, hir, env)),
         boon_syntax::Expr::Call { callee, args } => DdRenderExpr::Call {
             callee: callee.clone(),
-            args: render_args(args, hir),
-        },
+            args: render_args(args, hir, env),
+        }
+        .pipe_function_call(callee, args, hir, env),
         boon_syntax::Expr::Constructor { callee, fields } => DdRenderExpr::Constructor {
             callee: callee.clone(),
-            fields: render_fields(fields, hir),
+            fields: render_fields(fields, hir, env),
         },
         boon_syntax::Expr::Pipe { input, stage } => DdRenderExpr::Pipe {
-            input: Box::new(render_expr_from_syntax(input, hir)),
-            stage: Box::new(render_expr_from_syntax(stage, hir)),
+            input: Box::new(render_expr_from_syntax_with_env(input, hir, env)),
+            stage: Box::new(render_expr_from_syntax_with_env(stage, hir, env)),
         },
         boon_syntax::Expr::Binary { op, left, right } => match op {
             boon_syntax::BinaryOp::Add => DdRenderExpr::BinaryAdd {
-                left: Box::new(render_expr_from_syntax(left, hir)),
-                right: Box::new(render_expr_from_syntax(right, hir)),
+                left: Box::new(render_expr_from_syntax_with_env(left, hir, env)),
+                right: Box::new(render_expr_from_syntax_with_env(right, hir, env)),
             },
             boon_syntax::BinaryOp::Subtract => DdRenderExpr::BinarySubtract {
-                left: Box::new(render_expr_from_syntax(left, hir)),
-                right: Box::new(render_expr_from_syntax(right, hir)),
+                left: Box::new(render_expr_from_syntax_with_env(left, hir, env)),
+                right: Box::new(render_expr_from_syntax_with_env(right, hir, env)),
             },
             boon_syntax::BinaryOp::Equal => DdRenderExpr::BinaryEqual {
-                left: Box::new(render_expr_from_syntax(left, hir)),
-                right: Box::new(render_expr_from_syntax(right, hir)),
+                left: Box::new(render_expr_from_syntax_with_env(left, hir, env)),
+                right: Box::new(render_expr_from_syntax_with_env(right, hir, env)),
             },
         },
         boon_syntax::Expr::Then { body } => DdRenderExpr::Then {
-            body: render_exprs(body, hir),
+            body: render_exprs(body, hir, env),
         },
         boon_syntax::Expr::Hold { binder, body } => DdRenderExpr::Hold {
             binder: binder.clone(),
-            body: render_exprs(body, hir),
+            body: render_exprs(body, hir, env),
         },
         boon_syntax::Expr::Match { kind, arms } => DdRenderExpr::Match {
             kind: match kind {
@@ -1152,42 +1173,153 @@ fn render_expr_from_syntax(
                 .iter()
                 .map(|arm| DdRenderMatchArm {
                     pattern: arm.pattern.clone(),
-                    value: render_expr_from_syntax(&arm.value, hir),
+                    value: render_expr_from_syntax_with_env(&arm.value, hir, env),
                 })
                 .collect(),
         },
     }
 }
 
-fn render_exprs(expressions: &[boon_syntax::Expr], hir: &boon_hir::HirModule) -> Vec<DdRenderExpr> {
+trait FunctionCallPipe {
+    fn pipe_function_call(
+        self,
+        callee: &str,
+        args: &[boon_syntax::CallArg],
+        hir: &boon_hir::HirModule,
+        env: &RenderEnv,
+    ) -> DdRenderExpr;
+}
+
+impl FunctionCallPipe for DdRenderExpr {
+    fn pipe_function_call(
+        self,
+        callee: &str,
+        args: &[boon_syntax::CallArg],
+        hir: &boon_hir::HirModule,
+        env: &RenderEnv,
+    ) -> DdRenderExpr {
+        let Some(function) = hir
+            .definitions
+            .iter()
+            .find(|definition| definition.is_function && definition.name == callee)
+        else {
+            return self;
+        };
+        if env.inline_depth >= 32 {
+            return DdRenderExpr::Missing;
+        }
+        let child_env = function_call_env(function, args, env);
+        render_expr_from_syntax_with_env(&function.expression, hir, &child_env)
+    }
+}
+
+fn function_call_env(
+    function: &boon_hir::HirDefinition,
+    args: &[boon_syntax::CallArg],
+    parent: &RenderEnv,
+) -> RenderEnv {
+    let mut bindings = parent.bindings.clone();
+    let positional = args
+        .iter()
+        .filter_map(|arg| match arg {
+            boon_syntax::CallArg::Positional(value) => Some(value.clone()),
+            boon_syntax::CallArg::Named { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    for (index, parameter) in function.parameters.iter().enumerate() {
+        if let Some(value) = args.iter().find_map(|arg| match arg {
+            boon_syntax::CallArg::Named { name, value } if name == parameter => Some(value.clone()),
+            _ => None,
+        }) {
+            bindings.insert(parameter.clone(), value);
+        } else if let Some(value) = positional.get(index) {
+            bindings.insert(parameter.clone(), value.clone());
+        }
+    }
+    if let Some(pass_value) = args.iter().find_map(|arg| match arg {
+        boon_syntax::CallArg::Named { name, value } if name == "PASS" => Some(value.clone()),
+        _ => None,
+    }) {
+        bindings.insert("PASSED".to_owned(), pass_value);
+    }
+    RenderEnv {
+        bindings,
+        inline_depth: parent.inline_depth + 1,
+    }
+}
+
+fn substituted_path(path: &str, env: &RenderEnv) -> Option<boon_syntax::Expr> {
+    let mut parts = path.split('.');
+    let root = parts.next()?;
+    let binding = env.bindings.get(root)?.clone();
+    let rest = parts.collect::<Vec<_>>();
+    if rest.is_empty() {
+        return Some(binding);
+    }
+    extend_bound_path(binding, &rest)
+}
+
+fn extend_bound_path(expression: boon_syntax::Expr, rest: &[&str]) -> Option<boon_syntax::Expr> {
+    match expression {
+        boon_syntax::Expr::Path(path) => Some(boon_syntax::Expr::Path(format!(
+            "{}.{}",
+            path,
+            rest.join(".")
+        ))),
+        boon_syntax::Expr::Record(fields) | boon_syntax::Expr::Constructor { fields, .. } => {
+            let (first, tail) = rest.split_first()?;
+            let field = fields
+                .iter()
+                .find(|field| field.name == *first)
+                .map(|field| field.value.clone())?;
+            if tail.is_empty() {
+                Some(field)
+            } else {
+                extend_bound_path(field, tail)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn render_exprs(
+    expressions: &[boon_syntax::Expr],
+    hir: &boon_hir::HirModule,
+    env: &RenderEnv,
+) -> Vec<DdRenderExpr> {
     expressions
         .iter()
-        .map(|expr| render_expr_from_syntax(expr, hir))
+        .map(|expr| render_expr_from_syntax_with_env(expr, hir, env))
         .collect()
 }
 
 fn render_fields(
     fields: &[boon_syntax::RecordField],
     hir: &boon_hir::HirModule,
+    env: &RenderEnv,
 ) -> Vec<DdRenderField> {
     fields
         .iter()
         .map(|field| DdRenderField {
             name: field.name.clone(),
-            value: render_expr_from_syntax(&field.value, hir),
+            value: render_expr_from_syntax_with_env(&field.value, hir, env),
         })
         .collect()
 }
 
-fn render_args(args: &[boon_syntax::CallArg], hir: &boon_hir::HirModule) -> Vec<DdRenderArg> {
+fn render_args(
+    args: &[boon_syntax::CallArg],
+    hir: &boon_hir::HirModule,
+    env: &RenderEnv,
+) -> Vec<DdRenderArg> {
     args.iter()
         .map(|arg| match arg {
             boon_syntax::CallArg::Positional(value) => {
-                DdRenderArg::Positional(render_expr_from_syntax(value, hir))
+                DdRenderArg::Positional(render_expr_from_syntax_with_env(value, hir, env))
             }
             boon_syntax::CallArg::Named { name, value } => DdRenderArg::Named {
                 name: name.clone(),
-                value: render_expr_from_syntax(value, hir),
+                value: render_expr_from_syntax_with_env(value, hir, env),
             },
         })
         .collect()
@@ -1338,5 +1470,25 @@ mod tests {
             plan.dd_graph_ir.render_program.operation,
             DdRenderOperation::Text { .. }
         ));
+    }
+
+    #[test]
+    fn render_lowering_expands_user_function_calls_with_pass_bindings() {
+        let plan = compile_source(
+            "function_pass.bn",
+            "store: [title: TEXT { Hello }]\ndocument: Document/new(root: root(PASS: [store: store]))\nFUNCTION root() { Element/button(label: PASSED.store.title) }\n",
+        );
+        assert!(!plan.dd_graph_ir.render_graph.nodes.iter().any(|node| {
+            matches!(
+                &node.operation,
+                DdRenderGraphOperation::Call { callee, .. } if callee == "root"
+            )
+        }));
+        assert!(plan.dd_graph_ir.render_graph.nodes.iter().any(|node| {
+            matches!(
+                &node.operation,
+                DdRenderGraphOperation::Text(text) if text == "Hello"
+            )
+        }));
     }
 }

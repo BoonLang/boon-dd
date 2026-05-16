@@ -232,11 +232,19 @@ pub fn unresolved_references(module: &HirModule) -> Vec<String> {
         .collect::<BTreeSet<_>>();
     let mut refs = BTreeSet::new();
     for definition in &module.definitions {
+        let mut scopes = definition
+            .parameters
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        if definition.is_function {
+            scopes.push("PASSED");
+        }
         collect_top_level_refs(
             &definition.expression,
             &definitions,
             &sources,
-            &mut Vec::new(),
+            &mut scopes,
             &mut refs,
         );
     }
@@ -385,5 +393,16 @@ mod tests {
                 .iter()
                 .any(|source| { source.path == "key_down.key" && !source.declared })
         );
+    }
+
+    #[test]
+    fn function_parameters_and_passed_are_resolver_scopes() {
+        let parsed = boon_syntax::parse_source(
+            "function_scope.bn",
+            "FUNCTION row(label) { Element/label(label: label, element: PASSED.target) }\ndocument: row(label: TEXT { OK }, PASS: [target: store.button])\nstore: [button: LINK]\n",
+        );
+        let module = lower(&parsed);
+        assert!(module.diagnostics.is_empty(), "{:#?}", module.diagnostics);
+        assert_eq!(unresolved_references(&module), Vec::<String>::new());
     }
 }

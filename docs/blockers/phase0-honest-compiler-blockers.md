@@ -136,6 +136,11 @@ schema_errors: []
   `SOURCE { target }` syntax as structured nodes. Execution semantics for
   function calls, pass environments, and link/source propagation are still not
   complete.
+- Render lowering now expands user-defined function calls with positional,
+  named, and `PASS` bindings into the function body before building the DD
+  render graph. `PASSED.*` paths inside those bodies resolve through the
+  structured `PASS` value. This is still compiler-side lowering work, not full
+  runtime link/source propagation.
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
@@ -183,8 +188,8 @@ schema_errors: []
   blockers.
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
   semantics from local sibling repos. Current open gaps include executable
-  `LINK`/`SOURCE { target }` propagation, `PASS`/`PASSED` environments,
-  `FUNCTION` call resolution, remaining comparison behavior, and `Number/*` and
+  `LINK`/`SOURCE { target }` propagation, complete cross-phase
+  `PASS`/`PASSED` coverage, remaining comparison behavior, and `Number/*` and
   `Geometry/*` style library semantics. Marking the manifest accepted before
   either implementing these or explicitly excluding them as a product decision
   would make the verifier dishonest.
@@ -217,7 +222,7 @@ No dependency fork is needed for the current blocker. Continue implementation
 inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
-   executable link/source propagation, `PASS`/`PASSED`, `FUNCTION` calls,
+   executable link/source propagation, full `PASS`/`PASSED` coverage,
    remaining comparison operators, and numeric/geometry library semantics.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
