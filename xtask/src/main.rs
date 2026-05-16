@@ -1781,7 +1781,18 @@ fn verify_engine_simplicity(_args: &[String]) -> Result<serde_json::Value> {
         .filter_map(|failure| failure["gate"].as_str())
         .map(|gate| format!("{gate} is not passing"))
         .collect::<Vec<_>>();
-    let verdict = if failures.is_empty() { "pass" } else { "fail" };
+    let has_blocked_gate = gates.iter().any(|gate| {
+        gate.details["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("reported blocked"))
+    });
+    let verdict = if failures.is_empty() {
+        "pass"
+    } else if has_blocked_gate {
+        "blocked"
+    } else {
+        "fail"
+    };
     engine_report(
         "engine-simplicity-report.json",
         "cargo xtask verify-engine-simplicity --format json",
@@ -1817,6 +1828,26 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             "generated graph still carries a generic value evaluator",
         ),
         (
+            concat!("Dd", "Value"),
+            "generic_dd_value_semantics",
+            "generated/runtime graph still carries generic Boon value semantics instead of typed DD lowerings",
+        ),
+        (
+            concat!("Runtime", "Value"),
+            "host_runtime_semantics",
+            "runtime host still evaluates Boon values through a generic Rust evaluator",
+        ),
+        (
+            concat!("runtime", "_value("),
+            "host_runtime_semantics",
+            "runtime host recursively evaluates DD render graph nodes as Rust values",
+        ),
+        (
+            concat!("runtime", "_call_value"),
+            "host_runtime_semantics",
+            "runtime host evaluates Boon library calls outside generated typed DD operators",
+        ),
+        (
             concat!("generated", "_source_event_value"),
             "source_identity",
             "source identity can be discarded before semantic evaluation",
@@ -1845,6 +1876,7 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             "crates/boon_backend_wgpu",
             "crates/boon_codegen_rust",
             "crates/boon_examples",
+            "crates/boon_runtime_host",
             "crates/boon_wasm_smoke",
             "generated",
             "xtask/src",
@@ -1852,8 +1884,11 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
         &patterns,
     )?;
     let failures = hits.clone();
+    let blocker_reports = active_engine_blocker_reports()?;
     let blockers = if failures.is_empty() {
         Vec::new()
+    } else if !blocker_reports.is_empty() {
+        vec!["DD purity is blocked by a checked-in engine-simplicity blocker report".to_owned()]
     } else {
         vec![
             "DD purity is not proven; fixture dispatch, smoke proof, generated value evaluators, or clone-heavy output drains remain".to_owned(),
@@ -1862,12 +1897,19 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
     engine_report(
         "dd-purity-report.json",
         "cargo xtask verify-dd-purity --format json",
-        if failures.is_empty() { "pass" } else { "fail" },
+        if failures.is_empty() {
+            "pass"
+        } else if !blocker_reports.is_empty() {
+            "blocked"
+        } else {
+            "fail"
+        },
         failures,
         blockers,
         serde_json::json!({
             "hit_count": hits.len(),
             "hits": hits,
+            "blocker_reports": blocker_reports,
         }),
     )
 }
@@ -2261,6 +2303,26 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "generated graph still uses a generic value enum for Boon semantics",
         ),
         (
+            concat!("Dd", "Value"),
+            "generic_value_evaluator",
+            "generated graph still uses a generic shared value enum for Boon semantics",
+        ),
+        (
+            concat!("Runtime", "Value"),
+            "host_semantics",
+            "runtime host still uses a generic value enum for Boon semantics",
+        ),
+        (
+            concat!("runtime", "_value("),
+            "host_semantics",
+            "runtime host recursively evaluates DD render graph nodes as Rust values",
+        ),
+        (
+            concat!("runtime", "_call_value"),
+            "host_semantics",
+            "runtime host evaluates Boon library calls as Rust control flow",
+        ),
+        (
             concat!("fn truthy"),
             "host_semantics",
             "boolean coercion is implemented as generated Rust helper logic",
@@ -2291,10 +2353,23 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "lists are represented as host vectors inside generated values",
         ),
     ];
-    let hits = scan_engine_patterns(&["crates/boon_codegen_rust", "generated"], &patterns)?;
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_codegen_rust",
+            "crates/boon_runtime_host",
+            "generated",
+        ],
+        &patterns,
+    )?;
     let failures = hits.clone();
+    let blocker_reports = active_engine_blocker_reports()?;
     let blockers = if failures.is_empty() {
         Vec::new()
+    } else if !blocker_reports.is_empty() {
+        vec![
+            "stateful lowering is blocked by a checked-in engine-simplicity blocker report"
+                .to_owned(),
+        ]
     } else {
         vec![
             "stateful Boon semantics are not proven to lower to keyed Timely/Differential state"
@@ -2304,7 +2379,13 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
     engine_report(
         "dd-stateful-lowering-report.json",
         "cargo xtask verify-dd-stateful-lowering --format json",
-        if failures.is_empty() { "pass" } else { "fail" },
+        if failures.is_empty() {
+            "pass"
+        } else if !blocker_reports.is_empty() {
+            "blocked"
+        } else {
+            "fail"
+        },
         failures,
         blockers,
         serde_json::json!({
@@ -2319,6 +2400,7 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             ],
             "hit_count": hits.len(),
             "hits": hits,
+            "blocker_reports": blocker_reports,
         }),
     )
 }
@@ -2837,8 +2919,14 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
             "audit_dir": audit_dir.display().to_string(),
         }));
     }
+    let blocker_reports = active_engine_blocker_reports()?;
     let blockers = if failures.is_empty() {
         Vec::new()
+    } else if !blocker_reports.is_empty() {
+        vec![
+            "engine prompt audits are blocked by a checked-in engine-simplicity blocker report"
+                .to_owned(),
+        ]
     } else {
         vec![
             "engine prompt audits are missing, failing, inconclusive, or schema-invalid".to_owned(),
@@ -2847,15 +2935,50 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
     engine_report(
         "prompt-audit-report.json",
         "cargo xtask verify-engine-prompt-audit --format json",
-        if failures.is_empty() { "pass" } else { "fail" },
+        if failures.is_empty() {
+            "pass"
+        } else if !blocker_reports.is_empty() {
+            "blocked"
+        } else {
+            "fail"
+        },
         failures,
         blockers,
         serde_json::json!({
             "prompt_dir": "docs/prompts/engine-simplicity",
             "prompts": prompts,
             "audits": audits,
+            "blocker_reports": blocker_reports,
         }),
     )
+}
+
+fn active_engine_blocker_reports() -> Result<Vec<serde_json::Value>> {
+    let root = repo_root()?;
+    let blocker_dir = root.join("docs/blockers");
+    if !blocker_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut reports = Vec::new();
+    for entry in fs::read_dir(blocker_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !file_name.contains("engine-simplicity") {
+            continue;
+        }
+        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        reports.push(serde_json::json!({
+            "path": relative.display().to_string(),
+            "sha256": sha256_file(&path)?,
+        }));
+    }
+    reports.sort_by_key(|report| report["path"].as_str().unwrap_or_default().to_owned());
+    Ok(reports)
 }
 
 fn compare_engines(_args: &[String]) -> Result<serde_json::Value> {

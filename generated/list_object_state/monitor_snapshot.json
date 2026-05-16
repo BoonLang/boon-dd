@@ -1,7 +1,23 @@
 [
   {
-    "monitor": [],
-    "render": [],
+    "monitor": [
+      {
+        "NodeValue": {
+          "epoch": 1,
+          "node": "DocumentOutput",
+          "owner": "Root",
+          "value_preview": "2 active"
+        }
+      }
+    ],
+    "render": [
+      {
+        "PatchText": {
+          "node": "DocumentText",
+          "text": "2 active"
+        }
+      }
+    ],
     "effects": [],
     "persistence": []
   }

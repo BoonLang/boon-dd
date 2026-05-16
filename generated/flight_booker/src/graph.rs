@@ -179,6 +179,7 @@ fn generated_bound_source_owner(event: &GeneratedSourceEvent) -> OwnerKey {
 #[allow(dead_code)]
 fn generated_event_matches_bound_source(event: &GeneratedSourceEvent) -> bool {
     match event {
+        GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__persisted_text" => true,
         GeneratedSourceEvent::Static { source_id, .. } => generated_bound_source_ids()
             .iter()
             .any(|bound| source_id.0 == *bound),
@@ -205,10 +206,16 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
         let rendered_values = (events.clone().map(|_| DdValue::Text("booked".to_owned())))
             .map(|pipe_input| pipe_input)
             .map(|value| ((), value.text()));
-        let rendered_owners = events
-            .clone()
-            .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
-            .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));
+        let rendered_owners = if generated_bound_source_ids().is_empty() {
+            events
+                .clone()
+                .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)))
+        } else {
+            events
+                .clone()
+                .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
+                .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)))
+        };
         let rendered = rendered_values
             .join(rendered_owners)
             .map(|(_key, (text, owner))| (owner, text));

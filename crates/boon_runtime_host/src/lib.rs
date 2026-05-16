@@ -1,8 +1,8 @@
 use boon_dd::{
-    BoonNumber, BoonTime, BoonValue, Diff, EncodedTime, GeneratedSourceEvent,
-    GeneratedSourceEventPayload, MonitorRecord, NodeId, OwnerKey, RenderCommand, Scenario,
-    ScenarioCommand, ScenarioEvent, ScenarioStep, SmokeOutput, SourceAction, SourceFamilyId,
-    SourceId,
+    BoonNumber, BoonTime, BoonValue, Diff, EffectCommand, EncodedTime, GeneratedSourceEvent,
+    GeneratedSourceEventPayload, MonitorRecord, NodeId, OwnerKey, PersistenceCommand,
+    RenderCommand, Scenario, ScenarioCommand, ScenarioEvent, ScenarioStep, SmokeOutput,
+    SourceAction, SourceFamilyId, SourceId,
 };
 use differential_dataflow::collection::VecCollection;
 use differential_dataflow::input::InputSession;
@@ -59,6 +59,17 @@ impl RuntimeValue {
             _ => RuntimeValue::Empty,
         }
     }
+
+    fn truthy(self) -> bool {
+        match self {
+            RuntimeValue::Tag(tag) => matches!(tag.as_str(), "True" | "true" | "Some"),
+            RuntimeValue::Text(text) => !text.is_empty() && text != "False" && text != "false",
+            RuntimeValue::Number(number) => number != 0,
+            RuntimeValue::List(values) => !values.is_empty(),
+            RuntimeValue::Record(fields) => !fields.is_empty(),
+            RuntimeValue::Empty => false,
+        }
+    }
 }
 
 pub fn run_compiled_source_scenario(
@@ -66,22 +77,53 @@ pub fn run_compiled_source_scenario(
     source_text: impl Into<String>,
     scenario_text: &str,
 ) -> Result<SmokeOutput, String> {
+    let source_path = source_path.into();
+    let source_text = source_text.into();
     let scenario = parse_scenario_result(scenario_text)?;
-    let mut session = CompiledGraphSession::new(source_path, source_text)?;
+    let mut session = CompiledGraphSession::new(source_path.clone(), source_text.clone())?;
     let mut last = session.drain_epoch(0)?;
+    let mut persistence_enabled = false;
+    let mut persisted_text: Option<String> = None;
+    let mut last_generated_persisted_text: Option<String> = None;
     for (step_index, step) in scenario.steps.iter().enumerate() {
         let epoch = step_index as u64 + 1;
         let mut submitted = false;
         for event in &step.events {
-            if let ScenarioEvent::Source(action) = event {
-                session.submit_action(action, epoch);
-                submitted = true;
+            match event {
+                ScenarioEvent::Source(action) => {
+                    session.submit_action(action, epoch);
+                    submitted = true;
+                }
+                ScenarioEvent::Command(command) if command.command == "enable_persistence" => {
+                    if session.has_persistence_tap() {
+                        persistence_enabled = true;
+                        persisted_text = last_generated_persisted_text.clone();
+                    }
+                }
+                ScenarioEvent::Command(command) if command.command == "reload" => {
+                    session = CompiledGraphSession::new(source_path.clone(), source_text.clone())?;
+                    if persistence_enabled {
+                        if let Some(value) = persisted_text.clone() {
+                            session.submit_persisted_text(value, epoch);
+                            submitted = true;
+                        }
+                    }
+                }
+                ScenarioEvent::Command(_) => {}
             }
         }
         if !submitted {
             session.submit_host_tick(epoch);
         }
         last = session.drain_epoch(epoch)?;
+        last_generated_persisted_text =
+            last.persistence
+                .iter()
+                .rev()
+                .find_map(|command| match command {
+                    PersistenceCommand::SaveText { value, .. } => Some(value.clone()),
+                    PersistenceCommand::LoadText { .. } => None,
+                });
     }
     Ok(last)
 }
@@ -111,6 +153,7 @@ pub struct CompiledGraphSession {
     source_ids_by_path: BTreeMap<String, SourceId>,
     monitor_node: NodeId,
     render_node: NodeId,
+    persistence_nodes: Vec<NodeId>,
     next_sequence: u64,
 }
 
@@ -245,6 +288,28 @@ impl CompiledGraphSession {
     ) -> Result<Self, String> {
         let plan = boon_compiler::compile_source(source_path.into(), source_text.into());
         let graph = plan.dd_graph_ir.render_graph.clone();
+        let effect_requests = plan
+            .dd_graph_ir
+            .output_protocol
+            .sinks
+            .iter()
+            .filter_map(|sink| match sink {
+                boon_dd::DdOutputSink::Effect { node, name, .. } => {
+                    Some((node.clone(), name.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let persistence_nodes = plan
+            .dd_graph_ir
+            .output_protocol
+            .sinks
+            .iter()
+            .filter_map(|sink| match sink {
+                boon_dd::DdOutputSink::Persistence { node, .. } => Some(node.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let monitor_node = plan.graph.monitor_node.clone();
         let render_node = plan.graph.render_node.clone();
         let source_ids_by_path = plan
@@ -253,6 +318,12 @@ impl CompiledGraphSession {
             .iter()
             .map(|binding| (binding.path.clone(), binding.source_id.clone()))
             .collect::<BTreeMap<_, _>>();
+        let bound_source_ids = plan
+            .graph
+            .source_bindings
+            .iter()
+            .map(|binding| binding.source_id.0.clone())
+            .collect::<Vec<_>>();
         let allocator = timely::communication::Allocator::Thread(
             timely::communication::allocator::Thread::default(),
         );
@@ -264,12 +335,33 @@ impl CompiledGraphSession {
         let output_in_graph = Arc::clone(&outputs);
         let monitor_in_graph = monitor_node.clone();
         let render_in_graph = render_node.clone();
+        let effect_requests_in_graph = effect_requests.clone();
+        let persistence_nodes_in_graph = persistence_nodes.clone();
+        let bound_source_ids_in_graph = bound_source_ids.clone();
 
         worker.dataflow::<EncodedTime, _, _>(|scope| {
             let events = sources.to_collection(scope);
-            let rendered = runtime_render_collection(&graph, &events).map(RuntimeValue::text);
+            let rendered_values = runtime_render_collection(&graph, &events)
+                .map(RuntimeValue::text)
+                .map(|text| ((), text));
+            let rendered_owners = if bound_source_ids_in_graph.is_empty() {
+                events
+                    .clone()
+                    .map(|(_sequence, event)| ((), runtime_source_event_owner(&event)))
+            } else {
+                let bound_source_ids = bound_source_ids_in_graph.clone();
+                events
+                    .clone()
+                    .filter(move |(_sequence, event)| {
+                        runtime_event_matches_bound_source(event, &bound_source_ids)
+                    })
+                    .map(|(_sequence, event)| ((), runtime_source_event_owner(&event)))
+            };
+            let rendered = rendered_values
+                .join(rendered_owners)
+                .map(|(_key, (text, owner))| (owner, text));
             rendered
-                .inspect(move |(text, time, diff)| {
+                .inspect(move |((owner, text), time, diff)| {
                     if *diff > 0 {
                         output_in_graph
                             .lock()
@@ -278,15 +370,27 @@ impl CompiledGraphSession {
                                 monitor: vec![MonitorRecord::NodeValue {
                                     epoch: BoonTime::decode(*time).epoch,
                                     node: monitor_in_graph.clone(),
-                                    owner: OwnerKey("Root".to_owned()),
+                                    owner: owner.clone(),
                                     value_preview: text.clone(),
                                 }],
                                 render: vec![RenderCommand::PatchText {
                                     node: render_in_graph.clone(),
                                     text: text.clone(),
                                 }],
-                                effects: Vec::new(),
-                                persistence: Vec::new(),
+                                effects: effect_requests_in_graph
+                                    .iter()
+                                    .map(|(node, name)| EffectCommand::Requested {
+                                        node: node.clone(),
+                                        name: name.clone(),
+                                    })
+                                    .collect(),
+                                persistence: persistence_nodes_in_graph
+                                    .iter()
+                                    .map(|node| PersistenceCommand::SaveText {
+                                        node: node.clone(),
+                                        value: text.clone(),
+                                    })
+                                    .collect(),
                             });
                     }
                 })
@@ -301,6 +405,7 @@ impl CompiledGraphSession {
             source_ids_by_path,
             monitor_node,
             render_node,
+            persistence_nodes,
             next_sequence: 0,
         })
     }
@@ -339,6 +444,24 @@ impl CompiledGraphSession {
             },
             epoch,
         )
+    }
+
+    pub fn submit_persisted_text(
+        &mut self,
+        value: impl Into<String>,
+        epoch: u64,
+    ) -> SubmittedEvent {
+        self.submit_event(
+            GeneratedSourceEvent::Static {
+                source_id: SourceId("__persisted_text".to_owned()),
+                payload: GeneratedSourceEventPayload::Text(value.into()),
+            },
+            epoch,
+        )
+    }
+
+    pub fn has_persistence_tap(&self) -> bool {
+        !self.persistence_nodes.is_empty()
     }
 
     pub fn submit_event(&mut self, event: GeneratedSourceEvent, epoch: u64) -> SubmittedEvent {
@@ -547,6 +670,11 @@ fn runtime_value(
         boon_dd::DdRenderGraphOperation::Path(path) => {
             if path == "pipe_input" {
                 pipe_input.unwrap_or(RuntimeValue::Empty)
+            } else if let Some((root, fields)) = path.split_once('.') {
+                fields.split('.').fold(
+                    env.get(root).cloned().unwrap_or(RuntimeValue::Empty),
+                    |value, field| value.field(field),
+                )
             } else {
                 env.get(path).cloned().unwrap_or(RuntimeValue::Empty)
             }
@@ -692,16 +820,89 @@ fn runtime_call_value(
             }
             .to_owned(),
         ),
+        "Text/uppercase" => RuntimeValue::Text(
+            pipe_input
+                .clone()
+                .unwrap_or_else(|| arg(0))
+                .text()
+                .to_uppercase(),
+        ),
+        "Bool/not" => RuntimeValue::Tag(
+            if pipe_input.clone().unwrap_or_else(|| arg(0)).truthy() {
+                "False"
+            } else {
+                "True"
+            }
+            .to_owned(),
+        ),
         "List/count" => RuntimeValue::Number(match pipe_input.unwrap_or(RuntimeValue::Empty) {
             RuntimeValue::List(values) => values.len() as i64,
             RuntimeValue::Empty => 0,
             _ => 1,
         }),
-        "List/map" | "List/retain" | "List/latest" => pipe_input.unwrap_or(RuntimeValue::Empty),
+        "List/map" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
+            RuntimeValue::List(values) => {
+                if let Some(new_expr) = runtime_named_arg(args, "new") {
+                    RuntimeValue::List(
+                        values
+                            .into_iter()
+                            .map(|item| {
+                                let mut item_env = env.clone();
+                                item_env.insert("item".to_owned(), item);
+                                runtime_value(graph, new_expr, None, &item_env)
+                            })
+                            .collect(),
+                    )
+                } else {
+                    RuntimeValue::List(values)
+                }
+            }
+            other => other,
+        },
+        "List/retain" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
+            RuntimeValue::List(values) => {
+                if let Some(predicate_expr) = runtime_named_arg(args, "if") {
+                    RuntimeValue::List(
+                        values
+                            .into_iter()
+                            .filter(|item| {
+                                let mut item_env = env.clone();
+                                item_env.insert("item".to_owned(), item.clone());
+                                runtime_value(graph, predicate_expr, None, &item_env).truthy()
+                            })
+                            .collect(),
+                    )
+                } else {
+                    RuntimeValue::List(values)
+                }
+            }
+            other => other,
+        },
+        "List/latest" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
+            RuntimeValue::List(values) => values.into_iter().last().unwrap_or(RuntimeValue::Empty),
+            other => other,
+        },
+        "List/append" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
+            RuntimeValue::List(mut values) => {
+                values.push(arg(0));
+                RuntimeValue::List(values)
+            }
+            other => other,
+        },
         "Document/new" | "Scene/new" => pipe_input.clone().unwrap_or_else(|| arg(0)),
         callee if callee.starts_with("Element/") => pipe_input.clone().unwrap_or_else(|| arg(0)),
         _ => pipe_input.clone().unwrap_or_else(|| arg(0)),
     }
+}
+
+fn runtime_named_arg<'a>(
+    args: &'a [boon_dd::DdRenderGraphArg],
+    requested: &str,
+) -> Option<&'a NodeId> {
+    args.iter().find_map(|arg| match arg {
+        boon_dd::DdRenderGraphArg::Named { name, value } if name == requested => Some(value),
+        _ => None,
+    })
 }
 
 trait RuntimeValueDefaultText {
@@ -726,6 +927,25 @@ fn runtime_pattern_matches(value: &RuntimeValue, pattern: &str) -> bool {
 
 fn runtime_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
     matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__host_tick")
+}
+
+fn runtime_event_matches_bound_source(event: &GeneratedSourceEvent, source_ids: &[String]) -> bool {
+    match event {
+        GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__persisted_text" => true,
+        GeneratedSourceEvent::Static { source_id, .. } => {
+            source_ids.iter().any(|bound| source_id.0 == *bound)
+        }
+        GeneratedSourceEvent::Dynamic { family_id, .. } => {
+            source_ids.iter().any(|bound| family_id.0 == *bound)
+        }
+    }
+}
+
+fn runtime_source_event_owner(event: &GeneratedSourceEvent) -> OwnerKey {
+    match event {
+        GeneratedSourceEvent::Static { .. } => OwnerKey("Root".to_owned()),
+        GeneratedSourceEvent::Dynamic { owner_key, .. } => owner_key.clone(),
+    }
 }
 
 fn runtime_source_event_value(event: &GeneratedSourceEvent) -> RuntimeValue {
