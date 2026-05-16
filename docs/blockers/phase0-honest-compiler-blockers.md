@@ -191,6 +191,11 @@ schema_errors: []
   addition to preserving ordered source/command events and per-step expected
   text. The refreshed report shows 0 scenario failures, 2 commands preserved,
   and 0 structured final-output mismatches.
+- `docs/language/boon-language-manifest.toml` now contains a non-acceptance
+  `cross_repo_inventory` section for known sibling-repo examples, syntax, and
+  library families. This does not reduce the failing accepted-language count; it
+  prevents the manifest from silently omitting known Boon surface that still
+  needs implementation or an explicit product decision.
 
 ## Current Blockers
 
@@ -207,7 +212,8 @@ schema_errors: []
   because the manifest remains an inventory, not an acceptance claim. Its
   required coverage reports now pass, but the manifest status is still
   `incomplete` and all feature/example statuses are still
-  `accepted-incomplete`.
+  `accepted-incomplete`. The separate cross-repo inventory is intentionally
+  marked `not-accepted`.
 - Prompt-audit outputs are stale and failing: 7 audit JSON files exist, but
   they contain 14 hash mismatches and 17 open critical findings. Some stale
   findings describe shortcuts already removed in code, but others are still real
@@ -256,10 +262,13 @@ inside this repo:
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
    accepted feature.
-3. Mark manifest features/examples `accepted` only after the coverage artifacts
+3. Promote cross-repo inventory entries into accepted manifest examples only
+   after they have repo-local sources, scenarios, expected outputs, positive
+   coverage, negative diagnostics, and generated Timely/DD host parity.
+4. Mark manifest features/examples `accepted` only after the coverage artifacts
    prove the corresponding language surface is implemented by generated
    Timely/Differential execution.
-4. Refresh prompt audit inputs after deterministic report and repo hashes
+5. Refresh prompt audit inputs after deterministic report and repo hashes
    stabilize, rerun the seven audits, and keep `verify-prompt-audit` failed
    until all critical findings are either fixed in code or closed by fresh
    evidence.
