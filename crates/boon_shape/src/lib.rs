@@ -220,8 +220,9 @@ impl ShapeContext {
         match callee {
             "Document/new" => Shape::Document,
             callee if is_element_call(callee) => Shape::Element,
-            "Text/empty" | "Text/from_number" | "Text/join" | "Text/append" | "Text/space"
-            | "Text/uppercase" => Shape::Text,
+            "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
+            | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/substring"
+            | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
             "Math/sum" | "Temperature/c_to_f" => Shape::Number,
             "Bool/not" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/append" => {
@@ -322,8 +323,9 @@ impl ShapeContext {
             "Document/new" => Shape::Document,
             callee if is_element_call(callee) => Shape::Element,
             "Scene/new" => Shape::Scene,
-            "Text/empty" | "Text/from_number" | "Text/join" | "Text/append" | "Text/space"
-            | "Text/uppercase" => Shape::Text,
+            "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
+            | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/starts_with"
+            | "Text/substring" | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
             "Math/sum"
             | "List/count"
             | "Temperature/c_to_f"
@@ -334,9 +336,12 @@ impl ShapeContext {
             | "Number/percent_of_range"
             | "Number/scale_percent" => Shape::Number,
             "Timer/interval" | "Window/animation_frame" => Shape::SourceMarker,
-            "Bool/not" | "Number/less_than" | "Number/greater_than" | "Geometry/intersects" => {
-                Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
-            }
+            "Bool/not"
+            | "Number/less_than"
+            | "Number/greater_than"
+            | "Geometry/intersects"
+            | "Text/is_empty"
+            | "Text/is_not_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/append" | "List/remove" | "List/map" | "List/retain" => Shape::Unknown,
             _ => {
                 if let Some(shape) = typed_library_signature(callee) {
@@ -432,6 +437,16 @@ fn typed_library_signature(callee: &str) -> Option<Shape> {
         Some(Shape::Record(BTreeMap::new()))
     } else {
         None
+    }
+}
+
+fn text_call_shape(callee: &str) -> Shape {
+    match callee {
+        "Text/find" | "Text/length" => Shape::Number,
+        "Text/is_empty" | "Text/is_not_empty" | "Text/starts_with" => {
+            Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
+        }
+        _ => Shape::Text,
     }
 }
 
@@ -559,5 +574,34 @@ mod tests {
         let report = check_module(&hir);
         assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
         assert_eq!(report.definitions.get("document"), Some(&Shape::Document));
+    }
+
+    #[test]
+    fn checks_text_library_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "text_helpers.bn",
+            "trimmed: TEXT {  A  } |> Text/trim()\npart: trimmed |> Text/substring(start: 0, length: 1)\nlength: part |> Text/length()\nfound: part |> Text/find(search: TEXT { A })\nstarts: part |> Text/starts_with(prefix: TEXT { A })\nempty: Text/empty() |> Text/is_empty()\nnot_empty: Text/space() |> Text/is_not_empty()\nlines: LIST { TEXT { A } TEXT { B } } |> Text/join_lines()\nrepeated: TEXT { A } |> Text/repeat(count: 2)\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("trimmed"), Some(&Shape::Text));
+        assert_eq!(report.definitions.get("part"), Some(&Shape::Text));
+        assert_eq!(report.definitions.get("length"), Some(&Shape::Number));
+        assert_eq!(report.definitions.get("found"), Some(&Shape::Number));
+        assert_eq!(
+            report.definitions.get("starts"),
+            Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
+        );
+        assert_eq!(
+            report.definitions.get("empty"),
+            Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
+        );
+        assert_eq!(
+            report.definitions.get("not_empty"),
+            Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
+        );
+        assert_eq!(report.definitions.get("lines"), Some(&Shape::Text));
+        assert_eq!(report.definitions.get("repeated"), Some(&Shape::Text));
     }
 }

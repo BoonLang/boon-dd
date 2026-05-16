@@ -158,6 +158,13 @@ schema_errors: []
   `Element/text`, `Element/text_input`, `Text/empty`, and `Text/space`. This is
   a typed generated-code path, not a source-text or example-name heuristic, but
   it is still only a text projection of the render tree.
+- Shape checking and generated DD render code now also cover common sibling-repo
+  text helper calls with direct generated DD expressions: `Text/find`,
+  `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,
+  `Text/repeat`, `Text/starts_with`, `Text/substring`, and `Text/trim`.
+  `Text/to_number` remains blocked because upstream examples use a `NaN` branch,
+  which needs an honest number/tag union shape instead of being collapsed to a
+  plain number.
 - `SOURCE { target }` and `LINK { target }` used as render pipe stages now
   preserve the piped render value instead of falling into unsupported generated
   runtime code, while still leaving explicit source/link nodes in the DD render
@@ -257,8 +264,9 @@ inside this repo:
 1. Import or explicitly classify the missing cross-repo Boon language surface:
    host event propagation for linked/source-targeted elements, structured
    element render output beyond the current render-text projection, full
-   `PASS`/`PASSED` coverage, and any remaining sibling-repo syntax or library
-   semantics not represented in `docs/language/boon-language-manifest.toml`.
+   `PASS`/`PASSED` coverage, honest number/tag union typing for `Text/to_number`,
+   and any remaining sibling-repo syntax or library semantics not represented in
+   `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
    accepted feature.

@@ -343,10 +343,19 @@ fn call_graph_collection_code(
         "Document/new"
         | "Scene/new"
         | "Text/empty"
+        | "Text/find"
         | "Text/from_number"
         | "Text/append"
         | "Text/join"
+        | "Text/join_lines"
+        | "Text/length"
+        | "Text/repeat"
         | "Text/space"
+        | "Text/starts_with"
+        | "Text/is_empty"
+        | "Text/is_not_empty"
+        | "Text/substring"
+        | "Text/trim"
         | "Text/uppercase"
         | "List/append"
         | "List/map"
@@ -583,6 +592,77 @@ fn call_graph_value_code(
         }
         "Text/empty" => "GeneratedValue::Text(String::new())".to_owned(),
         "Text/space" => "GeneratedValue::Text(\" \".to_owned())".to_owned(),
+        "Text/trim" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("Text/trim missing input"));
+            format!("GeneratedValue::Text(({}).text().trim().to_owned())", input)
+        }
+        "Text/substring" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/substring missing input"));
+            let start = named_graph_arg_code(graph, args, "start", env)
+                .unwrap_or_else(|| unsupported_value_code("Text/substring missing start"));
+            let length = named_graph_arg_code(graph, args, "length", env)
+                .unwrap_or_else(|| unsupported_value_code("Text/substring missing length"));
+            format!(
+                "{{ let text = ({}).text(); let start = std::cmp::max(({}).number(), 0) as usize; let length = std::cmp::max(({}).number(), 0) as usize; GeneratedValue::Text(text.chars().skip(start).take(length).collect()) }}",
+                input, start, length
+            )
+        }
+        "Text/length" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/length missing input"));
+            format!(
+                "GeneratedValue::Number(({}).text().chars().count() as i64)",
+                input
+            )
+        }
+        "Text/find" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("Text/find missing input"));
+            let search = named_graph_arg_code(graph, args, "search", env)
+                .unwrap_or_else(|| unsupported_value_code("Text/find missing search"));
+            format!(
+                "{{ let text = ({}).text(); let search = ({}).text(); GeneratedValue::Number(text.find(&search).map(|byte_index| text[..byte_index].chars().count() as i64).unwrap_or(-1)) }}",
+                input, search
+            )
+        }
+        "Text/starts_with" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/starts_with missing input"));
+            let prefix = named_graph_arg_code(graph, args, "prefix", env)
+                .unwrap_or_else(|| unsupported_value_code("Text/starts_with missing prefix"));
+            format!(
+                "GeneratedValue::Tag((if ({}).text().starts_with(&({}).text()) {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+                input, prefix
+            )
+        }
+        "Text/is_empty" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/is_empty missing input"));
+            format!(
+                "GeneratedValue::Tag((if ({}).text().is_empty() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+                input
+            )
+        }
+        "Text/is_not_empty" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/is_not_empty missing input"));
+            format!(
+                "GeneratedValue::Tag((if !({}).text().is_empty() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+                input
+            )
+        }
+        "Text/repeat" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/repeat missing input"));
+            let count = named_graph_arg_code(graph, args, "count", env)
+                .or_else(|| named_graph_arg_code(graph, args, "times", env))
+                .or_else(|| first_graph_arg_code(graph, args, env))
+                .unwrap_or_else(|| unsupported_value_code("Text/repeat missing count"));
+            format!(
+                "{{ let text = ({}).text(); let count = std::cmp::max(({}).number(), 0) as usize; GeneratedValue::Text(text.repeat(count)) }}",
+                input, count
+            )
+        }
         "Text/from_number" => {
             input.unwrap_or_else(|| unsupported_value_code("Text/from_number missing input"))
         }
@@ -603,6 +683,14 @@ fn call_graph_value_code(
             format!(
                 "match {} {{ GeneratedValue::List(values) => GeneratedValue::Text(values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(&({}).text())), other => GeneratedValue::Text(other.text()) }}",
                 input, separator
+            )
+        }
+        "Text/join_lines" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("Text/join_lines missing input"));
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::Text(values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\"\\n\")), other => GeneratedValue::Text(other.text()) }}",
+                input
             )
         }
         "Text/uppercase" => {
@@ -936,5 +1024,19 @@ mod tests {
         assert!(!module.contains("unsupported collection library call Element/"));
         assert!(module.contains(".render_text()"));
         assert!(module.contains("GeneratedValue::Text(\"B\".to_owned())"));
+    }
+
+    #[test]
+    fn text_helper_calls_lower_without_generated_fallback() {
+        let plan = boon_compiler::compile_source(
+            "text_helpers.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { TEXT {  Alpha  } |> Text/trim() |> Text/substring(start: 0, length: 5) TEXT { Alpha } |> Text/starts_with(prefix: TEXT { A }) LIST { TEXT { A } TEXT { B } } |> Text/join_lines() TEXT { A } |> Text/repeat(count: 2) }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Text/"));
+        assert!(!module.contains("unsupported collection library call Text/"));
+        assert!(module.contains(".trim()"));
+        assert!(module.contains(".starts_with"));
+        assert!(module.contains(".repeat(count)"));
     }
 }
