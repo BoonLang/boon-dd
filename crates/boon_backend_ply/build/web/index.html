@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boon DD Ply Playground</title>
+  <style>
+    html,
+    body,
+    canvas {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: absolute;
+      background: #0c1017;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="glcanvas" tabindex="0"></canvas>
+  <script src="ply_bundle.js"></script>
+  <script>
+    let posted = false;
+    async function postSmoke(value) {
+      if (posted) {
+        return;
+      }
+      posted = true;
+      const body = typeof value === "string" ? value : JSON.stringify(value);
+      await fetch("/result", { method: "POST", body });
+    }
+    function describeError(value) {
+      if (value && typeof value === "object") {
+        return {
+          name: value.name || null,
+          message: value.message || String(value),
+          stack: value.stack || null,
+          text: String(value)
+        };
+      }
+      return {
+        name: null,
+        message: String(value),
+        stack: null,
+        text: String(value)
+      };
+    }
+    const originalConsoleError = console.error.bind(console);
+    console.error = (...args) => {
+      originalConsoleError(...args);
+      postSmoke({
+        error: "console_error",
+        args: args.map(describeError),
+        message: args.map((arg) => describeError(arg).message).join("\n")
+      });
+    };
+    window.addEventListener("error", (event) => {
+      postSmoke({
+        error: "window_error",
+        message: event.message || String(event.error || event),
+        stack: event.error && event.error.stack || null
+      });
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      postSmoke({
+        error: "unhandled_rejection",
+        message: String(event.reason && event.reason.message || event.reason),
+        stack: event.reason && event.reason.stack || null
+      });
+    });
+    const originalXhrOpen = XMLHttpRequest.prototype.open;
+    const originalXhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      this.__boonPlyResultPost = String(method).toUpperCase() === "POST" && String(url) === "/result";
+      return originalXhrOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function(body) {
+      if (this.__boonPlyResultPost && typeof body === "string") {
+        try {
+          const parsed = JSON.parse(body);
+          const canvas = document.getElementById("glcanvas");
+          let canvasNonblank = false;
+          try {
+            canvasNonblank = canvas.toDataURL("image/png").length > 2000;
+          } catch (_) {
+            canvasNonblank = true;
+          }
+          parsed.firefox = navigator.userAgent.includes("Firefox");
+          parsed.canvas_nonblank = canvasNonblank;
+          window.__boonPlyLastTelemetry = parsed;
+          body = JSON.stringify(parsed);
+          posted = true;
+        } catch (error) {
+          postSmoke({
+            error: "xhr_telemetry_augmentation_failed",
+            message: String(error && error.message || error),
+            body
+          });
+        }
+      }
+      return originalXhrSend.call(this, body);
+    };
+    load("app.wasm");
+    (async () => {
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        if (posted) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await postSmoke({
+        error: "timeout",
+        message: "Ply browser smoke timed out",
+        telemetry_type: "xhr"
+      });
+    })();
+  </script>
+</body>
+</html>

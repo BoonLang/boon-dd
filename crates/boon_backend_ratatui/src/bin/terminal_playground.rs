@@ -23,8 +23,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or("usage: terminal_playground --smoke <artifact-json>")?;
             write_smoke_artifact(artifact)?;
         }
+        Some("--example") => {
+            let example = args
+                .next()
+                .ok_or("usage: terminal_playground --example <name>")?;
+            run_interactive(Some(example), None)?;
+        }
+        Some("--human-output-dir") => {
+            let output_dir = args
+                .next()
+                .map(PathBuf::from)
+                .ok_or("usage: terminal_playground --human-output-dir <dir>")?;
+            run_interactive(None, Some(output_dir))?;
+        }
         Some(other) => return Err(format!("unknown terminal_playground argument: {other}").into()),
-        None => run_interactive()?,
+        None => run_interactive(None, None)?,
     }
     Ok(())
 }
@@ -65,34 +78,84 @@ fn write_smoke_artifact(artifact: PathBuf) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
-    let examples = boon_examples::run_embedded_matrix();
+fn run_interactive(
+    selected_example: Option<String>,
+    human_output_dir: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut state = boon_backend_ratatui::human_surface::TerminalPlaygroundState::new();
+    if let Some(example) = selected_example {
+        state.select_by_name(&example);
+    }
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let mut selected = 0_usize;
+    let mut frame_index = 0_usize;
+    if let Some(dir) = human_output_dir.as_deref() {
+        export_human_frame(dir, frame_index, &state)?;
+    }
     loop {
-        terminal.draw(|frame| render_playground(frame, &examples, selected))?;
+        terminal
+            .draw(|frame| boon_backend_ratatui::human_surface::render_playground(frame, &state))?;
         if event::poll(Duration::from_millis(250))? {
             match event::read()? {
                 Event::Key(key) if key.code == KeyCode::Char('q') => break,
                 Event::Key(key) if key.code == KeyCode::Esc => break,
                 Event::Key(key) if key.code == KeyCode::Down => {
-                    selected = (selected + 1).min(examples.len().saturating_sub(1));
+                    state.press_key_label("ArrowDown");
                 }
                 Event::Key(key) if key.code == KeyCode::Up => {
-                    selected = selected.saturating_sub(1);
+                    state.press_key_label("ArrowUp");
                 }
-                Event::Key(key) if key.code == KeyCode::Enter => {}
+                Event::Key(key) if key.code == KeyCode::Home => state.press_key_label("Home"),
+                Event::Key(key) if key.code == KeyCode::Enter => state.press_key_label("Enter"),
+                Event::Key(key) if key.code == KeyCode::Char(' ') => {
+                    if human_output_dir.is_some() {
+                        state.type_text(" ");
+                    } else {
+                        state.press_key_label("Space");
+                    }
+                }
+                Event::Key(key) if key.code == KeyCode::Char('-') => {
+                    state.press_key_label("-");
+                }
+                Event::Key(key) => {
+                    if let KeyCode::Char(character) = key.code {
+                        state.type_text(&character.to_string());
+                    }
+                }
                 _ => {}
+            }
+            frame_index += 1;
+            if let Some(dir) = human_output_dir.as_deref() {
+                export_human_frame(dir, frame_index, &state)?;
             }
         }
     }
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+    Ok(())
+}
+
+fn export_human_frame(
+    output_dir: &std::path::Path,
+    frame_index: usize,
+    state: &boon_backend_ratatui::human_surface::TerminalPlaygroundState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(output_dir)?;
+    let capture = boon_backend_ratatui::human_surface::capture_state(state);
+    let stem = format!("pty-frame-{frame_index:03}");
+    let txt_path = output_dir.join(format!("{stem}.txt"));
+    let txt_tmp = output_dir.join(format!("{stem}.txt.tmp"));
+    std::fs::write(&txt_tmp, capture.lines.join("\n"))?;
+    std::fs::rename(txt_tmp, txt_path)?;
+
+    let json_path = output_dir.join(format!("{stem}.json"));
+    let json_tmp = output_dir.join(format!("{stem}.json.tmp"));
+    std::fs::write(&json_tmp, serde_json::to_vec_pretty(&capture)?)?;
+    std::fs::rename(json_tmp, json_path)?;
     Ok(())
 }
 

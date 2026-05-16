@@ -7,11 +7,17 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64.workspace = true
 boon_codegen_rust = { path = "../crates/boon_codegen_rust" }
 boon_compiler = { path = "../crates/boon_compiler" }
 boon_dd = { path = "../crates/boon_dd" }
 boon_examples = { path = "../crates/boon_examples" }
+boon_backend_ply = { path = "../crates/boon_backend_ply" }
 boon_runtime_host = { path = "../crates/boon_runtime_host" }
-naga.workspace = true
+boon_backend_ratatui = { path = "../crates/boon_backend_ratatui" }
+image.workspace = true
+portable-pty.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true

@@ -1,17 +1,16 @@
 [package]
-name = "boon_backend_app_window"
+name = "boon_backend_ply"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-app_window.workspace = true
-boon_dd = { path = "../boon_dd" }
-boon_backend_wgpu = { path = "../boon_backend_wgpu" }
 boon_compiler = { path = "../boon_compiler" }
+boon_dd = { path = "../boon_dd" }
 boon_examples = { path = "../boon_examples" }
 boon_runtime_host = { path = "../boon_runtime_host" }
+ply-engine = { workspace = true, features = ["net"] }
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-some_executor = "0.6.3"
-wgpu.workspace = true
+sha2.workspace = true

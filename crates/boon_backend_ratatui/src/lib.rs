@@ -1,3 +1,5 @@
+pub mod human_surface;
+
 pub fn render_terminal(
     source_path: &str,
     source_text: &str,

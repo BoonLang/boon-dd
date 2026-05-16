@@ -1,0 +1,247 @@
+version = 1
+targets = ["terminal", "native", "browser"]
+
+[examples.counter]
+required_targets = ["terminal", "native", "browser"]
+notes = "Counter must prove increment and decrement; selected and after_action screenshots prove increment, traces include decrement."
+actions = [
+  { kind = "select_example", value = "counter" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "increment" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "activate", semantic = "decrement" },
+  { kind = "screenshot", name = "after-decrement" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.counter_hold]
+required_targets = ["terminal", "native", "browser"]
+notes = "Counter hold exposes the same primary press path as counter."
+actions = [
+  { kind = "select_example", value = "counter_hold" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "increment" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.interval]
+required_targets = ["terminal", "native", "browser"]
+notes = "Synthetic tick is exposed through the primary activation path for deterministic verification."
+actions = [
+  { kind = "select_example", value = "interval" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "tick" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.interval_hold]
+required_targets = ["terminal", "native", "browser"]
+notes = "Synthetic tick into hold is exposed through the primary activation path."
+actions = [
+  { kind = "select_example", value = "interval_hold" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "tick" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.latest]
+required_targets = ["terminal", "native", "browser"]
+notes = "Activation applies both same-epoch branch actions."
+actions = [
+  { kind = "select_example", value = "latest" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "latest-branches" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.when]
+required_targets = ["terminal", "native", "browser"]
+actions = [
+  { kind = "select_example", value = "when" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "enter" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.while]
+required_targets = ["terminal", "native", "browser"]
+actions = [
+  { kind = "select_example", value = "while" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "filter-active" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.then]
+required_targets = ["terminal", "native", "browser"]
+actions = [
+  { kind = "select_example", value = "then" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "press" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.list_map_block]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove activation."
+actions = [
+  { kind = "select_example", value = "list_map_block" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "map-list" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.list_map_external_dep]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove activation."
+actions = [
+  { kind = "select_example", value = "list_map_external_dep" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "toggle-uppercase" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.list_object_state]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove row-state activation."
+actions = [
+  { kind = "select_example", value = "list_object_state" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "row-checkbox" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.list_retain_count]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove filter activation."
+actions = [
+  { kind = "select_example", value = "list_retain_count" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "filter-active" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.list_retain_reactive]
+required_targets = ["terminal", "native", "browser"]
+actions = [
+  { kind = "select_example", value = "list_retain_reactive" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "filter-active" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.list_retain_remove]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove removal activation."
+actions = [
+  { kind = "select_example", value = "list_retain_remove" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "remove-row" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.shopping_list]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove add-item activation."
+actions = [
+  { kind = "select_example", value = "shopping_list" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "type_text", value = "bread" },
+  { kind = "press_key", value = "Enter" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.todo_mvc]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove add-todo activation and visible text remains."
+actions = [
+  { kind = "select_example", value = "todo_mvc" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "type_text", value = "Buy milk" },
+  { kind = "press_key", value = "Enter" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+  { kind = "assert_text_contains", value = "TodoMVC" },
+]
+
+[examples.crud]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove create/save activation."
+actions = [
+  { kind = "select_example", value = "crud" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "create-record" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.flight_booker]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable; monitor/action count must prove book activation."
+actions = [
+  { kind = "select_example", value = "flight_booker" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "book" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.temperature_converter]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable at the expected converted value; monitor/action count must prove edit activation."
+actions = [
+  { kind = "select_example", value = "temperature_converter" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "type_text", value = "20" },
+  { kind = "press_key", value = "Enter" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.pong]
+required_targets = ["terminal", "native", "browser"]
+actions = [
+  { kind = "select_example", value = "pong" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "wait_frames", value = "1" },
+  { kind = "activate", semantic = "animation-frame" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_state_changed", field = "render_text" },
+]
+
+[examples.cells]
+required_targets = ["terminal", "native", "browser"]
+notes = "Rendered text is stable at A1=1; monitor/action count must prove edit activation."
+actions = [
+  { kind = "select_example", value = "cells" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "type_text", value = "1" },
+  { kind = "press_key", value = "Enter" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]
+
+[examples.todo_mvc_physical]
+required_targets = ["terminal", "native", "browser"]
+notes = "Physical example exposes scene-frame activation rather than TodoMVC text-entry controls."
+actions = [
+  { kind = "select_example", value = "todo_mvc_physical" },
+  { kind = "screenshot", name = "selected" },
+  { kind = "activate", semantic = "scene-frame" },
+  { kind = "screenshot", name = "after-action" },
+  { kind = "assert_monitor_changed" },
+]

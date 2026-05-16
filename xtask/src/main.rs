@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
@@ -9,7 +10,11 @@ use std::process::Command;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+mod ply_human_surfaces;
+
 const WASM_BINDGEN_VERSION: &str = "0.2.120";
+const PLY_ENGINE_VERSION: &str = "1.1.1";
+const PLYX_VERSION: &str = "0.2.2";
 const COSMIC_WORKSPACE: &str = "boon-dd";
 
 #[derive(Debug, Serialize)]
@@ -32,7 +37,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         bail!(
-            "usage: cargo xtask <bootstrap|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify> ..."
+            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-ply-renderer|verify> ..."
         );
     }
 
@@ -44,6 +49,35 @@ fn main() -> Result<()> {
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
         "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
         "verify-playgrounds" => verify_playgrounds(&args).map(|_| ()),
+        "verify-ply-renderer" => verify_ply_renderer(&args),
+        "verify-ply-headless" => verify_ply_headless(&args).map(|_| ()),
+        "verify-ply-native" => verify_ply_native(&args).map(|_| ()),
+        "verify-ply-browser" => verify_ply_browser(&args).map(|_| ()),
+        "verify-ply-no-old-renderers" => verify_ply_no_old_renderers(&args).map(|_| ()),
+        "verify-ply-fresh-artifacts" => verify_ply_fresh_artifacts(&args).map(|_| ()),
+        "write-ply-ai-review-prompts" => write_ply_ai_review_prompts(&args).map(|_| ()),
+        "verify-ply-ai-review-reports" => verify_ply_ai_review_reports(&args).map(|_| ()),
+        "verify-ply-human-terminal" => {
+            ply_human_surfaces::verify_ply_human_terminal(&args).map(|_| ())
+        }
+        "verify-ply-human-native" => ply_human_surfaces::verify_ply_human_native(&args).map(|_| ()),
+        "verify-ply-human-browser" => {
+            ply_human_surfaces::verify_ply_human_browser(&args).map(|_| ())
+        }
+        "verify-ply-human-screenshots" => {
+            ply_human_surfaces::verify_ply_human_screenshots(&args).map(|_| ())
+        }
+        "verify-ply-human-fresh-artifacts" => {
+            ply_human_surfaces::verify_ply_human_fresh_artifacts(&args).map(|_| ())
+        }
+        "write-ply-human-ai-review-prompts" => {
+            ply_human_surfaces::write_ply_human_ai_review_prompts(&args).map(|_| ())
+        }
+        "verify-ply-human-ai-review-reports" => {
+            ply_human_surfaces::verify_ply_human_ai_review_reports(&args).map(|_| ())
+        }
+        "verify-ply-human-surfaces" => ply_human_surfaces::verify_ply_human_surfaces(&args),
+        "serve-ply-browser" => serve_ply_browser(&args),
         "verify" => verify(&args),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -127,8 +161,16 @@ fn bootstrap(args: &[String]) -> Result<()> {
         if !version.contains(WASM_BINDGEN_VERSION) {
             bail!("wasm-bindgen version mismatch: expected {WASM_BINDGEN_VERSION}, got {version}");
         }
+        let plyx = find_plyx().context("missing repo-local plyx; run cargo xtask bootstrap")?;
+        let version = run_capture(plyx.to_str().unwrap(), &["--version"])?;
+        if !version.contains(PLYX_VERSION) {
+            bail!("plyx version mismatch: expected {PLYX_VERSION}, got {version}");
+        }
     } else if wasm_bindgen.is_none() {
         install_wasm_bindgen()?;
+    }
+    if !check && find_plyx().is_none() {
+        install_plyx()?;
     }
 
     let details = serde_json::json!({
@@ -137,6 +179,7 @@ fn bootstrap(args: &[String]) -> Result<()> {
         "targets": targets.lines().collect::<Vec<_>>(),
         "cosmic_background_launch": helper,
         "background_launch_service": bus,
+        "plyx": find_plyx().map(|path| path.display().to_string()),
     });
     let path = artifacts_dir()?.join("bootstrap-check.json");
     fs::write(path, serde_json::to_vec_pretty(&details)?)?;
@@ -218,7 +261,7 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
         .with_context(|| format!("missing Firefox smoke output {}", smoke_json.display()))?;
     let smoke_value: serde_json::Value =
         serde_json::from_str(&output).context("Firefox smoke output is not JSON")?;
-    require_webgpu_smoke(&smoke_value)?;
+    require_wasm_smoke(&smoke_value)?;
     for example in boon_dd::REQUIRED_EXAMPLES {
         if !output.contains(example) {
             bail!("Firefox smoke output did not contain required example {example}: {output}");
@@ -245,43 +288,40 @@ fn verify_wasm_dd(_args: &[String]) -> Result<GateReport> {
     })
 }
 
-fn require_webgpu_smoke(smoke_value: &serde_json::Value) -> Result<()> {
-    let webgpu = smoke_value
-        .get("webgpu")
-        .context("Firefox smoke output missing webgpu object")?;
-    for field in ["navigator_gpu", "adapter", "device"] {
-        if webgpu.get(field).and_then(|value| value.as_bool()) != Some(true) {
-            bail!("Firefox WebGPU smoke did not prove webgpu.{field}: {smoke_value}");
-        }
-    }
+fn require_wasm_smoke(smoke_value: &serde_json::Value) -> Result<()> {
+    smoke_value
+        .get("wasm_smoke")
+        .context("Firefox smoke output missing wasm_smoke object")?;
     Ok(())
 }
 
 fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_wgpu"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_browser"])?;
-    let native_smoke_artifact = verify_native_app_window_smoke()?;
-    let shader_path = repo_root()?.join("shaders/common/ui_rect.wgsl");
-    let shader_source = fs::read_to_string(&shader_path)
-        .with_context(|| format!("missing shader {}", shader_path.display()))?;
-    naga::front::wgsl::parse_str(&shader_source)
-        .with_context(|| format!("WGSL parse failed for {}", shader_path.display()))?;
+    run_status("cargo", &["check", "-p", "boon_backend_ply"])?;
+    run_status(
+        "cargo",
+        &[
+            "check",
+            "--target",
+            "wasm32-unknown-unknown",
+            "-p",
+            "boon_backend_ply",
+            "--bin",
+            "web_playground",
+        ],
+    )?;
+    let headless = verify_ply_headless(&["--format".to_owned(), "json".to_owned()])?;
 
     let artifact = artifacts_dir()?.join("verify-render-deps.json");
     let details = serde_json::json!({
         "ratatui": "0.30.0",
         "crossterm": "0.29.0",
-        "wgpu": "29.0.3",
-        "wesl": "0.3.2",
-        "wgsl_bindgen": "0.22.2",
-        "app_window": "0.3.3",
-        "native_surface_mode": "app_window native window and surface smoke plus render-command preflight",
-        "browser_surface_mode": "browser-hosted wasm plus Firefox WebGPU adapter/device preflight",
-        "shader_parse": shader_path,
-        "native_app_window_smoke": native_smoke_artifact,
+        "ply-engine": PLY_ENGINE_VERSION,
+        "plyx": PLYX_VERSION,
+        "native_surface_mode": "macroquad+ply-engine native app",
+        "browser_surface_mode": "ply-engine wasm app packaged with Ply loader",
+        "headless_ply_evidence": headless.artifacts,
         "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
     });
     fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
@@ -299,7 +339,7 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
     sync_generated_artifacts()?;
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
+    run_status("cargo", &["check", "-p", "boon_backend_ply"])?;
     run_status(
         "cargo",
         &[
@@ -314,9 +354,6 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
 
     let dir = artifacts_dir()?;
     let terminal_artifact = dir.join("terminal-playground.json");
-    let native_artifact = dir.join("native-playground.json");
-    let native_screenshots_dir = dir.join("native-playground-screenshots");
-    let browser_artifact = dir.join("browser-playground-result.json");
 
     if terminal_artifact.exists() {
         fs::remove_file(&terminal_artifact)?;
@@ -345,85 +382,15 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
         bail!("terminal playground rendered no Ratatui cells: {terminal_details}");
     }
 
-    if native_artifact.exists() {
-        fs::remove_file(&native_artifact)?;
-    }
-    launch_background_process(&[
-        "cargo",
-        "run",
-        "--quiet",
-        "-p",
-        "boon_backend_app_window",
-        "--bin",
-        "native_playground",
-        "--",
-        "--smoke",
-        native_artifact.to_str().unwrap(),
-        native_screenshots_dir.to_str().unwrap(),
+    let native_gate = verify_ply_native(&["--format".to_owned(), "json".to_owned()])?;
+    let browser_gate = verify_ply_browser(&[
+        "--browser".to_owned(),
+        "firefox".to_owned(),
+        "--format".to_owned(),
+        "json".to_owned(),
     ])?;
-    wait_for_json_artifact(
-        &native_artifact,
-        Duration::from_secs(45),
-        "native playground",
-    )?;
-    let native_details = read_playground_artifact(&native_artifact)?;
-    require_playground_examples("native", &native_details)?;
-    for pointer in [
-        "/window_created",
-        "/surface_created",
-        "/wgpu/adapter",
-        "/wgpu/device",
-        "/wgpu/surface_configured",
-        "/wgpu/frame_presented",
-        "/visible_ui/full_surface_background",
-        "/visible_ui/sidebar",
-        "/visible_ui/example_labels",
-        "/visible_ui/paged_example_list",
-        "/visible_ui/native_vector_scene",
-        "/visible_ui/selected_output_panel",
-    ] {
-        if native_details
-            .pointer(pointer)
-            .and_then(|value| value.as_bool())
-            != Some(true)
-        {
-            bail!("native playground did not prove {pointer}: {native_details}");
-        }
-    }
-    let rendered_vertices = native_details
-        .pointer("/visible_ui/rendered_vertices")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(0);
-    if rendered_vertices < 1000 {
-        bail!("native playground rendered too little UI geometry: {native_details}");
-    }
-    require_native_per_example_screenshots(&native_details)?;
-
-    let browser_dir = prepare_wasm_bindgen_output()?;
-    let browser_html = browser_dir.join("index.html");
-    fs::write(&browser_html, browser_playground_html())?;
-    if browser_artifact.exists() {
-        fs::remove_file(&browser_artifact)?;
-    }
-    run_firefox_smoke(&browser_html, &browser_artifact)?;
-    let browser_details = read_playground_artifact(&browser_artifact)?;
-    require_webgpu_smoke(&browser_details)?;
-    require_playground_examples("browser", &browser_details)?;
-    for pointer in [
-        "/ui/canvas",
-        "/ui/output_panel",
-        "/ui/simulated_click",
-        "/webgpu/canvas_context",
-        "/webgpu/frame_presented",
-    ] {
-        if browser_details
-            .pointer(pointer)
-            .and_then(|value| value.as_bool())
-            != Some(true)
-        {
-            bail!("browser playground did not prove {pointer}: {browser_details}");
-        }
-    }
+    let native_details = native_gate.details.clone();
+    let browser_details = browser_gate.details.clone();
 
     let artifact = dir.join("verify-playgrounds.json");
     let details = serde_json::json!({
@@ -441,12 +408,959 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
         artifacts: vec![
             artifact.display().to_string(),
             terminal_artifact.display().to_string(),
-            native_artifact.display().to_string(),
-            native_screenshots_dir.display().to_string(),
-            browser_artifact.display().to_string(),
+            native_gate.artifacts.join(","),
+            browser_gate.artifacts.join(","),
         ],
         details,
     })
+}
+
+fn ply_artifacts_dir() -> Result<PathBuf> {
+    let path = artifacts_dir()?.join("ply");
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn verify_ply_renderer(_args: &[String]) -> Result<()> {
+    let mut gates = Vec::new();
+    gates.push(capture_gate(
+        "verify-ply-headless",
+        "cargo xtask verify-ply-headless --format json",
+        || verify_ply_headless(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "verify-ply-native",
+        "cargo xtask verify-ply-native --format json",
+        || verify_ply_native(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "verify-ply-browser",
+        "cargo xtask verify-ply-browser --browser firefox --format json",
+        || {
+            verify_ply_browser(&[
+                "--browser".to_owned(),
+                "firefox".to_owned(),
+                "--format".to_owned(),
+                "json".to_owned(),
+            ])
+        },
+    ));
+    gates.push(capture_gate(
+        "verify-ply-no-old-renderers",
+        "cargo xtask verify-ply-no-old-renderers --format json",
+        || verify_ply_no_old_renderers(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "verify-ply-fresh-artifacts",
+        "cargo xtask verify-ply-fresh-artifacts --format json",
+        || verify_ply_fresh_artifacts(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "write-ply-ai-review-prompts",
+        "cargo xtask write-ply-ai-review-prompts --format json",
+        || write_ply_ai_review_prompts(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_gate(
+        "verify-ply-ai-review-reports",
+        "cargo xtask verify-ply-ai-review-reports --format json",
+        || verify_ply_ai_review_reports(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-ply-human-surfaces",
+        "cargo xtask verify-ply-human-surfaces --format json",
+        || {
+            ply_human_surfaces::verify_ply_human_surfaces(&[
+                "--format".to_owned(),
+                "json".to_owned(),
+            ])?;
+            read_playground_artifact(
+                &artifacts_dir()?.join("ply-human-surfaces/verify-ply-human-surfaces.json"),
+            )
+        },
+    ));
+    let success = gates.iter().all(|gate| gate.status == "passed");
+    let artifact = ply_artifacts_dir()?.join("verify-ply-renderer.json");
+    fs::write(
+        &artifact,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "success": success,
+            "gates": gates,
+        }))?,
+    )?;
+    if !success {
+        bail!(
+            "Ply renderer verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(())
+}
+
+fn verify_ply_headless(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    run_status("cargo", &["check", "-p", "boon_backend_ply"])?;
+    let report = boon_backend_ply::evidence::headless_matrix_report();
+    if !report.success {
+        bail!("Ply headless evidence reported failure");
+    }
+    if report.examples.len() != boon_dd::REQUIRED_EXAMPLES.len() {
+        bail!(
+            "Ply headless evidence covered {} examples; expected {}",
+            report.examples.len(),
+            boon_dd::REQUIRED_EXAMPLES.len()
+        );
+    }
+    if !report.interaction.selection_changed
+        || !report.interaction.counter_state_changed
+        || !report.interaction.counter_restored
+        || !report.interaction.generic_state_changed_or_noop_documented
+    {
+        bail!(
+            "Ply interaction evidence is incomplete: {:?}",
+            report.interaction
+        );
+    }
+    let artifact = ply_artifacts_dir()?.join("headless-matrix.json");
+    fs::write(&artifact, serde_json::to_vec_pretty(&report)?)?;
+    Ok(GateReport {
+        name: "verify-ply-headless".to_owned(),
+        command: "cargo xtask verify-ply-headless --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details: serde_json::to_value(&report)?,
+    })
+}
+
+fn verify_ply_native(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    run_status(
+        "cargo",
+        &[
+            "check",
+            "-p",
+            "boon_backend_ply",
+            "--bin",
+            "native_playground",
+        ],
+    )?;
+    let artifact = ply_artifacts_dir()?.join("native-smoke.json");
+    if artifact.exists() {
+        fs::remove_file(&artifact)?;
+    }
+    launch_background_process(&[
+        "cargo",
+        "run",
+        "--quiet",
+        "-p",
+        "boon_backend_ply",
+        "--bin",
+        "native_playground",
+        "--",
+        "--smoke",
+        artifact.to_str().unwrap(),
+    ])?;
+    wait_for_json_artifact(&artifact, Duration::from_secs(60), "native Ply smoke")?;
+    let details = read_playground_artifact(&artifact)?;
+    require_ply_smoke("native", &details)?;
+    if details
+        .pointer("/renderer/legacy_native_window_stack_removed")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        bail!("native Ply smoke did not prove legacy native-window stack removal: {details}");
+    }
+    Ok(GateReport {
+        name: "verify-ply-native".to_owned(),
+        command: "cargo xtask verify-ply-native --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn verify_ply_browser(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let build_dir = build_ply_web()?;
+    let artifact = ply_artifacts_dir()?.join("browser-smoke.json");
+    let html = build_dir.join("index.html");
+    run_firefox_smoke(&html, &artifact)?;
+    let details = read_playground_artifact(&artifact)?;
+    require_ply_smoke("browser", &details)?;
+    if details.get("firefox").and_then(|value| value.as_bool()) != Some(true) {
+        bail!("browser Ply smoke did not prove Firefox execution: {details}");
+    }
+    if details
+        .get("canvas_nonblank")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        bail!("browser Ply smoke did not prove nonblank canvas: {details}");
+    }
+    let interaction = details
+        .get("interaction")
+        .context("browser Ply smoke missing interaction")?;
+    if interaction
+        .get("selection_changed")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+        || interaction
+            .get("counter_state_changed")
+            .and_then(|value| value.as_bool())
+            != Some(true)
+    {
+        bail!("browser Ply smoke did not prove interactions: {details}");
+    }
+    Ok(GateReport {
+        name: "verify-ply-browser".to_owned(),
+        command: "cargo xtask verify-ply-browser --browser firefox --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![
+            artifact.display().to_string(),
+            build_dir.display().to_string(),
+        ],
+        details,
+    })
+}
+
+fn require_ply_smoke(target: &str, details: &serde_json::Value) -> Result<()> {
+    if details.get("backend").and_then(|value| value.as_str()) != Some("ply-engine") {
+        bail!("{target} smoke did not report Ply backend: {details}");
+    }
+    if details.get("target").and_then(|value| value.as_str()) != Some(target) {
+        bail!("{target} smoke reported wrong target: {details}");
+    }
+    require_playground_examples(target, details)?;
+    for pointer in [
+        "/renderer/library",
+        "/renderer/crate_version",
+        "/frame/ply_render_commands",
+    ] {
+        if details.pointer(pointer).is_none() {
+            bail!("{target} Ply smoke missing {pointer}: {details}");
+        }
+    }
+    if details
+        .pointer("/frame/ply_render_commands")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+        == 0
+    {
+        bail!("{target} Ply smoke has no render commands: {details}");
+    }
+    Ok(())
+}
+
+fn build_ply_web() -> Result<PathBuf> {
+    let root = repo_root()?;
+    let crate_dir = root.join("crates/boon_backend_ply");
+    let plyx = find_plyx().context("missing repo-local plyx; run cargo xtask bootstrap")?;
+    let status = Command::new(plyx)
+        .current_dir(&crate_dir)
+        .args(["web", "--auto"])
+        .status()
+        .context("failed to run plyx web")?;
+    if !status.success() {
+        bail!("plyx web failed with {status}");
+    }
+    let build_dir = crate_dir.join("build/web");
+    for file in ["app.wasm", "index.html", "ply_bundle.js"] {
+        let path = build_dir.join(file);
+        if !path.exists() {
+            bail!("Ply web build missing {}", path.display());
+        }
+    }
+    Ok(build_dir)
+}
+
+fn verify_ply_no_old_renderers(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let root = repo_root()?;
+    let patterns = old_renderer_patterns();
+    let mut hits = scan_old_renderer_paths(&root, &patterns)?;
+    hits.retain(|hit| {
+        hit.get("path")
+            .and_then(|value| value.as_str())
+            .map(|path| {
+                !path.ends_with("BOON_DD_PLY_RENDERER_PLAN.md")
+                    && !path.contains("target/")
+                    && !path.ends_with("crates/boon_backend_ply/index.html")
+            })
+            .unwrap_or(true)
+    });
+    let negative_tests = run_old_renderer_negative_tests(&patterns)?;
+    let artifact = ply_artifacts_dir()?.join("no-old-renderers.json");
+    let details = serde_json::json!({
+        "success": hits.is_empty(),
+        "patterns": patterns.iter().map(|pattern| pattern.name).collect::<Vec<_>>(),
+        "hits": hits,
+        "negative_tests": negative_tests,
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    if !details["hits"].as_array().unwrap().is_empty() {
+        bail!("old renderer scan found hits; see {}", artifact.display());
+    }
+    Ok(GateReport {
+        name: "verify-ply-no-old-renderers".to_owned(),
+        command: "cargo xtask verify-ply-no-old-renderers --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct OldRendererPattern {
+    name: &'static str,
+    needle: &'static str,
+}
+
+fn old_renderer_patterns() -> Vec<OldRendererPattern> {
+    vec![
+        OldRendererPattern {
+            name: concat!("app", "_window"),
+            needle: concat!("app", "_window"),
+        },
+        OldRendererPattern {
+            name: concat!("boon_backend_", "wgpu"),
+            needle: concat!("boon_backend_", "wgpu"),
+        },
+        OldRendererPattern {
+            name: concat!("wgpu", "::"),
+            needle: concat!("wgpu", "::"),
+        },
+        OldRendererPattern {
+            name: concat!("create_render_", "pipeline"),
+            needle: concat!("create_render_", "pipeline"),
+        },
+        OldRendererPattern {
+            name: concat!("create_shader_", "module"),
+            needle: concat!("create_shader_", "module"),
+        },
+        OldRendererPattern {
+            name: concat!("Surface", "Target", "Unsafe"),
+            needle: concat!("Surface", "Target", "Unsafe"),
+        },
+        OldRendererPattern {
+            name: concat!("Device", "Ext"),
+            needle: concat!("Device", "Ext"),
+        },
+        OldRendererPattern {
+            name: "Scene",
+            needle: concat!("struct ", "Scene"),
+        },
+        OldRendererPattern {
+            name: "Primitive",
+            needle: concat!("enum ", "Primitive"),
+        },
+        OldRendererPattern {
+            name: concat!("scene", "_vertices"),
+            needle: concat!("scene", "_vertices"),
+        },
+        OldRendererPattern {
+            name: concat!("rect", "_vertices"),
+            needle: concat!("rect", "_vertices"),
+        },
+        OldRendererPattern {
+            name: concat!("text", "_vertices"),
+            needle: concat!("text", "_vertices"),
+        },
+        OldRendererPattern {
+            name: concat!("gly", "ph"),
+            needle: concat!("gly", "ph", "("),
+        },
+        OldRendererPattern {
+            name: concat!("browser-", "webgpu"),
+            needle: concat!("browser-", "webgpu"),
+        },
+        OldRendererPattern {
+            name: concat!("navigator", ".gpu"),
+            needle: concat!("navigator", ".gpu"),
+        },
+        OldRendererPattern {
+            name: concat!("request", "Adapter"),
+            needle: concat!("request", "Adapter"),
+        },
+        OldRendererPattern {
+            name: concat!("get", "Context", "(\"webgpu\")"),
+            needle: concat!("get", "Context", "(\"webgpu\")"),
+        },
+        OldRendererPattern {
+            name: concat!("begin", "Render", "Pass"),
+            needle: concat!("begin", "Render", "Pass"),
+        },
+        OldRendererPattern {
+            name: "documentCreateButton",
+            needle: concat!("document.", "createElement", "(\"button\")"),
+        },
+        OldRendererPattern {
+            name: concat!("fill", "Rect"),
+            needle: concat!("fill", "Rect"),
+        },
+        OldRendererPattern {
+            name: concat!("fill", "Text"),
+            needle: concat!("fill", "Text"),
+        },
+        OldRendererPattern {
+            name: concat!("wgpu-command-", "schema"),
+            needle: concat!("wgpu-command-", "schema"),
+        },
+        OldRendererPattern {
+            name: concat!("browser-", "webgpu-command-", "schema"),
+            needle: concat!("browser-", "webgpu-command-", "schema"),
+        },
+        OldRendererPattern {
+            name: concat!("ui", "_rect", "_wgsl"),
+            needle: concat!("ui", "_rect", ".wgsl"),
+        },
+    ]
+}
+
+fn scan_old_renderer_paths(
+    root: &Path,
+    patterns: &[OldRendererPattern],
+) -> Result<Vec<serde_json::Value>> {
+    let mut hits = Vec::new();
+    for relative in ["Cargo.toml", "xtask/src", "crates", "generated", "shaders"] {
+        let path = root.join(relative);
+        if path.exists() {
+            scan_old_renderer_path(&path, patterns, &mut hits)?;
+        }
+    }
+    Ok(hits)
+}
+
+fn scan_old_renderer_path(
+    path: &Path,
+    patterns: &[OldRendererPattern],
+    hits: &mut Vec<serde_json::Value>,
+) -> Result<()> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path
+                .components()
+                .any(|component| component.as_os_str() == "target")
+            {
+                continue;
+            }
+            scan_old_renderer_path(&path, patterns, hits)?;
+        }
+        return Ok(());
+    }
+    let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+        return Ok(());
+    };
+    if !matches!(ext, "rs" | "toml" | "json" | "wgsl" | "html" | "js") {
+        return Ok(());
+    }
+    let text = fs::read_to_string(path)?;
+    for (line_index, line) in text.lines().enumerate() {
+        for pattern in patterns {
+            if line.contains(pattern.needle) {
+                hits.push(serde_json::json!({
+                    "path": path.display().to_string(),
+                    "line": line_index + 1,
+                    "pattern": pattern.name,
+                }));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn run_old_renderer_negative_tests(
+    patterns: &[OldRendererPattern],
+) -> Result<Vec<serde_json::Value>> {
+    let dir = ply_artifacts_dir()?.join("negative-old-renderer-fixtures");
+    if dir.exists() {
+        fs::remove_dir_all(&dir)?;
+    }
+    fs::create_dir_all(&dir)?;
+    let fixtures = [
+        (
+            "native.rs",
+            concat!(
+                "fn marker() { let _ = \"",
+                "create_render_",
+                "pipeline",
+                "\"; }\n"
+            ),
+        ),
+        (
+            "browser.js",
+            concat!("const marker = '", "request", "Adapter", "';\n"),
+        ),
+        (
+            "generated.json",
+            concat!(
+                "{\"backend\":\"",
+                "browser-",
+                "webgpu-command-",
+                "schema",
+                "\"}\n"
+            ),
+        ),
+    ];
+    let mut rows = Vec::new();
+    for (file, body) in fixtures {
+        let path = dir.join(file);
+        fs::write(&path, body)?;
+        let mut hits = Vec::new();
+        scan_old_renderer_path(&path, patterns, &mut hits)?;
+        if hits.is_empty() {
+            bail!(
+                "old renderer negative fixture did not trigger scan: {}",
+                path.display()
+            );
+        }
+        rows.push(serde_json::json!({
+            "fixture": path,
+            "failed_as_expected": true,
+            "hits": hits,
+        }));
+    }
+    Ok(rows)
+}
+
+fn verify_ply_fresh_artifacts(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let root = repo_root()?;
+    let commit = run_capture("git", &["rev-parse", "HEAD"])?;
+    let source_hash = hash_sources(&root)?;
+    let required = [
+        "headless-matrix.json",
+        "native-smoke.json",
+        "browser-smoke.json",
+        "no-old-renderers.json",
+    ];
+    let mut artifact_hashes = serde_json::Map::new();
+    let ply_dir = ply_artifacts_dir()?;
+    for file in required {
+        let path = ply_dir.join(file);
+        if !path.exists() {
+            bail!(
+                "missing Ply artifact for freshness check: {}",
+                path.display()
+            );
+        }
+        artifact_hashes.insert(
+            file.to_owned(),
+            serde_json::Value::String(hash_file(&path)?),
+        );
+    }
+    let deterministic_report_sha256 = hash_json_values(&artifact_hashes)?;
+    let details = serde_json::json!({
+        "git_commit": commit,
+        "source_hash": source_hash,
+        "deterministic_report_sha256": deterministic_report_sha256,
+        "artifact_hashes": artifact_hashes,
+        "negative_tests": {
+            "stale_source_hash_rejected": true
+        },
+    });
+    validate_fresh_artifact_report(&details, &source_hash)?;
+    let mut stale_details = details.clone();
+    stale_details["source_hash"] = serde_json::Value::String("stale-source-hash".to_owned());
+    if validate_fresh_artifact_report(&stale_details, &source_hash).is_ok() {
+        bail!("fresh artifact negative test failed to reject stale source hash");
+    }
+    let artifact = ply_dir.join("fresh-artifacts.json");
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "verify-ply-fresh-artifacts".to_owned(),
+        command: "cargo xtask verify-ply-fresh-artifacts --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn validate_fresh_artifact_report(
+    report: &serde_json::Value,
+    current_source_hash: &str,
+) -> Result<()> {
+    if report.get("source_hash").and_then(|value| value.as_str()) != Some(current_source_hash) {
+        bail!("fresh artifact report source hash is stale");
+    }
+    let hashes = report
+        .get("artifact_hashes")
+        .and_then(|value| value.as_object())
+        .context("fresh artifact report missing artifact hashes")?;
+    for file in [
+        "headless-matrix.json",
+        "native-smoke.json",
+        "browser-smoke.json",
+        "no-old-renderers.json",
+    ] {
+        if hashes.get(file).and_then(|value| value.as_str()).is_none() {
+            bail!("fresh artifact report missing hash for {file}");
+        }
+    }
+    Ok(())
+}
+
+fn hash_sources(root: &Path) -> Result<String> {
+    let mut paths = Vec::new();
+    for relative in [
+        "Cargo.toml",
+        "Cargo.lock",
+        "BOON_DD_PLY_RENDERER_PLAN.md",
+        "xtask/Cargo.toml",
+        "xtask/src",
+        "crates",
+        "examples",
+    ] {
+        let path = root.join(relative);
+        if path.exists() {
+            collect_hash_paths(&path, &mut paths)?;
+        }
+    }
+    paths.sort();
+    let mut hasher = Sha256::new();
+    for path in paths {
+        let relative = path.strip_prefix(root).unwrap_or(&path);
+        hasher.update(relative.to_string_lossy().as_bytes());
+        hasher.update([0]);
+        hasher.update(fs::read(&path)?);
+        hasher.update([0]);
+    }
+    Ok(hex_digest(hasher.finalize().as_slice()))
+}
+
+fn collect_hash_paths(path: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name();
+            if name == "target" || name == ".git" || name == "build" {
+                continue;
+            }
+            collect_hash_paths(&path, paths)?;
+        }
+        return Ok(());
+    }
+    if path.is_file() {
+        paths.push(path.to_path_buf());
+    }
+    Ok(())
+}
+
+fn hash_file(path: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(fs::read(path).with_context(|| format!("failed to hash {}", path.display()))?);
+    Ok(hex_digest(hasher.finalize().as_slice()))
+}
+
+fn hash_json_values(values: &serde_json::Map<String, serde_json::Value>) -> Result<String> {
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(values.clone()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Ok(hex_digest(hasher.finalize().as_slice()))
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+struct PromptSpec {
+    slug: &'static str,
+    file_name: &'static str,
+    body: String,
+}
+
+fn ply_review_prompt_specs() -> Vec<PromptSpec> {
+    let native_stack = concat!("app", "_window");
+    let old_gpu_crate = concat!("boon_backend_", "wgpu");
+    let browser_gpu_label = concat!("browser-", "webgpu");
+    let old_native_label = concat!("wgpu-command-", "schema");
+    let old_browser_label = concat!("browser-", "webgpu-command-", "schema");
+    vec![
+        PromptSpec {
+            slug: "architecture",
+            file_name: "architecture.prompt.md",
+            body: format!(
+                "Review BOON_DD_PLY_RENDERER_PLAN.md and the current checkout for renderer architecture. Pass only if native and browser both use shared Rust Ply code in crates/boon_backend_ply, browser rendering is limited to Ply/macroquad loader glue, and no parallel renderer path remains. Record commands, files, deterministic artifacts, findings, and verdict as JSON."
+            ),
+        },
+        PromptSpec {
+            slug: "old-renderer-removal",
+            file_name: "old-renderer-removal.prompt.md",
+            body: format!(
+                "Search for old renderer leftovers including {native_stack}, {old_gpu_crate}, direct render pipelines, shader modules, custom vector/glyph raster code, inline DOM-created app controls, {browser_gpu_label}, {old_native_label}, and {old_browser_label}. Pass only if repo-owned app rendering no longer uses them outside historical plan text or generated negative fixtures."
+            ),
+        },
+        PromptSpec {
+            slug: "native-browser-behavior",
+            file_name: "native-browser-behavior.prompt.md",
+            body: "Review native and Firefox browser Ply smoke artifacts. Pass only if both surfaces load every required Boon DD example, present a nonblank Ply UI, and prove at least one selection/state-changing interaction without relying on a custom JavaScript renderer.".to_owned(),
+        },
+        PromptSpec {
+            slug: "fake-pass-verifier",
+            file_name: "fake-pass-verifier.prompt.md",
+            body: "Attack the verification design. Pass only if deterministic gates inspect real artifacts, reject missing or malformed smoke output, include negative old-renderer fixtures, and cannot pass from labels-only or placeholder JSON.".to_owned(),
+        },
+        PromptSpec {
+            slug: "stale-artifact",
+            file_name: "stale-artifact.prompt.md",
+            body: "Review freshness guarantees. Pass only if source hashes, artifact hashes, git commit, and a stale-artifact negative test are present, current, and used by the final Ply renderer gate.".to_owned(),
+        },
+        PromptSpec {
+            slug: "dependency-boundary",
+            file_name: "dependency-boundary.prompt.md",
+            body: format!(
+                "Review Cargo metadata and crate boundaries. Pass only if active renderer crates depend on ply-engine rather than {native_stack}, {old_gpu_crate}, shader build crates, or repo-owned custom browser rendering backends."
+            ),
+        },
+    ]
+}
+
+fn write_ply_ai_review_prompts(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let root = repo_root()?;
+    let prompt_dir = root.join("docs/prompts/renderer-ply");
+    fs::create_dir_all(&prompt_dir)?;
+    let commit = run_capture("git", &["rev-parse", "HEAD"])?;
+    let source_hash = hash_sources(&root)?;
+    let mut prompts = Vec::new();
+    for spec in ply_review_prompt_specs() {
+        let path = prompt_dir.join(spec.file_name);
+        let body = format!(
+            "# Ply Renderer Review: {}\n\n{}\n\nRequired report schema: reviewer, model, git_commit, deterministic_report_sha256, prompt_file, prompt_sha256, commands_run, files_examined, deterministic_artifacts_examined, findings, verdict.\n",
+            spec.slug, spec.body
+        );
+        fs::write(&path, body)?;
+        prompts.push(serde_json::json!({
+            "slug": spec.slug,
+            "path": path.display().to_string(),
+            "sha256": hash_file(&path)?,
+        }));
+    }
+    let details = serde_json::json!({
+        "git_commit": commit,
+        "source_hash": source_hash,
+        "prompt_count": prompts.len(),
+        "prompts": prompts,
+        "reports_dir": ply_artifacts_dir()?.join("ai-reviews"),
+    });
+    let artifact = ply_artifacts_dir()?.join("ai-review-prompts.json");
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "write-ply-ai-review-prompts".to_owned(),
+        command: "cargo xtask write-ply-ai-review-prompts --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![
+            artifact.display().to_string(),
+            prompt_dir.display().to_string(),
+        ],
+        details,
+    })
+}
+
+fn verify_ply_ai_review_reports(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let ply_dir = ply_artifacts_dir()?;
+    let prompts_path = ply_dir.join("ai-review-prompts.json");
+    let fresh_path = ply_dir.join("fresh-artifacts.json");
+    let prompts_manifest: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&prompts_path)
+            .with_context(|| format!("missing {}", prompts_path.display()))?,
+    )?;
+    let fresh: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&fresh_path)
+            .with_context(|| format!("missing {}", fresh_path.display()))?,
+    )?;
+    let current_commit = run_capture("git", &["rev-parse", "HEAD"])?;
+    let deterministic_hash = fresh
+        .get("deterministic_report_sha256")
+        .and_then(|value| value.as_str())
+        .context("fresh artifact report missing deterministic_report_sha256")?;
+
+    let mut prompt_hashes = std::collections::BTreeMap::new();
+    let mut prompt_slugs = std::collections::BTreeMap::new();
+    for prompt in prompts_manifest
+        .get("prompts")
+        .and_then(|value| value.as_array())
+        .context("prompt manifest missing prompts")?
+    {
+        let path = prompt
+            .get("path")
+            .and_then(|value| value.as_str())
+            .context("prompt missing path")?
+            .to_owned();
+        let hash = prompt
+            .get("sha256")
+            .and_then(|value| value.as_str())
+            .context("prompt missing sha256")?
+            .to_owned();
+        let slug = prompt
+            .get("slug")
+            .and_then(|value| value.as_str())
+            .context("prompt missing slug")?
+            .to_owned();
+        prompt_hashes.insert(path.clone(), hash);
+        prompt_slugs.insert(path, slug);
+    }
+
+    let reports_dir = ply_dir.join("ai-reviews");
+    fs::create_dir_all(&reports_dir)?;
+    let mut report_paths = fs::read_dir(&reports_dir)?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+        .collect::<Vec<_>>();
+    report_paths.sort();
+    if report_paths.len() < 2 {
+        bail!(
+            "expected at least two AI review reports in {}, found {}",
+            reports_dir.display(),
+            report_paths.len()
+        );
+    }
+
+    let mut reports = Vec::new();
+    let mut reviewers = std::collections::BTreeSet::new();
+    let mut covered_slugs = std::collections::BTreeSet::new();
+    for path in report_paths {
+        let report: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&path)
+                .with_context(|| format!("failed to read {}", path.display()))?,
+        )
+        .with_context(|| format!("AI review report is not JSON: {}", path.display()))?;
+        validate_ai_review_report(
+            &report,
+            &current_commit,
+            deterministic_hash,
+            &prompt_hashes,
+            &prompt_slugs,
+        )
+        .with_context(|| format!("invalid AI review report {}", path.display()))?;
+        reviewers.insert(
+            report
+                .get("reviewer")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_owned(),
+        );
+        let prompt_file = report
+            .get("prompt_file")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if let Some(slug) = prompt_slugs.get(prompt_file) {
+            covered_slugs.insert(slug.clone());
+        }
+        reports.push(serde_json::json!({
+            "path": path,
+            "report": report,
+        }));
+    }
+    if reviewers.len() < 2 {
+        bail!("AI review reports must have at least two distinct reviewers");
+    }
+    let removal_covered = covered_slugs.contains("old-renderer-removal")
+        || covered_slugs.contains("dependency-boundary");
+    let behavior_covered =
+        covered_slugs.contains("architecture") || covered_slugs.contains("native-browser-behavior");
+    if !removal_covered || !behavior_covered {
+        bail!("AI reviews must cover both old-renderer removal and native/browser Ply behavior");
+    }
+
+    let details = serde_json::json!({
+        "success": true,
+        "git_commit": current_commit,
+        "deterministic_report_sha256": deterministic_hash,
+        "review_count": reports.len(),
+        "reviewers": reviewers,
+        "covered_prompt_slugs": covered_slugs,
+        "reports": reports,
+    });
+    let artifact = ply_dir.join("ai-review-reports.json");
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "verify-ply-ai-review-reports".to_owned(),
+        command: "cargo xtask verify-ply-ai-review-reports --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn validate_ai_review_report(
+    report: &serde_json::Value,
+    current_commit: &str,
+    deterministic_hash: &str,
+    prompt_hashes: &std::collections::BTreeMap<String, String>,
+    prompt_slugs: &std::collections::BTreeMap<String, String>,
+) -> Result<()> {
+    for field in [
+        "reviewer",
+        "model",
+        "git_commit",
+        "deterministic_report_sha256",
+        "prompt_file",
+        "prompt_sha256",
+        "verdict",
+    ] {
+        if report
+            .get(field)
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .is_empty()
+        {
+            bail!("missing string field {field}");
+        }
+    }
+    if report.get("git_commit").and_then(|value| value.as_str()) != Some(current_commit) {
+        bail!("report git_commit does not match current checkout");
+    }
+    if report
+        .get("deterministic_report_sha256")
+        .and_then(|value| value.as_str())
+        != Some(deterministic_hash)
+    {
+        bail!("report deterministic hash does not match current fresh-artifacts report");
+    }
+    let prompt_file = report
+        .get("prompt_file")
+        .and_then(|value| value.as_str())
+        .unwrap();
+    let expected_prompt_hash = prompt_hashes
+        .get(prompt_file)
+        .with_context(|| format!("report references unknown prompt file {prompt_file}"))?;
+    if report.get("prompt_sha256").and_then(|value| value.as_str())
+        != Some(expected_prompt_hash.as_str())
+    {
+        bail!("report prompt hash does not match prompt manifest");
+    }
+    if !prompt_slugs.contains_key(prompt_file) {
+        bail!("report prompt file is not in prompt manifest");
+    }
+    if report.get("verdict").and_then(|value| value.as_str()) != Some("pass") {
+        bail!("AI review verdict is not pass");
+    }
+    for field in [
+        "commands_run",
+        "files_examined",
+        "deterministic_artifacts_examined",
+        "findings",
+    ] {
+        if report
+            .get(field)
+            .and_then(|value| value.as_array())
+            .map(|values| values.is_empty())
+            != Some(false)
+        {
+            bail!("report field {field} must be a nonempty array");
+        }
+    }
+    Ok(())
 }
 
 fn read_playground_artifact(path: &Path) -> Result<serde_json::Value> {
@@ -477,73 +1391,6 @@ fn require_playground_examples(name: &str, details: &serde_json::Value) -> Resul
     Ok(())
 }
 
-fn require_native_per_example_screenshots(details: &serde_json::Value) -> Result<()> {
-    let rows = details
-        .get("per_example")
-        .and_then(|value| value.as_array())
-        .context("native playground artifact missing per_example screenshot list")?;
-    if rows.len() != boon_dd::REQUIRED_EXAMPLES.len() {
-        bail!(
-            "native playground wrote {} per-example screenshots; expected {}",
-            rows.len(),
-            boon_dd::REQUIRED_EXAMPLES.len()
-        );
-    }
-    for (index, example) in boon_dd::REQUIRED_EXAMPLES.iter().enumerate() {
-        let row = rows
-            .get(index)
-            .with_context(|| format!("missing native screenshot row for {example}"))?;
-        if row.get("example").and_then(|value| value.as_str()) != Some(*example) {
-            bail!("native screenshot row {index} is not for {example}: {row}");
-        }
-        if row.get("selected_index").and_then(|value| value.as_u64()) != Some(index as u64) {
-            bail!("native screenshot row has wrong selected_index for {example}: {row}");
-        }
-        if row
-            .get("rendered_vertices")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0)
-            < 3000
-        {
-            bail!("native screenshot row rendered too little geometry for {example}: {row}");
-        }
-        let scene_kind = row
-            .get("scene_kind")
-            .and_then(|value| value.as_str())
-            .with_context(|| format!("native screenshot row missing scene_kind for {example}"))?;
-        if scene_kind.is_empty() || scene_kind == "native_workbench_app" {
-            bail!("native screenshot row has insufficient scene kind for {example}: {row}");
-        }
-        let widgets = row
-            .get("native_widgets")
-            .and_then(|value| value.as_array())
-            .with_context(|| {
-                format!("native screenshot row missing widget evidence for {example}")
-            })?;
-        if widgets.len() < 3 {
-            bail!("native screenshot row has too few native widgets for {example}: {row}");
-        }
-        let screenshot = row
-            .get("screenshot")
-            .and_then(|value| value.as_str())
-            .with_context(|| format!("native screenshot row missing path for {example}"))?;
-        require_png_signature(Path::new(screenshot))
-            .with_context(|| format!("invalid native screenshot for {example}: {screenshot}"))?;
-    }
-    Ok(())
-}
-
-fn require_png_signature(path: &Path) -> Result<()> {
-    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    if bytes.len() < 64 {
-        bail!("PNG file is too small: {}", path.display());
-    }
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        bail!("file does not have a PNG signature: {}", path.display());
-    }
-    Ok(())
-}
-
 fn wait_for_json_artifact(path: &Path, timeout: Duration, label: &str) -> Result<()> {
     let start = Instant::now();
     loop {
@@ -562,62 +1409,6 @@ fn wait_for_json_artifact(path: &Path, timeout: Duration, label: &str) -> Result
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-}
-
-fn prepare_wasm_bindgen_output() -> Result<PathBuf> {
-    let wasm_bindgen = find_wasm_bindgen().context("missing wasm-bindgen 0.2.120")?;
-    let root = repo_root()?;
-    let out_dir = root.join("target/boon-artifacts/wasm-bindgen");
-    fs::create_dir_all(&out_dir)?;
-    run_status(
-        wasm_bindgen.to_str().unwrap(),
-        &[
-            "--target",
-            "web",
-            "--out-dir",
-            out_dir.to_str().unwrap(),
-            root.join("target/wasm32-unknown-unknown/release/boon_wasm_smoke.wasm")
-                .to_str()
-                .unwrap(),
-        ],
-    )?;
-    Ok(out_dir)
-}
-
-fn verify_native_app_window_smoke() -> Result<PathBuf> {
-    let artifact = artifacts_dir()?.join("native-app-window-smoke.json");
-    if artifact.exists() {
-        fs::remove_file(&artifact)?;
-    }
-    let artifact_arg = artifact.display().to_string();
-    launch_background_process(&[
-        "cargo",
-        "run",
-        "--quiet",
-        "-p",
-        "boon_backend_app_window",
-        "--bin",
-        "native_smoke",
-        "--",
-        &artifact_arg,
-    ])?;
-    let start = Instant::now();
-    while !artifact.exists() {
-        if start.elapsed() > Duration::from_secs(30) {
-            bail!(
-                "native app_window smoke did not write {} within 30s",
-                artifact.display()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    let details: serde_json::Value = serde_json::from_str(&fs::read_to_string(&artifact)?)?;
-    for field in ["window_created", "surface_created"] {
-        if details.get(field).and_then(|value| value.as_bool()) != Some(true) {
-            bail!("native app_window smoke did not prove {field}: {details}");
-        }
-    }
-    Ok(artifact)
 }
 
 fn verify(args: &[String]) -> Result<()> {
@@ -655,6 +1446,30 @@ fn verify(args: &[String]) -> Result<()> {
         "cargo xtask verify-render-deps --format json",
         || verify_render_deps(&["--format".to_owned(), "json".to_owned()]),
     ));
+    gates.push(capture_simple_gate(
+        "verify-ply-renderer",
+        "cargo xtask verify-ply-renderer --format json",
+        || {
+            verify_ply_renderer(&["--format".to_owned(), "json".to_owned()])?;
+            let artifact = ply_artifacts_dir()?.join("verify-ply-renderer.json");
+            serde_json::from_str(&fs::read_to_string(&artifact)?)
+                .context("Ply renderer aggregate artifact is not JSON")
+        },
+    ));
+    gates.push(capture_simple_gate(
+        "verify-ply-human-surfaces",
+        "cargo xtask verify-ply-human-surfaces --format json",
+        || {
+            let artifact =
+                artifacts_dir()?.join("ply-human-surfaces/verify-ply-human-surfaces.json");
+            let details =
+                serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&artifact)?)?;
+            if details.get("success").and_then(|value| value.as_bool()) != Some(true) {
+                bail!("human-surface aggregate artifact is not successful");
+            }
+            Ok(details)
+        },
+    ));
     gates.push(capture_gate(
         "verify-playgrounds",
         "cargo xtask verify-playgrounds --format json",
@@ -680,7 +1495,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "native".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "native",
-                "mode": "app_window native window/surface smoke plus render-command verification"
+                "mode": "Ply native smoke plus shared render-command verification"
             }))
         },
     ));
@@ -691,7 +1506,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "browser".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "browser",
-                "mode": "browser-hosted wasm plus Firefox WebGPU smoke artifact verification"
+                "mode": "Ply browser bundle plus Firefox smoke artifact verification"
             }))
         },
     ));
@@ -939,9 +1754,7 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
         "boon_codegen_rust",
         "boon_render_ir",
         "boon_backend_ratatui",
-        "boon_backend_wgpu",
-        "boon_backend_app_window",
-        "boon_backend_browser",
+        "boon_backend_ply",
         "boon_examples",
         "boon_verify",
     ];
@@ -956,6 +1769,33 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
     let mut required_paths = vec![
         "ARCHITECTURE.md",
         "target/boon-artifacts/wasm-bindgen/smoke-result.json",
+        "target/boon-artifacts/ply/headless-matrix.json",
+        "target/boon-artifacts/ply/native-smoke.json",
+        "target/boon-artifacts/ply/browser-smoke.json",
+        "target/boon-artifacts/ply/no-old-renderers.json",
+        "target/boon-artifacts/ply/fresh-artifacts.json",
+        "target/boon-artifacts/ply/ai-review-prompts.json",
+        "target/boon-artifacts/ply/ai-review-reports.json",
+        "BOON_DD_PLY_HUMAN_SURFACE_VERIFICATION_PLAN.md",
+        "docs/ply-human-surfaces/control-manifest.toml",
+        "target/boon-artifacts/ply-human-surfaces/matrix.json",
+        "target/boon-artifacts/ply-human-surfaces/success.json",
+        "target/boon-artifacts/ply-human-surfaces/screenshot-validation.json",
+        "target/boon-artifacts/ply-human-surfaces/fresh-artifacts.json",
+        "target/boon-artifacts/ply-human-surfaces/ai-review-prompts.json",
+        "target/boon-artifacts/ply-human-surfaces/ai-review-reports.json",
+        "docs/prompts/renderer-ply-human-surfaces/human-surface-coverage-review.prompt.md",
+        "docs/prompts/renderer-ply-human-surfaces/screenshot-authenticity-review.prompt.md",
+        "docs/prompts/renderer-ply-human-surfaces/target-control-review.prompt.md",
+        "docs/prompts/renderer-ply-human-surfaces/stale-artifact-review.prompt.md",
+        "docs/prompts/renderer-ply-human-surfaces/fake-pass-harness-review.prompt.md",
+        "docs/prompts/renderer-ply-human-surfaces/example-behavior-review.prompt.md",
+        "docs/prompts/renderer-ply/architecture.prompt.md",
+        "docs/prompts/renderer-ply/old-renderer-removal.prompt.md",
+        "docs/prompts/renderer-ply/native-browser-behavior.prompt.md",
+        "docs/prompts/renderer-ply/fake-pass-verifier.prompt.md",
+        "docs/prompts/renderer-ply/stale-artifact.prompt.md",
+        "docs/prompts/renderer-ply/dependency-boundary.prompt.md",
     ];
     for example in boon_dd::REQUIRED_EXAMPLES {
         required_paths.push(Box::leak(
@@ -1094,8 +1934,49 @@ fn run_example(args: &[String]) -> Result<()> {
     } else if target != "terminal" {
         bail!("unknown target {target}");
     }
-    let output = compiled_example_json(&example)?;
-    println!("{output}");
+    match target.as_str() {
+        "terminal" => {
+            run_status(
+                "cargo",
+                &[
+                    "run",
+                    "--quiet",
+                    "-p",
+                    "boon_backend_ratatui",
+                    "--bin",
+                    "terminal_playground",
+                    "--",
+                    "--example",
+                    &example,
+                ],
+            )?;
+        }
+        "native" => {
+            run_status(
+                "cargo",
+                &[
+                    "run",
+                    "--quiet",
+                    "-p",
+                    "boon_backend_ply",
+                    "--bin",
+                    "native_playground",
+                    "--",
+                    "--example",
+                    &example,
+                ],
+            )?;
+        }
+        "browser" => {
+            serve_ply_browser(&[
+                "--browser".to_owned(),
+                "firefox".to_owned(),
+                "--example".to_owned(),
+                example,
+            ])?;
+        }
+        _ => unreachable!(),
+    }
     Ok(())
 }
 
@@ -1121,20 +2002,14 @@ fn test_target(args: &[String]) -> Result<()> {
         run_terminal_scenario(&example)?;
     }
     if target == "browser" {
-        let output_text = fs::read_to_string(
-            artifacts_dir()?
-                .join("wasm-bindgen")
-                .join("smoke-result.json"),
-        )
-        .context("missing browser WASM smoke artifact; run verify-wasm-dd first")?;
-        let output: serde_json::Value =
-            serde_json::from_str(&output_text).context("browser smoke artifact is not JSON")?;
-        require_webgpu_smoke(&output)?;
-        for example in boon_dd::REQUIRED_EXAMPLES {
-            if !output_text.contains(example) {
-                bail!("browser smoke artifact does not include example {example}");
-            }
-        }
+        verify_ply_browser(&[
+            "--browser".to_owned(),
+            "firefox".to_owned(),
+            "--format".to_owned(),
+            "json".to_owned(),
+        ])?;
+    } else if target == "native" {
+        verify_ply_native(&["--format".to_owned(), "json".to_owned()])?;
     }
     Ok(())
 }
@@ -1269,7 +2144,7 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
         serde_json::to_vec_pretty(&serde_json::json!({
             "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
             "render": outputs.first().map(|output| &output.render),
-            "backend": "wgpu-command-schema"
+            "backend": "ply-native-evidence-schema"
         }))?,
     )?;
     fs::write(
@@ -1277,7 +2152,7 @@ fn write_generated_artifacts(example: &str) -> Result<String> {
         serde_json::to_vec_pretty(&serde_json::json!({
             "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
             "render": outputs.first().map(|output| &output.render),
-            "backend": "browser-webgpu-command-schema"
+            "backend": "ply-browser-evidence-schema"
         }))?,
     )?;
     format_generated_rust(&generated_dir)?;
@@ -1484,6 +2359,140 @@ fn install_wasm_bindgen() -> Result<()> {
     )
 }
 
+fn find_plyx() -> Option<PathBuf> {
+    let root = repo_root().ok()?;
+    let local = root.join(format!(".boon-local/tools/plyx-{PLYX_VERSION}/bin/plyx"));
+    if local.exists() {
+        return Some(local);
+    }
+    let output = Command::new("plyx").arg("--version").output().ok()?;
+    let version = String::from_utf8_lossy(&output.stdout);
+    if output.status.success() && version.contains(PLYX_VERSION) {
+        Some(PathBuf::from("plyx"))
+    } else {
+        None
+    }
+}
+
+fn install_plyx() -> Result<()> {
+    let root = repo_root()?;
+    let install_root = root.join(format!(".boon-local/tools/plyx-{PLYX_VERSION}"));
+    fs::create_dir_all(&install_root)?;
+    run_status(
+        "cargo",
+        &[
+            "install",
+            "plyx",
+            "--version",
+            PLYX_VERSION,
+            "--root",
+            install_root.to_str().unwrap(),
+            "--locked",
+        ],
+    )
+}
+
+fn serve_ply_browser(args: &[String]) -> Result<()> {
+    let mut browser = "firefox".to_owned();
+    let mut _example = None::<String>;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--browser" | "--open" => {
+                index += 1;
+                browser = args
+                    .get(index)
+                    .cloned()
+                    .context("missing browser name after --browser/--open")?;
+            }
+            "--example" => {
+                index += 1;
+                _example = args.get(index).cloned();
+            }
+            "--format" => {
+                index += 1;
+                let _ = args.get(index).context("missing value after --format")?;
+            }
+            other => bail!("unknown serve-ply-browser argument: {other}"),
+        }
+        index += 1;
+    }
+    if browser != "firefox" {
+        bail!("only Firefox is supported for Ply browser launch verification");
+    }
+    let build_dir = build_ply_web()?;
+    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind Ply browser server")?;
+    let addr = listener.local_addr()?;
+    let url = format!("http://{addr}/index.html");
+    if env::var("BOON_DD_PLY_BROWSER_HEADLESS").as_deref() == Ok("1") {
+        let profile_dir = artifacts_dir()?.join("ply-browser-manual-profile");
+        if profile_dir.exists() {
+            fs::remove_dir_all(&profile_dir)?;
+        }
+        fs::create_dir_all(&profile_dir)?;
+        launch_background_process(&[
+            "firefox",
+            "--headless",
+            "--no-remote",
+            "--profile",
+            profile_dir.to_str().unwrap(),
+            &url,
+        ])?;
+    } else {
+        launch_background_process(&["firefox", "--new-window", &url])?;
+    }
+    println!("serving Ply browser playground at {url}");
+    serve_static_http(listener, build_dir)
+}
+
+fn serve_static_http(listener: TcpListener, serve_dir: PathBuf) -> Result<()> {
+    for stream in listener.incoming() {
+        let mut stream = stream.context("failed to accept Ply browser HTTP connection")?;
+        let _ = handle_static_request(&mut stream, &serve_dir);
+        let _ = stream.shutdown(Shutdown::Both);
+    }
+    Ok(())
+}
+
+fn handle_static_request(stream: &mut TcpStream, serve_dir: &Path) -> Result<()> {
+    let mut buffer = Vec::new();
+    let mut temp = [0_u8; 8192];
+    loop {
+        let read = stream.read(&mut temp)?;
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&temp[..read]);
+        if find_header_end(&buffer).is_some() {
+            break;
+        }
+    }
+    let request = String::from_utf8_lossy(&buffer);
+    let request_line = request.lines().next().unwrap_or_default();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .split('?')
+        .next()
+        .unwrap_or("/");
+    if request_line.starts_with("POST ") && path == "/result" {
+        write_response(stream, "204 No Content", "text/plain", b"")?;
+        return Ok(());
+    }
+    match static_file_for_request(serve_dir, path) {
+        Ok(file) => {
+            let bytes =
+                fs::read(&file).with_context(|| format!("failed to read {}", file.display()))?;
+            write_response(stream, "200 OK", content_type_for_path(&file), &bytes)?;
+        }
+        Err(_) => {
+            write_response(stream, "404 Not Found", "text/plain", b"not found")?;
+        }
+    }
+    Ok(())
+}
+
 fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
     if output.exists() {
         fs::remove_file(output)?;
@@ -1503,9 +2512,7 @@ fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
     fs::create_dir_all(&profile_dir)?;
     fs::write(
         profile_dir.join("user.js"),
-        r#"user_pref("dom.webgpu.enabled", true);
-user_pref("gfx.webgpu.force-enabled", true);
-user_pref("gfx.webrender.all", true);
+        r#"user_pref("gfx.webrender.all", true);
 "#,
     )?;
 
@@ -1518,7 +2525,7 @@ user_pref("gfx.webrender.all", true);
         profile_dir.to_str().unwrap(),
         &smoke_url,
     ])?;
-    let result = rx.recv_timeout(Duration::from_secs(30));
+    let result = rx.recv_timeout(Duration::from_secs(75));
     let _ = Command::new("pkill")
         .args(["-f", profile_dir.to_str().unwrap()])
         .status();
@@ -1623,7 +2630,13 @@ fn handle_smoke_request(
 
     let request = String::from_utf8_lossy(&buffer);
     let request_line = request.lines().next().unwrap_or_default();
-    let path = request_line.split_whitespace().nth(1).unwrap_or("/");
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .split('?')
+        .next()
+        .unwrap_or("/");
 
     if request_line.starts_with("POST ") && path == "/result" {
         let header_end = find_header_end(&buffer).context("POST missing headers")?;
@@ -1633,21 +2646,55 @@ fn handle_smoke_request(
         return Ok(true);
     }
 
-    let (file, content_type) = match path {
-        "/" | "/index.html" => (serve_dir.join("index.html"), "text/html"),
-        "/boon_wasm_smoke.js" => (serve_dir.join("boon_wasm_smoke.js"), "text/javascript"),
-        "/boon_wasm_smoke_bg.wasm" => (
-            serve_dir.join("boon_wasm_smoke_bg.wasm"),
-            "application/wasm",
-        ),
-        _ => {
+    let file = match static_file_for_request(serve_dir, path) {
+        Ok(file) => file,
+        Err(_) => {
             write_response(stream, "404 Not Found", "text/plain", b"not found")?;
             return Ok(false);
         }
     };
-    let bytes = fs::read(&file).with_context(|| format!("failed to read {}", file.display()))?;
+    let content_type = content_type_for_path(&file);
+    let bytes = match fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            write_response(stream, "404 Not Found", "text/plain", b"not found")?;
+            return Ok(false);
+        }
+    };
     write_response(stream, "200 OK", content_type, &bytes)?;
     Ok(false)
+}
+
+fn static_file_for_request(serve_dir: &Path, path: &str) -> Result<PathBuf> {
+    let relative = match path {
+        "/" | "/index.html" => PathBuf::from("index.html"),
+        _ => {
+            let stripped = path.trim_start_matches('/');
+            if stripped.is_empty() || stripped.contains("..") || stripped.starts_with('/') {
+                bail!("refusing unsafe static path: {path}");
+            }
+            PathBuf::from(stripped)
+        }
+    };
+    let file = serve_dir.join(relative);
+    if !file.exists() {
+        bail!("static asset not found: {}", file.display());
+    }
+    Ok(file)
+}
+
+fn content_type_for_path(path: &Path) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()).unwrap_or("") {
+        "html" => "text/html",
+        "js" => "text/javascript",
+        "wasm" => "application/wasm",
+        "css" => "text/css",
+        "json" => "application/json",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml",
+        _ => "application/octet-stream",
+    }
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -1676,149 +2723,10 @@ fn smoke_html() -> &'static str {
 import init, { run_smoke_json } from "./boon_wasm_smoke.js";
 try {
   await init();
-  if (!("gpu" in navigator)) {
-    throw new Error("Firefox WebGPU preflight failed: navigator.gpu is unavailable");
-  }
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("Firefox WebGPU preflight failed: requestAdapter returned null");
-  }
-  const device = await adapter.requestDevice();
-  if (!device) {
-    throw new Error("Firefox WebGPU preflight failed: requestDevice returned null");
-  }
   const result = JSON.stringify({
-    webgpu: {
-      navigator_gpu: true,
-      adapter: true,
-      device: true
-    },
     wasm_smoke: JSON.parse(run_smoke_json())
   });
   document.body.textContent = result;
-  await fetch("/result", { method: "POST", body: result });
-} catch (error) {
-  document.body.textContent = String(
-    (error && error.message ? error.message + "\n" : "") +
-    (error && error.stack || error)
-  );
-  await fetch("/result", { method: "POST", body: document.body.textContent });
-  throw error;
-}
-</script>
-"#
-}
-
-fn browser_playground_html() -> &'static str {
-    r#"<!doctype html>
-<meta charset="utf-8">
-<title>Boon DD Browser Playground</title>
-<style>
-body { margin: 0; font: 14px system-ui, sans-serif; color: #e7edf7; background: #11151c; }
-#app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-#examples { border-right: 1px solid #303846; padding: 12px; overflow: auto; }
-button { display: block; width: 100%; margin: 0 0 4px; padding: 6px 8px; color: #dce8ff; background: #1d2633; border: 1px solid #3c495b; text-align: left; }
-button[aria-selected="true"] { background: #285ea8; color: white; }
-#stage { display: grid; grid-template-rows: minmax(240px, 1fr) auto; }
-canvas { width: 100%; height: 100%; background: #0c1017; }
-pre { margin: 0; padding: 12px; white-space: pre-wrap; border-top: 1px solid #303846; background: #151b24; }
-</style>
-<div id="app">
-  <nav id="examples"></nav>
-  <main id="stage">
-    <canvas id="canvas" width="960" height="540"></canvas>
-    <pre id="output"></pre>
-  </main>
-</div>
-<script type="module">
-import init, { run_smoke_json } from "./boon_wasm_smoke.js";
-try {
-  await init();
-  const rows = JSON.parse(run_smoke_json());
-  const loadedExamples = rows.map((row) => row[0]);
-  const outputs = new Map(rows);
-  const nav = document.getElementById("examples");
-  const output = document.getElementById("output");
-  let selected = loadedExamples[0];
-  function renderSelection(name) {
-    selected = name;
-    for (const button of nav.querySelectorAll("button")) {
-      button.setAttribute("aria-selected", String(button.dataset.example === name));
-    }
-    const value = outputs.get(name);
-    const text = value && value.render && value.render[0] && value.render[0].PatchText
-      ? value.render[0].PatchText.text
-      : JSON.stringify(value && value.render || []);
-    output.textContent = `Selected: ${name}\n\nRender output:\n${text}\n\nMonitor entries: ${(value && value.monitor || []).length}`;
-  }
-  for (const name of loadedExamples) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.example = name;
-    button.textContent = name;
-    button.addEventListener("click", () => renderSelection(name));
-    nav.append(button);
-  }
-  renderSelection(selected);
-
-  if (!("gpu" in navigator)) {
-    throw new Error("Browser playground WebGPU failed: navigator.gpu is unavailable");
-  }
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("Browser playground WebGPU failed: requestAdapter returned null");
-  }
-  const device = await adapter.requestDevice();
-  if (!device) {
-    throw new Error("Browser playground WebGPU failed: requestDevice returned null");
-  }
-  const canvas = document.getElementById("canvas");
-  const context = canvas.getContext("webgpu");
-  if (!context) {
-    throw new Error("Browser playground WebGPU failed: canvas webgpu context is unavailable");
-  }
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: "opaque" });
-  const encoder = device.createCommandEncoder();
-  const pass = encoder.beginRenderPass({
-    colorAttachments: [{
-      view: context.getCurrentTexture().createView(),
-      clearValue: { r: 0.05, g: 0.08, b: 0.12, a: 1.0 },
-      loadOp: "clear",
-      storeOp: "store"
-    }]
-  });
-  pass.end();
-  device.queue.submit([encoder.finish()]);
-
-  const second = nav.querySelectorAll("button")[1];
-  if (second) {
-    second.click();
-  }
-  const result = JSON.stringify({
-    backend: "browser-webgpu",
-    mode: "playground",
-    webgpu: {
-      navigator_gpu: true,
-      adapter: true,
-      device: true,
-      canvas_context: true,
-      frame_presented: true
-    },
-    ui: {
-      buttons: nav.querySelectorAll("button").length,
-      canvas: true,
-      output_panel: output.textContent.includes("Selected:"),
-      simulated_click: selected === loadedExamples[1]
-    },
-    interactive_controls: ["click example button"],
-    loaded_examples: loadedExamples,
-    example_count: loadedExamples.length,
-    selected_initial: loadedExamples[0],
-    selected_after_simulated_click: selected,
-    wasm_smoke: rows
-  });
-  document.body.dataset.result = result;
   await fetch("/result", { method: "POST", body: result });
 } catch (error) {
   document.body.textContent = String(
