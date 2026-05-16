@@ -338,9 +338,27 @@ fn call_graph_collection_code(
             )
         }
         "Timer/interval" | "Window/animation_frame" => input.to_owned(),
-        "Document/new" | "Scene/new" | "Text/from_number" | "Text/append" | "Text/join"
-        | "Text/uppercase" | "List/append" | "List/map" | "List/retain" | "List/count"
-        | "Temperature/c_to_f" | "Bool/not" => {
+        "Document/new"
+        | "Scene/new"
+        | "Text/from_number"
+        | "Text/append"
+        | "Text/join"
+        | "Text/uppercase"
+        | "List/append"
+        | "List/map"
+        | "List/retain"
+        | "List/count"
+        | "Temperature/c_to_f"
+        | "Bool/not"
+        | "Number/abs"
+        | "Number/neg_abs"
+        | "Number/max"
+        | "Number/clamp"
+        | "Number/percent_of_range"
+        | "Number/scale_percent"
+        | "Number/less_than"
+        | "Number/greater_than"
+        | "Geometry/intersects" => {
             let mut nested_env = env.clone();
             nested_env.insert("pipe_input".to_owned(), "pipe_input".to_owned());
             let value = call_graph_value_code(
@@ -617,8 +635,116 @@ fn call_graph_value_code(
                 input
             )
         }
+        "Number/abs" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            format!("GeneratedValue::Number(({}).number().abs())", value)
+        }
+        "Number/neg_abs" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            format!("GeneratedValue::Number(-({}).number().abs())", value)
+        }
+        "Number/max" => {
+            let left = named_graph_arg_code(graph, args, "left", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/max missing left"));
+            let right = named_graph_arg_code(graph, args, "right", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/max missing right"));
+            format!(
+                "GeneratedValue::Number(std::cmp::max(({}).number(), ({}).number()))",
+                left, right
+            )
+        }
+        "Number/clamp" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            let min = named_graph_arg_code(graph, args, "min", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/clamp missing min"));
+            let max = named_graph_arg_code(graph, args, "max", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/clamp missing max"));
+            format!(
+                "GeneratedValue::Number(({}).number().clamp(({}).number(), ({}).number()))",
+                value, min, max
+            )
+        }
+        "Number/percent_of_range" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            let min = named_graph_arg_code(graph, args, "min", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/percent_of_range missing min"));
+            let max = named_graph_arg_code(graph, args, "max", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/percent_of_range missing max"));
+            format!(
+                "{{ let value = ({}).number(); let min = ({}).number(); let max = ({}).number(); let denom = max - min; GeneratedValue::Number(if denom == 0 {{ 0 }} else {{ ((value - min) * 100) / denom }}) }}",
+                value, min, max
+            )
+        }
+        "Number/scale_percent" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            let min = named_graph_arg_code(graph, args, "min", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/scale_percent missing min"));
+            let max = named_graph_arg_code(graph, args, "max", env)
+                .unwrap_or_else(|| unsupported_value_code("Number/scale_percent missing max"));
+            format!(
+                "{{ let value = ({}).number(); let min = ({}).number(); let max = ({}).number(); GeneratedValue::Number(min + ((max - min) * value) / 100) }}",
+                value, min, max
+            )
+        }
+        "Number/less_than" => compare_number_call(graph, args, env, "<", "Number/less_than"),
+        "Number/greater_than" => compare_number_call(graph, args, env, ">", "Number/greater_than"),
+        "Geometry/intersects" => geometry_intersects_call(graph, args, env),
         _ => unsupported_value_code(&format!("unsupported library call {callee}")),
     }
+}
+
+fn number_arg_code(
+    graph: &boon_dd::DdRenderGraph,
+    input: Option<String>,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+    name: &str,
+) -> String {
+    input
+        .or_else(|| named_graph_arg_code(graph, args, name, env))
+        .or_else(|| first_graph_arg_code(graph, args, env))
+        .unwrap_or_else(|| unsupported_value_code(&format!("missing numeric argument {name}")))
+}
+
+fn compare_number_call(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+    op: &str,
+    callee: &str,
+) -> String {
+    let left = named_graph_arg_code(graph, args, "left", env)
+        .unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing left")));
+    let right = named_graph_arg_code(graph, args, "right", env)
+        .unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing right")));
+    format!(
+        "GeneratedValue::Tag((if ({}).number() {} ({}).number() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+        left, op, right
+    )
+}
+
+fn geometry_intersects_call(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let arg = |name: &str| {
+        named_graph_arg_code(graph, args, name, env).unwrap_or_else(|| {
+            unsupported_value_code(&format!("Geometry/intersects missing {name}"))
+        })
+    };
+    let ax = arg("ax");
+    let ay = arg("ay");
+    let aw = arg("aw");
+    let ah = arg("ah");
+    let bx = arg("bx");
+    let by = arg("by");
+    let bw = arg("bw");
+    let bh = arg("bh");
+    format!(
+        "{{ let ax = ({}).number(); let ay = ({}).number(); let aw = ({}).number(); let ah = ({}).number(); let bx = ({}).number(); let by = ({}).number(); let bw = ({}).number(); let bh = ({}).number(); GeneratedValue::Tag((if ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by {{ \"True\" }} else {{ \"False\" }}).to_owned()) }}",
+        ax, ay, aw, ah, bx, by, bw, bh
+    )
 }
 
 fn first_graph_arg_code(

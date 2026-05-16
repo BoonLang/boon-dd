@@ -141,6 +141,11 @@ schema_errors: []
   render graph. `PASSED.*` paths inside those bodies resolve through the
   structured `PASS` value. This is still compiler-side lowering work, not full
   runtime link/source propagation.
+- Shape checking and generated DD render code now cover the numeric/geometry
+  library calls used by local sibling Pong/Arkanoid examples:
+  `Number/abs`, `Number/neg_abs`, `Number/max`, `Number/clamp`,
+  `Number/percent_of_range`, `Number/scale_percent`, `Number/less_than`,
+  `Number/greater_than`, and `Geometry/intersects`.
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
@@ -189,10 +194,10 @@ schema_errors: []
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
   semantics from local sibling repos. Current open gaps include executable
   `LINK`/`SOURCE { target }` propagation, complete cross-phase
-  `PASS`/`PASSED` coverage, remaining comparison behavior, and `Number/*` and
-  `Geometry/*` style library semantics. Marking the manifest accepted before
-  either implementing these or explicitly excluding them as a product decision
-  would make the verifier dishonest.
+  `PASS`/`PASSED` coverage, and any remaining unimported sibling-repo language
+  surface. Marking the manifest accepted before either implementing these or
+  explicitly excluding them as a product decision would make the verifier
+  dishonest.
 
 ## Minimized Repro
 
@@ -223,7 +228,8 @@ inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
    executable link/source propagation, full `PASS`/`PASSED` coverage,
-   remaining comparison operators, and numeric/geometry library semantics.
+   and any remaining sibling-repo syntax or library semantics not represented
+   in `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
    accepted feature.

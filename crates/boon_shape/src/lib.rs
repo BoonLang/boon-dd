@@ -311,9 +311,19 @@ impl ShapeContext {
             "Element/button" => Shape::Element,
             "Scene/new" => Shape::Scene,
             "Text/from_number" | "Text/join" | "Text/append" | "Text/uppercase" => Shape::Text,
-            "Math/sum" | "List/count" | "Temperature/c_to_f" => Shape::Number,
+            "Math/sum"
+            | "List/count"
+            | "Temperature/c_to_f"
+            | "Number/abs"
+            | "Number/neg_abs"
+            | "Number/max"
+            | "Number/clamp"
+            | "Number/percent_of_range"
+            | "Number/scale_percent" => Shape::Number,
             "Timer/interval" | "Window/animation_frame" => Shape::SourceMarker,
-            "Bool/not" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
+            "Bool/not" | "Number/less_than" | "Number/greater_than" | "Geometry/intersects" => {
+                Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
+            }
             "List/append" | "List/remove" | "List/map" | "List/retain" => Shape::Unknown,
             _ => {
                 if let Some(shape) = typed_library_signature(callee) {
@@ -467,6 +477,26 @@ mod tests {
                 .sources
                 .get("store.sources.increment_button.event.press"),
             Some(&Shape::SourceMarker)
+        );
+    }
+
+    #[test]
+    fn checks_numeric_and_geometry_library_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "numeric_geometry.bn",
+            "clamped: Number/clamp(value: -1, min: 0, max: 10)\nvisible: Number/less_than(left: 1, right: 2)\nhit: Geometry/intersects(ax: 0, ay: 0, aw: 10, ah: 10, bx: 5, by: 5, bw: 10, bh: 10)\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("clamped"), Some(&Shape::Number));
+        assert_eq!(
+            report.definitions.get("visible"),
+            Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
+        );
+        assert_eq!(
+            report.definitions.get("hit"),
+            Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
         );
     }
 }
