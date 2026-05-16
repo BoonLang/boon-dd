@@ -1243,7 +1243,7 @@ mod tests {
     fn scene_element_calls_lower_to_render_text_projection() {
         let plan = boon_compiler::compile_source(
             "scene_elements.bn",
-            "document: Document/new(root: Scene/Element/stripe(items: LIST { Scene/Element/text(text: TEXT { A }) Scene/Element/button(label: TEXT { B }) }))\n",
+            "scene: Scene/new(root: Scene/Element/stripe(items: LIST { Scene/Element/text(text: TEXT { A }) Scene/Element/button(label: TEXT { B }) }))\n",
         );
         let module = generated_graph_module(&plan);
         assert!(!module.contains("unsupported library call Scene/Element/"));

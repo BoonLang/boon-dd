@@ -163,6 +163,11 @@ schema_errors: []
   generated render-text projection. This removes the immediate physical
   constructor fallback for sibling examples, but it does not yet implement full
   physical scene geometry/material semantics.
+- Render-root selection now uses a structured `document`-or-`scene` definition
+  lookup. A pure `scene: Scene/new(...)` module lowers to a generated DD render
+  graph instead of silently producing an empty render root. Modules that define
+  both keep the existing `document` render root until physical-scene output is
+  promoted beyond render-text projection.
 - Shape checking and generated DD render code now also cover common sibling-repo
   text helper calls with direct generated DD expressions: `Text/find`,
   `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,

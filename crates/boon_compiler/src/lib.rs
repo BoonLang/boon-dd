@@ -121,15 +121,20 @@ fn build_semantic_ir(
     builder.nodes.push(SemanticNode {
         node: graph.render_node.clone(),
         kind: SemanticNodeKind::RenderSink,
-        shape: "Document".to_owned(),
-        source_span: format!("{}:document", hir.source_path),
+        shape: if render_root_name(hir) == "scene" {
+            "Scene"
+        } else {
+            "Document"
+        }
+        .to_owned(),
+        source_span: format!("{}:{}", hir.source_path, render_root_name(hir)),
         dependencies: Vec::new(),
     });
     builder.nodes.push(SemanticNode {
         node: graph.monitor_node.clone(),
         kind: SemanticNodeKind::MonitorTap,
         shape: "Text".to_owned(),
-        source_span: format!("{}:document", hir.source_path),
+        source_span: format!("{}:{}", hir.source_path, render_root_name(hir)),
         dependencies: Vec::new(),
     });
     SemanticIr {
@@ -470,16 +475,13 @@ fn collect_effect_request_names(expression: &boon_syntax::Expr, names: &mut Vec<
 }
 
 fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) -> DdRenderProgram {
-    let document = hir
-        .definitions
-        .iter()
-        .find(|definition| definition.name == "document");
-    let document_expr = document.map(|definition| &definition.expression);
-    let target_path = document_expr.and_then(document_target_path);
+    let render_root = render_root_definition(hir);
+    let render_expr = render_root.map(|definition| &definition.expression);
+    let target_path = render_expr.and_then(document_target_path);
     let target_expr = target_path
         .as_deref()
         .and_then(|path| target_expression(path, hir));
-    let semantic_expr = target_expr.or(document_expr);
+    let semantic_expr = target_expr.or(render_expr);
     let source = DdRenderProgramSource {
         semantic_path: target_path.clone(),
         output_node: graph.render_node.clone(),
@@ -763,28 +765,32 @@ fn build_static_graph(
     shapes: &boon_shape::ShapeReport,
 ) -> StaticGraph {
     let graph_id = graph_id_from_source_hash(&parsed.source.text);
-    let document = hir
-        .definitions
-        .iter()
-        .find(|definition| definition.name == "document");
-    let document_expr = document.map(|definition| &definition.expression);
-    let target_path = document_expr.and_then(document_target_path);
+    let render_root = render_root_definition(hir);
+    let render_expr = render_root.map(|definition| &definition.expression);
+    let target_path = render_expr.and_then(document_target_path);
     let operators = graph_operators(hir);
     let source_bindings = source_bindings(hir, shapes);
     let monitor_node = NodeId(document_output_node_name(target_path.as_deref()));
-    let render_node = NodeId("DocumentText".to_owned());
+    let render_node = NodeId(
+        match render_root.map(|definition| definition.name.as_str()) {
+            Some("scene") => "SceneText",
+            _ => "DocumentText",
+        }
+        .to_owned(),
+    );
+    let render_span_name = render_root_name(hir);
     let mut nodes = Vec::new();
     nodes.push(GraphNode {
         node: render_node.clone(),
         kind: "render.text".to_owned(),
         shape: "Text".to_owned(),
-        source_span: format!("{}:document", hir.source_path),
+        source_span: format!("{}:{render_span_name}", hir.source_path),
     });
     nodes.push(GraphNode {
         node: monitor_node.clone(),
         kind: "monitor.value".to_owned(),
         shape: "Text".to_owned(),
-        source_span: format!("{}:document", hir.source_path),
+        source_span: format!("{}:{render_span_name}", hir.source_path),
     });
     nodes.extend(source_bindings.iter().map(|binding| GraphNode {
         node: NodeId(binding.source_id.0.clone()),
@@ -808,6 +814,23 @@ fn build_static_graph(
             .iter()
             .any(|definition| tree_has_callee(&definition.expression, "Scene/new")),
     }
+}
+
+fn render_root_definition(hir: &boon_hir::HirModule) -> Option<&boon_hir::HirDefinition> {
+    hir.definitions
+        .iter()
+        .find(|definition| definition.name == "document")
+        .or_else(|| {
+            hir.definitions
+                .iter()
+                .find(|definition| definition.name == "scene")
+        })
+}
+
+fn render_root_name(hir: &boon_hir::HirModule) -> &str {
+    render_root_definition(hir)
+        .map(|definition| definition.name.as_str())
+        .unwrap_or("render")
 }
 
 fn graph_id_from_source_hash(source: &str) -> String {
@@ -1027,7 +1050,9 @@ fn document_target_path(expression: &boon_syntax::Expr) -> Option<String> {
             }
             _ => document_target_path(stage).or_else(|| document_target_path(input)),
         },
-        boon_syntax::Expr::Call { callee, args } if callee == "Document/new" => {
+        boon_syntax::Expr::Call { callee, args }
+            if matches!(callee.as_str(), "Document/new" | "Scene/new") =>
+        {
             args.iter().find_map(|arg| match arg {
                 boon_syntax::CallArg::Named { name, value } if name == "root" => {
                     document_target_path(value)
@@ -1515,6 +1540,25 @@ mod tests {
             matches!(
                 &node.operation,
                 DdRenderGraphOperation::Text(text) if text == "Hello"
+            )
+        }));
+    }
+
+    #[test]
+    fn render_lowering_uses_scene_when_document_is_absent() {
+        let plan = compile_source(
+            "scene_only.bn",
+            "scene: Scene/new(root: Scene/Element/text(text: TEXT { Physical }))\n",
+        );
+        assert_eq!(plan.graph.render_node, NodeId("SceneText".to_owned()));
+        assert!(matches!(
+            plan.dd_graph_ir.render_program.operation,
+            DdRenderOperation::Text { .. }
+        ));
+        assert!(plan.dd_graph_ir.render_graph.nodes.iter().any(|node| {
+            matches!(
+                &node.operation,
+                DdRenderGraphOperation::Text(text) if text == "Physical"
             )
         }));
     }
