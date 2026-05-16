@@ -249,6 +249,10 @@ pub enum DdRenderGraphOperation {
         callee: String,
         fields: Vec<DdRenderGraphField>,
     },
+    FieldAccess {
+        base: NodeId,
+        field: String,
+    },
     Pipe {
         input: NodeId,
         stage: NodeId,
@@ -360,6 +364,10 @@ pub enum DdRenderExpr {
     Constructor {
         callee: String,
         fields: Vec<DdRenderField>,
+    },
+    FieldAccess {
+        base: Box<DdRenderExpr>,
+        field: String,
     },
     Pipe {
         input: Box<DdRenderExpr>,

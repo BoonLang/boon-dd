@@ -97,6 +97,7 @@ impl ShapeContext {
             | boon_syntax::Expr::Latest(values)
             | boon_syntax::Expr::Then { body: values } => self.last_shape(values),
             boon_syntax::Expr::Call { callee, args } => self.call_shape(callee, args),
+            boon_syntax::Expr::FieldAccess { base, field } => self.field_access_shape(base, field),
             boon_syntax::Expr::Pipe { input, stage } => {
                 let input_shape = self.shape_expr(input);
                 self.pipe_shape(input_shape, stage)
@@ -186,6 +187,23 @@ impl ShapeContext {
             }
         }
         shape
+    }
+
+    fn field_access_shape(&mut self, base: &boon_syntax::Expr, field: &str) -> Shape {
+        match self.shape_expr(base) {
+            Shape::Record(fields) => fields.get(field).cloned().unwrap_or_else(|| {
+                self.diagnostics.push(ShapeDiagnostic {
+                    message: format!("unknown field `{field}` in field access"),
+                });
+                Shape::Unknown
+            }),
+            other => {
+                self.diagnostics.push(ShapeDiagnostic {
+                    message: format!("cannot access field `{field}` on shape {other:?}"),
+                });
+                Shape::Unknown
+            }
+        }
     }
 
     fn pipe_shape(&mut self, input: Shape, stage: &boon_syntax::Expr) -> Shape {
@@ -520,6 +538,12 @@ fn typed_library_signature(callee: &str) -> Option<Shape> {
             _ => None,
         };
     }
+    if library == "Assets" && function == "icon" {
+        return Some(Shape::Record(BTreeMap::from([
+            ("checkbox_active".to_owned(), Shape::Text),
+            ("checkbox_completed".to_owned(), Shape::Text),
+        ])));
+    }
     let record_library = [("Pong", "initial"), ("Pong", "step")];
     if record_library
         .iter()
@@ -808,7 +832,7 @@ mod tests {
     fn checks_theme_helper_shapes_without_unresolved_tag_errors() {
         let parsed = boon_syntax::parse_source(
             "theme_helpers.bn",
-            "spacing: Theme/spacing(of: Tight)\nmaterial: Theme/material(of: Surface)\nscene: Scene/new(root: Scene/Element/text(style: Theme/text(of: Hero), text: TEXT { A }))\n",
+            "spacing: Theme/spacing(of: Tight)\nmaterial: Theme/material(of: Surface)\nmaterial_color: Theme/material(of: Surface).color\nscene: Scene/new(root: Scene/Element/text(style: Theme/text(of: Hero), text: TEXT { A }))\n",
         );
         let hir = boon_hir::lower(&parsed);
         let report = check_module(&hir);
@@ -821,7 +845,21 @@ mod tests {
                 Shape::Text
             )])))
         );
+        assert_eq!(report.definitions.get("material_color"), Some(&Shape::Text));
         assert_eq!(report.definitions.get("scene"), Some(&Shape::Scene));
+    }
+
+    #[test]
+    fn checks_postfix_field_access_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "field_access.bn",
+            "material_color: Theme/material(of: Danger).color\nicon: Assets/icon().checkbox_completed\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("material_color"), Some(&Shape::Text));
+        assert_eq!(report.definitions.get("icon"), Some(&Shape::Text));
     }
 
     #[test]

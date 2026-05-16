@@ -155,6 +155,9 @@ fn collect_sources(
                 }
             }
         }
+        boon_syntax::Expr::FieldAccess { base, .. } => {
+            collect_sources(base, path_stack, sources);
+        }
         boon_syntax::Expr::Pipe { input, stage } => {
             collect_sources(input, path_stack, sources);
             collect_sources(stage, path_stack, sources);
@@ -314,6 +317,9 @@ fn collect_top_level_refs<'a>(
             for field in fields {
                 collect_top_level_refs(&field.value, definitions, sources, scopes, refs);
             }
+        }
+        boon_syntax::Expr::FieldAccess { base, .. } => {
+            collect_top_level_refs(base, definitions, sources, scopes, refs);
         }
         boon_syntax::Expr::Pipe { input, stage } => {
             collect_top_level_refs(input, definitions, sources, scopes, refs);

@@ -286,6 +286,7 @@ fn value_collection_graph_code(
         | boon_dd::DdRenderGraphOperation::Block(_)
         | boon_dd::DdRenderGraphOperation::Call { .. }
         | boon_dd::DdRenderGraphOperation::Constructor { .. }
+        | boon_dd::DdRenderGraphOperation::FieldAccess { .. }
         | boon_dd::DdRenderGraphOperation::BinaryAdd { .. }
         | boon_dd::DdRenderGraphOperation::BinarySubtract { .. }
         | boon_dd::DdRenderGraphOperation::BinaryEqual { .. } => {
@@ -345,6 +346,7 @@ fn call_graph_collection_code(
         "Timer/interval" | "Window/animation_frame" => input.to_owned(),
         "Document/new"
         | "Scene/new"
+        | "Assets/icon"
         | "Math/min"
         | "Math/round"
         | "Text/empty"
@@ -363,6 +365,17 @@ fn call_graph_collection_code(
         | "Text/trim"
         | "Text/uppercase"
         | "Url/encode"
+        | "Theme/corners"
+        | "Theme/depth"
+        | "Theme/elevation"
+        | "Theme/font"
+        | "Theme/geometry"
+        | "Theme/lights"
+        | "Theme/material"
+        | "Theme/sizing"
+        | "Theme/spacing"
+        | "Theme/spring_range"
+        | "Theme/text"
         | "List/append"
         | "List/any"
         | "List/map"
@@ -508,6 +521,13 @@ fn value_graph_code(
                 .join(", ");
             format!("GeneratedValue::Record(vec![{}])", fields)
         }
+        boon_dd::DdRenderGraphOperation::FieldAccess { base, field } => {
+            format!(
+                "({}).field({})",
+                value_graph_code(graph, base, env),
+                quote(field)
+            )
+        }
         boon_dd::DdRenderGraphOperation::List(values) => {
             let values = values
                 .iter()
@@ -585,6 +605,21 @@ fn call_graph_value_code(
             named_graph_arg_code(graph, args, "root", env)
                 .unwrap_or_else(|| unsupported_value_code("Document/new or Scene/new missing root"))
         }),
+        "Assets/icon" => {
+            "GeneratedValue::Record(vec![(\"checkbox_active\".to_owned(), GeneratedValue::Text(\"[ ]\".to_owned())), (\"checkbox_completed\".to_owned(), GeneratedValue::Text(\"[x]\".to_owned()))])".to_owned()
+        }
+        "Theme/corners"
+        | "Theme/depth"
+        | "Theme/elevation"
+        | "Theme/sizing"
+        | "Theme/spacing"
+        | "Theme/spring_range" => "GeneratedValue::Number(0)".to_owned(),
+        "Theme/font" | "Theme/material" => {
+            "GeneratedValue::Record(vec![(\"color\".to_owned(), GeneratedValue::Text(String::new()))])".to_owned()
+        }
+        "Theme/geometry" | "Theme/lights" | "Theme/text" => {
+            "GeneratedValue::Record(Vec::new())".to_owned()
+        }
         "Element/button" => element_render_text_call(graph, args, env, &["label"])
             .unwrap_or_else(|| unsupported_value_code("Element/button missing label")),
         "Element/label" | "Element/link" => {
@@ -1293,5 +1328,18 @@ mod tests {
         assert!(!module.contains("unsupported collection library call Scene/Element/"));
         assert!(module.contains(".render_text()"));
         assert!(module.contains("GeneratedValue::Text(\"B\".to_owned())"));
+    }
+
+    #[test]
+    fn postfix_field_access_lowers_without_generated_fallback() {
+        let plan = boon_compiler::compile_source(
+            "field_access.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { Theme/material(of: Danger).color Assets/icon().checkbox_completed }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Assets/"));
+        assert!(!module.contains("unsupported collection library call Assets/"));
+        assert!(module.contains(".field(\"color\")"));
+        assert!(module.contains(".field(\"checkbox_completed\")"));
     }
 }

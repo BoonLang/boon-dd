@@ -61,6 +61,10 @@ pub enum Expr {
         callee: String,
         fields: Vec<RecordField>,
     },
+    FieldAccess {
+        base: Box<Expr>,
+        field: String,
+    },
     Pipe {
         input: Box<Expr>,
         stage: Box<Expr>,
@@ -195,6 +199,7 @@ enum TokenKind {
     Comma,
     Plus,
     Minus,
+    Dot,
     Equals,
     DoubleEquals,
     Pipe,
@@ -246,6 +251,10 @@ fn lex(text: &str, base_offset: usize, diagnostics: &mut Vec<SyntaxDiagnostic>) 
             '-' => {
                 index += 1;
                 TokenKind::Minus
+            }
+            '.' => {
+                index += 1;
+                TokenKind::Dot
             }
             '[' => {
                 index += 1;
@@ -406,7 +415,7 @@ impl Parser<'_, '_> {
             return Expr::Missing;
         };
         let span_token = token.clone();
-        match token.kind {
+        let mut expr = match token.kind {
             TokenKind::Number(value) => Expr::Number(value),
             TokenKind::Minus => match self.advance().cloned() {
                 Some(Token {
@@ -451,7 +460,27 @@ impl Parser<'_, '_> {
                 });
                 Expr::Missing
             }
+        };
+        while !self.is_at_end() && !self.at_stop(stop) && self.match_kind(&TokenKind::Dot) {
+            let Some(field) = self.take_word() else {
+                self.diagnostics.push(SyntaxDiagnostic {
+                    message: "expected field name after `.`".to_owned(),
+                    span: SourceSpan {
+                        start: self
+                            .previous()
+                            .map(|token| token.start)
+                            .unwrap_or(span_token.end),
+                        end: self.current_end().unwrap_or(span_token.end),
+                    },
+                });
+                break;
+            };
+            expr = Expr::FieldAccess {
+                base: Box::new(expr),
+                field,
+            };
         }
+        expr
     }
 
     fn parse_word(&mut self, word: String, token: &Token, stop: &[TokenStop]) -> Expr {
@@ -694,6 +723,16 @@ impl Parser<'_, '_> {
         }
     }
 
+    fn previous(&self) -> Option<&Token> {
+        self.index
+            .checked_sub(1)
+            .and_then(|index| self.tokens.get(index))
+    }
+
+    fn current_end(&self) -> Option<usize> {
+        self.tokens.get(self.index).map(|token| token.end)
+    }
+
     fn skip_one(&mut self, message: &str) {
         if let Some(token) = self.advance().cloned() {
             self.diagnostics.push(SyntaxDiagnostic {
@@ -781,6 +820,7 @@ fn same_token_variant(left: &TokenKind, right: &TokenKind) -> bool {
             | (TokenKind::Comma, TokenKind::Comma)
             | (TokenKind::Plus, TokenKind::Plus)
             | (TokenKind::Minus, TokenKind::Minus)
+            | (TokenKind::Dot, TokenKind::Dot)
             | (TokenKind::Equals, TokenKind::Equals)
             | (TokenKind::DoubleEquals, TokenKind::DoubleEquals)
             | (TokenKind::Pipe, TokenKind::Pipe)
@@ -1043,5 +1083,25 @@ mod tests {
             panic!("expected input source pipe");
         };
         assert!(matches!(stage.as_ref(), Expr::SourceAt { .. }));
+    }
+
+    #[test]
+    fn parses_postfix_field_access_on_calls() {
+        let module = parse_source(
+            "field_access.bn",
+            "color: Theme/material(of: Danger).color\nicon: Assets/icon().checkbox_completed\n",
+        );
+        assert!(module.diagnostics.is_empty(), "{:#?}", module.diagnostics);
+        assert_eq!(module.definitions.len(), 2);
+        let Expr::FieldAccess { base, field } = &module.definitions[0].expression else {
+            panic!("expected material field access");
+        };
+        assert_eq!(field, "color");
+        assert!(matches!(base.as_ref(), Expr::Call { callee, .. } if callee == "Theme/material"));
+        let Expr::FieldAccess { base, field } = &module.definitions[1].expression else {
+            panic!("expected icon field access");
+        };
+        assert_eq!(field, "checkbox_completed");
+        assert!(matches!(base.as_ref(), Expr::Call { callee, .. } if callee == "Assets/icon"));
     }
 }

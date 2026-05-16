@@ -210,6 +210,13 @@ impl SemanticBuilder<'_> {
                     ));
                 }
             }
+            boon_syntax::Expr::FieldAccess { base, field } => {
+                dependencies.push(self.visit_expr(
+                    base,
+                    &format!("{label}.{field}"),
+                    child_span.clone(),
+                ));
+            }
             boon_syntax::Expr::Pipe { input, stage } => {
                 dependencies.push(self.visit_expr(
                     input,
@@ -324,6 +331,7 @@ fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
         boon_syntax::Expr::List(_) | boon_syntax::Expr::Block(_) => SemanticNodeKind::List,
         boon_syntax::Expr::Latest(_) => SemanticNodeKind::Latest,
         boon_syntax::Expr::Call { .. } => SemanticNodeKind::LibraryCall,
+        boon_syntax::Expr::FieldAccess { .. } => SemanticNodeKind::PathReference,
         boon_syntax::Expr::Pipe { .. } => SemanticNodeKind::Pipe,
         boon_syntax::Expr::Binary { op, .. } => match op {
             boon_syntax::BinaryOp::Add => SemanticNodeKind::BinaryAdd,
@@ -607,6 +615,14 @@ impl DdRenderGraphBuilder {
                     fields,
                 }
             }
+            DdRenderExpr::FieldAccess { base, field } => {
+                let base = self.push_expr(base);
+                inputs.push(base.clone());
+                DdRenderGraphOperation::FieldAccess {
+                    base,
+                    field: field.clone(),
+                }
+            }
             DdRenderExpr::Pipe { input, stage } => {
                 let input = self.push_expr(input);
                 let stage = self.push_expr(stage);
@@ -716,6 +732,7 @@ fn dd_operator_for_render_operation(operation: &DdRenderGraphOperation) -> Graph
         }
         DdRenderGraphOperation::Latest(_) => GraphOperatorKind::Latest,
         DdRenderGraphOperation::Call { .. } => GraphOperatorKind::LibraryCall,
+        DdRenderGraphOperation::FieldAccess { .. } => GraphOperatorKind::PathReference,
         DdRenderGraphOperation::Pipe { .. } => GraphOperatorKind::Pipe,
         DdRenderGraphOperation::BinaryAdd { .. } => GraphOperatorKind::BinaryAdd,
         DdRenderGraphOperation::BinarySubtract { .. } => GraphOperatorKind::BinarySubtract,
@@ -746,6 +763,7 @@ fn dd_render_operation_label(operation: &DdRenderGraphOperation) -> &'static str
         DdRenderGraphOperation::Latest(_) => "Latest",
         DdRenderGraphOperation::Call { .. } => "Call",
         DdRenderGraphOperation::Constructor { .. } => "Constructor",
+        DdRenderGraphOperation::FieldAccess { .. } => "FieldAccess",
         DdRenderGraphOperation::Pipe { .. } => "Pipe",
         DdRenderGraphOperation::BinaryAdd { .. } => "BinaryAdd",
         DdRenderGraphOperation::BinarySubtract { .. } => "BinarySubtract",
@@ -912,6 +930,10 @@ impl OperatorBuilder {
                         | boon_syntax::CallArg::Named { value, .. } => self.visit(value),
                     }
                 }
+            }
+            boon_syntax::Expr::FieldAccess { base, .. } => {
+                self.add(GraphOperatorKind::PathReference);
+                self.visit(base);
             }
             boon_syntax::Expr::Constructor { fields, .. } | boon_syntax::Expr::Record(fields) => {
                 for field in fields {
@@ -1191,6 +1213,10 @@ fn render_expr_from_syntax_with_env(
             callee: callee.clone(),
             fields: render_fields(fields, hir, env),
         },
+        boon_syntax::Expr::FieldAccess { base, field } => DdRenderExpr::FieldAccess {
+            base: Box::new(render_expr_from_syntax_with_env(base, hir, env)),
+            field: field.clone(),
+        },
         boon_syntax::Expr::Pipe { input, stage } => DdRenderExpr::Pipe {
             input: Box::new(render_expr_from_syntax_with_env(input, hir, env)),
             stage: Box::new(render_expr_from_syntax_with_env(stage, hir, env)),
@@ -1423,6 +1449,9 @@ where
                     | boon_syntax::CallArg::Named { value, .. } => walk(value, visitor),
                 }
             }
+        }
+        boon_syntax::Expr::FieldAccess { base, .. } => {
+            walk(base, visitor);
         }
         boon_syntax::Expr::Pipe { input, stage } => {
             walk(input, visitor);

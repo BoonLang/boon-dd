@@ -175,6 +175,10 @@ schema_errors: []
   `Theme/spacing`, `Theme/spring_range`, and `Theme/text`. This is type-shape
   coverage only; it does not yet make style/material values part of structured
   physical render output.
+- Parser, shape checking, render IR, and generated DD render code now preserve
+  postfix field access on call results such as `Theme/material(of: Danger).color`
+  and `Assets/icon().checkbox_completed`. `Assets/icon` has a deterministic
+  generated record for the currently observed checkbox icon fields.
 - Shape checking and generated DD render code now also cover common sibling-repo
   text helper calls with direct generated DD expressions: `Text/find`,
   `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,
