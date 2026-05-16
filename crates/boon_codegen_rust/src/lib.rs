@@ -270,6 +270,11 @@ fn value_collection_graph_code(
             let value = value_graph_code(graph, &node.node, env);
             format!("events.clone().map(|_| {value})")
         }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => {
+            let value = value_graph_code(graph, &node.node, env);
+            format!("events.clone().map(|_| {value})")
+        }
         boon_dd::DdRenderGraphOperation::Number(_)
         | boon_dd::DdRenderGraphOperation::Tag(_)
         | boon_dd::DdRenderGraphOperation::Text(_)
@@ -404,6 +409,12 @@ fn value_graph_code(
         }
         boon_dd::DdRenderGraphOperation::Source => {
             unsupported_value_code("unlowered SOURCE expression")
+        }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. } => {
+            unsupported_value_code("unlowered SOURCE target expression")
+        }
+        boon_dd::DdRenderGraphOperation::Link { .. } => {
+            unsupported_value_code("unlowered LINK expression")
         }
         boon_dd::DdRenderGraphOperation::Skip => {
             unsupported_value_code("unlowered SKIP expression")

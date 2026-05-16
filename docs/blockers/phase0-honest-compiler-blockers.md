@@ -131,6 +131,11 @@ schema_errors: []
   numbers, binary subtraction, and binary equality. This is not full cross-repo
   language completion; it removes one parser/IR gap without relying on source
   text scans.
+- The parser/HIR/shape/semantic/DD render IR now preserves top-level
+  `FUNCTION` definitions, `LINK` and `LINK { target }`, and Zig-style
+  `SOURCE { target }` syntax as structured nodes. Execution semantics for
+  function calls, pass environments, and link/source propagation are still not
+  complete.
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
@@ -177,11 +182,12 @@ schema_errors: []
   findings describe shortcuts already removed in code, but others are still real
   blockers.
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
-  semantics from local sibling repos. Current open gaps include `LINK`,
-  `PASS`/`PASSED`, `FUNCTION`, remaining comparison behavior, and `Number/*`
-  and `Geometry/*` style library semantics. Marking the manifest accepted
-  before either implementing these or explicitly excluding them as a product
-  decision would make the verifier dishonest.
+  semantics from local sibling repos. Current open gaps include executable
+  `LINK`/`SOURCE { target }` propagation, `PASS`/`PASSED` environments,
+  `FUNCTION` call resolution, remaining comparison behavior, and `Number/*` and
+  `Geometry/*` style library semantics. Marking the manifest accepted before
+  either implementing these or explicitly excluding them as a product decision
+  would make the verifier dishonest.
 
 ## Minimized Repro
 
@@ -211,8 +217,8 @@ No dependency fork is needed for the current blocker. Continue implementation
 inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
-   `LINK`, `PASS`/`PASSED`, `FUNCTION`, remaining comparison operators, and
-   numeric/geometry library semantics.
+   executable link/source propagation, `PASS`/`PASSED`, `FUNCTION` calls,
+   remaining comparison operators, and numeric/geometry library semantics.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
    accepted feature.

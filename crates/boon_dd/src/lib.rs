@@ -160,6 +160,8 @@ pub struct GraphNode {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphOperatorKind {
     SourceLeaf,
+    SourceAt,
+    Link,
     PathReference,
     Skip,
     ConstantText,
@@ -226,6 +228,12 @@ pub enum DdRenderGraphOperation {
     Path(String),
     Number(String),
     Source,
+    SourceAt {
+        target: NodeId,
+    },
+    Link {
+        target: Option<NodeId>,
+    },
     Skip,
     Tag(String),
     Text(String),
@@ -332,6 +340,12 @@ pub enum DdRenderExpr {
     Path(String),
     Number(String),
     Source,
+    SourceAt {
+        target: Box<DdRenderExpr>,
+    },
+    Link {
+        target: Option<Box<DdRenderExpr>>,
+    },
     Skip,
     Tag(String),
     Text(String),

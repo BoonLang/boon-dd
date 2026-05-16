@@ -35,6 +35,8 @@ pub struct SemanticNode {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum SemanticNodeKind {
     SourceLeaf,
+    SourceAt,
+    Link,
     PathReference,
     Skip,
     ConstantText,
@@ -244,6 +246,22 @@ impl SemanticBuilder<'_> {
                     ));
                 }
             }
+            boon_syntax::Expr::SourceAt { target } => {
+                dependencies.push(self.visit_expr(
+                    target,
+                    &format!("{label}.source_target"),
+                    child_span.clone(),
+                ));
+            }
+            boon_syntax::Expr::Link { target } => {
+                if let Some(target) = target {
+                    dependencies.push(self.visit_expr(
+                        target,
+                        &format!("{label}.link_target"),
+                        child_span.clone(),
+                    ));
+                }
+            }
             boon_syntax::Expr::Missing
             | boon_syntax::Expr::Path(_)
             | boon_syntax::Expr::Number(_)
@@ -290,6 +308,8 @@ fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
         boon_syntax::Expr::Skip => SemanticNodeKind::Skip,
         boon_syntax::Expr::Number(_) => SemanticNodeKind::ConstantNumber,
         boon_syntax::Expr::Source => SemanticNodeKind::SourceLeaf,
+        boon_syntax::Expr::SourceAt { .. } => SemanticNodeKind::SourceAt,
+        boon_syntax::Expr::Link { .. } => SemanticNodeKind::Link,
         boon_syntax::Expr::Tag(_) => SemanticNodeKind::Tag,
         boon_syntax::Expr::Text(_) => SemanticNodeKind::ConstantText,
         boon_syntax::Expr::Record(_) | boon_syntax::Expr::Constructor { .. } => {
@@ -358,6 +378,8 @@ fn lower_semantic_to_dd(
 fn dd_operator_for_semantic_kind(kind: &SemanticNodeKind) -> Option<GraphOperatorKind> {
     Some(match kind {
         SemanticNodeKind::SourceLeaf => GraphOperatorKind::SourceLeaf,
+        SemanticNodeKind::SourceAt => GraphOperatorKind::SourceAt,
+        SemanticNodeKind::Link => GraphOperatorKind::Link,
         SemanticNodeKind::PathReference => GraphOperatorKind::PathReference,
         SemanticNodeKind::Skip => GraphOperatorKind::Skip,
         SemanticNodeKind::ConstantText => GraphOperatorKind::ConstantText,
@@ -499,6 +521,19 @@ impl DdRenderGraphBuilder {
             DdRenderExpr::Path(path) => DdRenderGraphOperation::Path(path.clone()),
             DdRenderExpr::Number(number) => DdRenderGraphOperation::Number(number.clone()),
             DdRenderExpr::Source => DdRenderGraphOperation::Source,
+            DdRenderExpr::SourceAt { target } => {
+                let target = self.push_expr(target);
+                inputs.push(target.clone());
+                DdRenderGraphOperation::SourceAt { target }
+            }
+            DdRenderExpr::Link { target } => {
+                let target = target.as_ref().map(|target| {
+                    let target = self.push_expr(target);
+                    inputs.push(target.clone());
+                    target
+                });
+                DdRenderGraphOperation::Link { target }
+            }
             DdRenderExpr::Skip => DdRenderGraphOperation::Skip,
             DdRenderExpr::Tag(tag) => DdRenderGraphOperation::Tag(tag.clone()),
             DdRenderExpr::Text(text) => DdRenderGraphOperation::Text(text.clone()),
@@ -665,6 +700,8 @@ fn dd_operator_for_render_operation(operation: &DdRenderGraphOperation) -> Graph
         DdRenderGraphOperation::Path(_) => GraphOperatorKind::PathReference,
         DdRenderGraphOperation::Number(_) => GraphOperatorKind::ConstantNumber,
         DdRenderGraphOperation::Source => GraphOperatorKind::SourceLeaf,
+        DdRenderGraphOperation::SourceAt { .. } => GraphOperatorKind::SourceAt,
+        DdRenderGraphOperation::Link { .. } => GraphOperatorKind::Link,
         DdRenderGraphOperation::Skip => GraphOperatorKind::Skip,
         DdRenderGraphOperation::Tag(_) => GraphOperatorKind::Tag,
         DdRenderGraphOperation::Text(_) => GraphOperatorKind::ConstantText,
@@ -695,6 +732,8 @@ fn dd_render_operation_label(operation: &DdRenderGraphOperation) -> &'static str
         DdRenderGraphOperation::Path(_) => "Path",
         DdRenderGraphOperation::Number(_) => "Number",
         DdRenderGraphOperation::Source => "Source",
+        DdRenderGraphOperation::SourceAt { .. } => "SourceAt",
+        DdRenderGraphOperation::Link { .. } => "Link",
         DdRenderGraphOperation::Skip => "Skip",
         DdRenderGraphOperation::Tag(_) => "Tag",
         DdRenderGraphOperation::Text(_) => "Text",
@@ -799,6 +838,16 @@ impl OperatorBuilder {
             boon_syntax::Expr::Source => {
                 self.add(GraphOperatorKind::SourceLeaf);
             }
+            boon_syntax::Expr::SourceAt { target } => {
+                self.add(GraphOperatorKind::SourceAt);
+                self.visit(target);
+            }
+            boon_syntax::Expr::Link { target } => {
+                self.add(GraphOperatorKind::Link);
+                if let Some(target) = target {
+                    self.visit(target);
+                }
+            }
             boon_syntax::Expr::Then { body } => {
                 self.add(GraphOperatorKind::Then);
                 if body
@@ -852,8 +901,12 @@ impl OperatorBuilder {
                 self.visit(input);
                 self.visit(stage);
             }
-            boon_syntax::Expr::Binary { left, right, .. } => {
-                self.add(GraphOperatorKind::BinaryAdd);
+            boon_syntax::Expr::Binary { op, left, right } => {
+                self.add(match op {
+                    boon_syntax::BinaryOp::Add => GraphOperatorKind::BinaryAdd,
+                    boon_syntax::BinaryOp::Subtract => GraphOperatorKind::BinarySubtract,
+                    boon_syntax::BinaryOp::Equal => GraphOperatorKind::BinaryEqual,
+                });
                 self.visit(left);
                 self.visit(right);
             }
@@ -1042,6 +1095,14 @@ fn render_expr_from_syntax(
             .unwrap_or_else(|| DdRenderExpr::Path(path.clone())),
         boon_syntax::Expr::Number(number) => DdRenderExpr::Number(number.clone()),
         boon_syntax::Expr::Source => DdRenderExpr::Source,
+        boon_syntax::Expr::SourceAt { target } => DdRenderExpr::SourceAt {
+            target: Box::new(render_expr_from_syntax(target, hir)),
+        },
+        boon_syntax::Expr::Link { target } => DdRenderExpr::Link {
+            target: target
+                .as_ref()
+                .map(|target| Box::new(render_expr_from_syntax(target, hir))),
+        },
         boon_syntax::Expr::Skip => DdRenderExpr::Skip,
         boon_syntax::Expr::Tag(tag) => DdRenderExpr::Tag(tag.clone()),
         boon_syntax::Expr::Text(text) => DdRenderExpr::Text(text.clone()),
@@ -1195,6 +1256,14 @@ where
         boon_syntax::Expr::Match { arms, .. } => {
             for arm in arms {
                 walk(&arm.value, visitor);
+            }
+        }
+        boon_syntax::Expr::SourceAt { target } => {
+            walk(target, visitor);
+        }
+        boon_syntax::Expr::Link { target } => {
+            if let Some(target) = target {
+                walk(target, visitor);
             }
         }
         boon_syntax::Expr::Missing

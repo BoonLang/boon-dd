@@ -16,6 +16,8 @@ pub struct ParsedModule {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Definition {
     pub name: String,
+    pub parameters: Vec<String>,
+    pub is_function: bool,
     pub expression: Expr,
     pub span: SourceSpan,
 }
@@ -38,6 +40,12 @@ pub enum Expr {
     Path(String),
     Number(String),
     Source,
+    SourceAt {
+        target: Box<Expr>,
+    },
+    Link {
+        target: Option<Box<Expr>>,
+    },
     Skip,
     Tag(String),
     Text(String),
@@ -126,8 +134,8 @@ fn parse_definitions(text: &str, diagnostics: &mut Vec<SyntaxDiagnostic>) -> Vec
         let trimmed = line.trim();
         if !trimmed.is_empty()
             && leading_spaces(line) == 0
-            && leading_label(trimmed).is_some()
-            && trimmed.contains(':')
+            && (value_definition_label(trimmed).is_some()
+                || function_definition_header(trimmed).is_some())
         {
             starts.push(offset);
         }
@@ -138,16 +146,17 @@ fn parse_definitions(text: &str, diagnostics: &mut Vec<SyntaxDiagnostic>) -> Vec
     for (index, start) in starts.iter().copied().enumerate() {
         let end = starts.get(index + 1).copied().unwrap_or(text.len());
         let block = &text[start..end];
-        let Some(colon) = block.find(':') else {
+        let Some(header) = definition_header(block, start, diagnostics) else {
             continue;
         };
-        let name = block[..colon].trim().to_owned();
-        let expr_text = block[colon + 1..].trim();
-        let expr_start =
-            start + colon + 1 + block[colon + 1..].len() - block[colon + 1..].trim_start().len();
+        let expr_text = header.expression.trim();
+        let expr_start = header.expression_offset + header.expression.len()
+            - header.expression.trim_start().len();
         let expression = parse_expr_text(expr_text, expr_start, diagnostics);
         definitions.push(Definition {
-            name,
+            name: header.name,
+            parameters: header.parameters,
+            is_function: header.is_function,
             expression,
             span: SourceSpan { start, end },
         });
@@ -447,7 +456,14 @@ impl Parser<'_, '_> {
 
     fn parse_word(&mut self, word: String, token: &Token, stop: &[TokenStop]) -> Expr {
         match word.as_str() {
+            "SOURCE" if self.match_kind(&TokenKind::LBrace) => Expr::SourceAt {
+                target: Box::new(self.parse_braced_single_expr()),
+            },
             "SOURCE" => Expr::Source,
+            "LINK" if self.match_kind(&TokenKind::LBrace) => Expr::Link {
+                target: Some(Box::new(self.parse_braced_single_expr())),
+            },
+            "LINK" => Expr::Link { target: None },
             "SKIP" => Expr::Skip,
             "True" | "False" => Expr::Tag(word),
             "TEXT" if self.match_kind(&TokenKind::LBrace) => Expr::Text(self.collect_text(token)),
@@ -565,6 +581,12 @@ impl Parser<'_, '_> {
         }
         self.expect_stop(end, "expected closing delimiter");
         values
+    }
+
+    fn parse_braced_single_expr(&mut self) -> Expr {
+        let expr = self.parse_expr_until(&[TokenStop::RBrace]);
+        self.expect(TokenKind::RBrace, "expected `}` after expression");
+        expr
     }
 
     fn parse_match_arms(&mut self) -> Vec<MatchArm> {
@@ -776,7 +798,43 @@ fn leading_spaces(line: &str) -> usize {
     line.len() - line.trim_start_matches(' ').len()
 }
 
-fn leading_label(trimmed: &str) -> Option<String> {
+struct ParsedDefinitionHeader<'a> {
+    name: String,
+    parameters: Vec<String>,
+    is_function: bool,
+    expression: &'a str,
+    expression_offset: usize,
+}
+
+fn definition_header<'a>(
+    block: &'a str,
+    block_offset: usize,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+) -> Option<ParsedDefinitionHeader<'a>> {
+    let trimmed = block.trim_start();
+    let leading = block.len() - trimmed.len();
+    if let Some((name, parameters, body, body_offset)) =
+        function_header_and_body(trimmed, block_offset + leading, diagnostics)
+    {
+        return Some(ParsedDefinitionHeader {
+            name,
+            parameters,
+            is_function: true,
+            expression: body,
+            expression_offset: body_offset,
+        });
+    }
+    let colon = block.find(':')?;
+    Some(ParsedDefinitionHeader {
+        name: block[..colon].trim().to_owned(),
+        parameters: Vec::new(),
+        is_function: false,
+        expression: &block[colon + 1..],
+        expression_offset: block_offset + colon + 1,
+    })
+}
+
+fn value_definition_label(trimmed: &str) -> Option<String> {
     let colon = trimmed.find(':')?;
     let candidate = trimmed[..colon].trim();
     if candidate.is_empty()
@@ -788,6 +846,86 @@ fn leading_label(trimmed: &str) -> Option<String> {
     } else {
         Some(candidate.to_owned())
     }
+}
+
+fn function_definition_header(trimmed: &str) -> Option<String> {
+    let rest = trimmed.strip_prefix("FUNCTION ")?;
+    let open = rest.find('(')?;
+    let name = rest[..open].trim();
+    if name.is_empty()
+        || name
+            .chars()
+            .any(|ch| !(ch.is_ascii_alphanumeric() || ch == '_'))
+    {
+        None
+    } else {
+        Some(name.to_owned())
+    }
+}
+
+fn function_header_and_body<'a>(
+    trimmed: &'a str,
+    trimmed_offset: usize,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+) -> Option<(String, Vec<String>, &'a str, usize)> {
+    let name = function_definition_header(trimmed)?;
+    let open_paren = trimmed.find('(')?;
+    let close_paren = trimmed[open_paren + 1..].find(')')? + open_paren + 1;
+    let parameters = trimmed[open_paren + 1..close_paren]
+        .split(',')
+        .map(str::trim)
+        .filter(|param| !param.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let Some(open_brace) = trimmed[close_paren + 1..]
+        .find('{')
+        .map(|index| index + close_paren + 1)
+    else {
+        diagnostics.push(SyntaxDiagnostic {
+            message: "expected `{` after FUNCTION header".to_owned(),
+            span: SourceSpan {
+                start: trimmed_offset,
+                end: trimmed_offset + close_paren + 1,
+            },
+        });
+        return None;
+    };
+    let close_brace = matching_last_brace(trimmed).unwrap_or_else(|| {
+        diagnostics.push(SyntaxDiagnostic {
+            message: "expected `}` after FUNCTION body".to_owned(),
+            span: SourceSpan {
+                start: trimmed_offset + open_brace,
+                end: trimmed_offset + open_brace + 1,
+            },
+        });
+        trimmed.len()
+    });
+    let body_start = open_brace + 1;
+    let body_end = close_brace.min(trimmed.len());
+    Some((
+        name,
+        parameters,
+        &trimmed[body_start..body_end],
+        trimmed_offset + body_start,
+    ))
+}
+
+fn matching_last_brace(text: &str) -> Option<usize> {
+    let mut depth = 0_i32;
+    let mut last_closed = None;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    last_closed = Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    last_closed
 }
 
 #[cfg(test)]
@@ -874,5 +1012,36 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn preserves_function_link_and_source_target_syntax() {
+        let module = parse_source(
+            "cross_repo_link_function.bn",
+            "FUNCTION greeting(name) {\n    TEXT { Hello {name} }\n}\nstore: [toggle: LINK]\ndocument: greeting(name: TEXT { World }) |> LINK { store.toggle }\ninput: text_input() |> SOURCE { PASSED.store.input }\n",
+        );
+        assert!(module.diagnostics.is_empty(), "{:#?}", module.diagnostics);
+        assert_eq!(module.definitions.len(), 4);
+        assert_eq!(module.definitions[0].name, "greeting");
+        assert!(module.definitions[0].is_function);
+        assert_eq!(module.definitions[0].parameters, ["name"]);
+
+        let Expr::Record(fields) = &module.definitions[1].expression else {
+            panic!("expected store record");
+        };
+        assert!(matches!(
+            fields.first().map(|field| &field.value),
+            Some(Expr::Link { target: None })
+        ));
+
+        let Expr::Pipe { stage, .. } = &module.definitions[2].expression else {
+            panic!("expected document link pipe");
+        };
+        assert!(matches!(stage.as_ref(), Expr::Link { target: Some(_) }));
+
+        let Expr::Pipe { stage, .. } = &module.definitions[3].expression else {
+            panic!("expected input source pipe");
+        };
+        assert!(matches!(stage.as_ref(), Expr::SourceAt { .. }));
     }
 }

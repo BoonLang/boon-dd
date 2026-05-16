@@ -15,6 +15,8 @@ pub struct HirModule {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HirDefinition {
     pub name: String,
+    pub parameters: Vec<String>,
+    pub is_function: bool,
     pub expression: boon_syntax::Expr,
     pub span: boon_syntax::SourceSpan,
 }
@@ -57,6 +59,8 @@ pub fn lower(parsed: &boon_syntax::ParsedModule) -> HirModule {
         }
         definitions.push(HirDefinition {
             name: definition.name.clone(),
+            parameters: definition.parameters.clone(),
+            is_function: definition.is_function,
             expression: definition.expression.clone(),
             span: definition.span.clone(),
         });
@@ -87,6 +91,16 @@ fn collect_sources(
         boon_syntax::Expr::Source => {
             if !path_stack.is_empty() {
                 sources.insert(path_stack.join("."), true);
+            }
+        }
+        boon_syntax::Expr::SourceAt { target } => {
+            collect_sources(target, path_stack, sources);
+            collect_path_source_reference(target, sources);
+        }
+        boon_syntax::Expr::Link { target } => {
+            if let Some(target) = target {
+                collect_sources(target, path_stack, sources);
+                collect_path_source_reference(target, sources);
             }
         }
         boon_syntax::Expr::Path(path) => {
@@ -311,6 +325,14 @@ fn collect_top_level_refs<'a>(
         boon_syntax::Expr::Match { arms, .. } => {
             for arm in arms {
                 collect_top_level_refs(&arm.value, definitions, sources, scopes, refs);
+            }
+        }
+        boon_syntax::Expr::SourceAt { target } => {
+            collect_top_level_refs(target, definitions, sources, scopes, refs);
+        }
+        boon_syntax::Expr::Link { target } => {
+            if let Some(target) = target {
+                collect_top_level_refs(target, definitions, sources, scopes, refs);
             }
         }
         boon_syntax::Expr::Missing

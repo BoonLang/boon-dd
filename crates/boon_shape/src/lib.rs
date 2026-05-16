@@ -71,6 +71,16 @@ impl ShapeContext {
             boon_syntax::Expr::Path(path) => self.path_shape(path),
             boon_syntax::Expr::Number(_) => Shape::Number,
             boon_syntax::Expr::Source => Shape::SourceMarker,
+            boon_syntax::Expr::SourceAt { target } => {
+                self.shape_expr(target);
+                Shape::SourceMarker
+            }
+            boon_syntax::Expr::Link { target } => {
+                if let Some(target) = target {
+                    self.shape_expr(target);
+                }
+                Shape::SourceMarker
+            }
             boon_syntax::Expr::Skip => Shape::Skip,
             boon_syntax::Expr::Tag(name) => Shape::TagSet(vec![name.clone()]),
             boon_syntax::Expr::Text(_) => Shape::Text,
