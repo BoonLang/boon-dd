@@ -74,7 +74,8 @@ struct PlaygroundExample {
     source_text: &'static str,
     scenario_text: &'static str,
     scenario_actions: Vec<SourceAction>,
-    actions: Vec<SourceAction>,
+    session: boon_runtime_host::ThreadedGraphSession,
+    epoch: u64,
     output: SmokeOutput,
     last_auto_tick: Instant,
 }
@@ -389,21 +390,28 @@ fn build_playground_examples() -> Vec<PlaygroundExample> {
                 .into_iter()
                 .flat_map(|step| step.actions)
                 .collect::<Vec<_>>();
-            let output = boon_runtime_host::run_compiled_source_actions(
-                fixture.source_path,
-                fixture.source,
-                &[],
-            )
-            .unwrap_or_else(|error| {
-                panic!("failed to run compiled fixture {}: {error}", fixture.name)
-            });
+            let session =
+                boon_runtime_host::ThreadedGraphSession::new(fixture.source_path, fixture.source)
+                    .unwrap_or_else(|error| {
+                        panic!("failed to compile fixture {}: {error}", fixture.name)
+                    });
+            let epoch = 1_u64;
+            let output = session
+                .submit_host_tick_and_drain(epoch)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "failed to initialize compiled fixture {}: {error}",
+                        fixture.name
+                    )
+                });
             PlaygroundExample {
                 name: fixture.name.to_owned(),
                 source_path: fixture.source_path,
                 source_text: fixture.source,
                 scenario_text: fixture.scenario,
                 scenario_actions,
-                actions: Vec::new(),
+                session,
+                epoch,
                 output,
                 last_auto_tick: Instant::now(),
             }
@@ -450,8 +458,7 @@ fn handle_click(x: f32, y: f32, examples: &mut [PlaygroundExample], selected: &m
         })
         .contains(x, y)
         {
-            example.actions.pop();
-            refresh_example_output(example);
+            retract_example_action(example);
             eprintln!(
                 "native playground clicked {} decrement -> {}",
                 example.name,
@@ -499,31 +506,39 @@ fn update_auto_tick(example: &mut PlaygroundExample) {
 }
 
 fn trigger_example_action(example: &mut PlaygroundExample) {
-    if let Some(action) = example.scenario_actions.first().cloned() {
-        example.actions.push(action);
+    let action = if let Some(action) = example.scenario_actions.first().cloned() {
+        action
     } else {
-        example.actions.push(SourceAction {
+        SourceAction {
             source: "manual".to_owned(),
             owner: None,
             generation: None,
             value: BoonValue::EmptyRecord,
+        }
+    };
+    example.epoch += 1;
+    example.output = example
+        .session
+        .submit_action_and_drain(action, example.epoch)
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to refresh compiled fixture {}: {error}",
+                example.name
+            )
         });
-    }
-    refresh_example_output(example);
 }
 
-fn refresh_example_output(example: &mut PlaygroundExample) {
-    example.output = boon_runtime_host::run_compiled_source_actions(
-        example.source_path,
-        example.source_text,
-        &example.actions,
-    )
-    .unwrap_or_else(|error| {
-        panic!(
-            "failed to refresh compiled fixture {}: {error}",
-            example.name
-        )
-    });
+fn retract_example_action(example: &mut PlaygroundExample) {
+    example.epoch += 1;
+    example.output = example
+        .session
+        .retract_last_and_drain(example.epoch)
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to refresh compiled fixture {}: {error}",
+                example.name
+            )
+        });
 }
 
 fn render_frame(

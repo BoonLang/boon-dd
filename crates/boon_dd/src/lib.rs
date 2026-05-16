@@ -62,6 +62,141 @@ pub enum BoonValue {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum DdValue {
+    Empty,
+    Text(String),
+    Number(i64),
+    Tag(String),
+    List(Vec<DdValue>),
+    Record(Vec<(String, DdValue)>),
+}
+
+impl DdValue {
+    pub fn text(self) -> String {
+        match self {
+            DdValue::Text(text) => text,
+            DdValue::Number(number) => number.to_string(),
+            DdValue::Tag(tag) => tag,
+            DdValue::List(values) => values
+                .into_iter()
+                .map(DdValue::text)
+                .collect::<Vec<_>>()
+                .join(","),
+            DdValue::Empty => panic!("DD render tried to coerce Empty to Text"),
+            DdValue::Record(_) => panic!("DD render tried to coerce Record to Text"),
+        }
+    }
+
+    pub fn render_text(self) -> String {
+        match self {
+            DdValue::Text(text) => text,
+            DdValue::Number(number) => number.to_string(),
+            DdValue::Tag(tag) => tag,
+            DdValue::List(values) => values
+                .into_iter()
+                .map(DdValue::render_text)
+                .collect::<Vec<_>>()
+                .join(""),
+            DdValue::Empty => String::new(),
+            DdValue::Record(_) => String::new(),
+        }
+    }
+
+    pub fn number(self) -> i64 {
+        match self {
+            DdValue::Number(number) => number,
+            DdValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| {
+                panic!("DD render failed to parse Text as Number: {error}")
+            }),
+            DdValue::Empty => panic!("DD render tried to coerce Empty to Number"),
+            DdValue::Tag(_) => panic!("DD render tried to coerce Tag to Number"),
+            DdValue::List(_) => panic!("DD render tried to coerce List to Number"),
+            DdValue::Record(_) => panic!("DD render tried to coerce Record to Number"),
+        }
+    }
+
+    pub fn field(self, name: &str) -> DdValue {
+        match self {
+            DdValue::Record(fields) => fields
+                .into_iter()
+                .find(|(field, _)| field == name)
+                .map(|(_, value)| value)
+                .unwrap_or_else(|| panic!("DD render missing record field {name}")),
+            other => {
+                panic!("DD render tried to read field {name} from non-record value: {other:?}")
+            }
+        }
+    }
+
+    pub fn truthy(self) -> bool {
+        match self {
+            DdValue::Tag(tag) => tag == "True",
+            DdValue::Text(text) => !text.is_empty(),
+            DdValue::Number(number) => number != 0,
+            DdValue::List(values) => !values.is_empty(),
+            DdValue::Record(fields) => !fields.is_empty(),
+            DdValue::Empty => panic!("DD render tried to coerce Empty to Bool"),
+        }
+    }
+}
+
+pub fn dd_pattern_matches(value: &DdValue, pattern: &str) -> bool {
+    match value {
+        DdValue::Tag(tag) => tag == pattern,
+        DdValue::Text(text) => text == pattern,
+        DdValue::Number(number) => number.to_string() == pattern,
+        DdValue::Empty => pattern.is_empty(),
+        DdValue::List(_) | DdValue::Record(_) => false,
+    }
+}
+
+pub fn dd_value_from_source_payload(payload: &GeneratedSourceEventPayload) -> DdValue {
+    match payload {
+        GeneratedSourceEventPayload::EmptyRecord => DdValue::Empty,
+        GeneratedSourceEventPayload::Text(text) => DdValue::Text(text.clone()),
+        GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => DdValue::Number(*number),
+        GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => {
+            DdValue::Text(number.to_string())
+        }
+        GeneratedSourceEventPayload::Tag { name, payload } => DdValue::Tag(match payload {
+            Some(payload) => format!("{}({})", name.0, value_to_text(payload)),
+            None => name.0.clone(),
+        }),
+        GeneratedSourceEventPayload::Record(record) => DdValue::Record(
+            record
+                .iter()
+                .map(|(name, value)| (name.clone(), dd_value_from_boon_value(value)))
+                .collect(),
+        ),
+        GeneratedSourceEventPayload::List(values) => {
+            DdValue::List(values.iter().map(dd_value_from_boon_value).collect())
+        }
+    }
+}
+
+pub fn dd_value_from_boon_value(value: &BoonValue) -> DdValue {
+    match value {
+        BoonValue::EmptyRecord => DdValue::Empty,
+        BoonValue::Record(record) => DdValue::Record(
+            record
+                .iter()
+                .map(|(name, value)| (name.clone(), dd_value_from_boon_value(value)))
+                .collect(),
+        ),
+        BoonValue::List(values) => {
+            DdValue::List(values.iter().map(dd_value_from_boon_value).collect())
+        }
+        BoonValue::Text(text) => DdValue::Text(text.clone()),
+        BoonValue::Number(BoonNumber::Int(number)) => DdValue::Number(*number),
+        BoonValue::Number(BoonNumber::Float(number)) => DdValue::Text(number.to_string()),
+        BoonValue::Tag { name, payload } => DdValue::Tag(match payload {
+            Some(payload) => format!("{}({})", name.0, value_to_text(payload)),
+            None => name.0.clone(),
+        }),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum GeneratedSourceEventPayload {
     EmptyRecord,

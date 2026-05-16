@@ -73,7 +73,8 @@ macro_rules! run_generated {
                 worker.step();
                 worker_steps += 1;
             }
-            last_output = graph.sources.outputs().into_iter().last().unwrap_or_else(|| {
+            let mut drained_outputs = graph.sources.take_outputs();
+            last_output = drained_outputs.pop().unwrap_or_else(|| {
                 boon_dd::SmokeOutput {
                     monitor: Vec::new(),
                     render: Vec::new(),
@@ -93,7 +94,7 @@ macro_rules! run_generated {
 }
 
 #[wasm_bindgen]
-pub fn run_smoke_json() -> Result<String, JsValue> {
+pub fn run_generated_matrix_json() -> Result<String, JsValue> {
     serde_json::to_string(&run_generated_matrix())
         .map_err(|error| JsValue::from_str(&error.to_string()))
 }

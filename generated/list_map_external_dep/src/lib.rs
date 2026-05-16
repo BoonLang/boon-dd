@@ -75,11 +75,9 @@ mod tests {
                 worker.step();
                 worker_steps += 1;
             }
-            let output = graph
-                .sources
-                .outputs()
-                .into_iter()
-                .last()
+            let mut drained_outputs = graph.sources.take_outputs();
+            let output = drained_outputs
+                .pop()
                 .expect("generated graph emitted no scenario output");
             last_generated_persisted_text =
                 output

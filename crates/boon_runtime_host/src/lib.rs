@@ -6,8 +6,10 @@ use boon_dd::{
 };
 use differential_dataflow::collection::VecCollection;
 use differential_dataflow::input::InputSession;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -105,12 +107,135 @@ pub struct CompiledGraphSession {
     worker: timely::worker::Worker,
     sources: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
     probe: ProbeHandle<EncodedTime>,
-    outputs: Arc<Mutex<Vec<SmokeOutput>>>,
+    outputs: Arc<Mutex<VecDeque<SmokeOutput>>>,
     source_ids_by_path: BTreeMap<String, SourceId>,
     monitor_node: NodeId,
     render_node: NodeId,
     next_sequence: u64,
-    cursor: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubmittedEvent {
+    sequence: u64,
+    event: GeneratedSourceEvent,
+}
+
+pub struct ThreadedGraphSession {
+    sender: mpsc::Sender<ThreadedRequest>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+enum ThreadedRequest {
+    HostTick {
+        epoch: u64,
+        response: mpsc::Sender<Result<SmokeOutput, String>>,
+    },
+    SubmitAction {
+        action: SourceAction,
+        epoch: u64,
+        response: mpsc::Sender<Result<SmokeOutput, String>>,
+    },
+    RetractLast {
+        epoch: u64,
+        response: mpsc::Sender<Result<SmokeOutput, String>>,
+    },
+    Shutdown,
+}
+
+impl ThreadedGraphSession {
+    pub fn new(
+        source_path: impl Into<String>,
+        source_text: impl Into<String>,
+    ) -> Result<Self, String> {
+        let source_path = source_path.into();
+        let source_text = source_text.into();
+        let (sender, receiver) = mpsc::channel::<ThreadedRequest>();
+        let (ready_sender, ready_receiver) = mpsc::channel::<Result<(), String>>();
+        let thread =
+            thread::spawn(
+                move || match CompiledGraphSession::new(source_path, source_text) {
+                    Ok(mut session) => {
+                        let _ = ready_sender.send(Ok(()));
+                        let mut submitted_events = Vec::<SubmittedEvent>::new();
+                        while let Ok(request) = receiver.recv() {
+                            match request {
+                                ThreadedRequest::HostTick { epoch, response } => {
+                                    session.submit_host_tick(epoch);
+                                    let _ = response.send(session.drain_epoch(epoch));
+                                }
+                                ThreadedRequest::SubmitAction {
+                                    action,
+                                    epoch,
+                                    response,
+                                } => {
+                                    submitted_events.push(session.submit_action(&action, epoch));
+                                    let _ = response.send(session.drain_epoch(epoch));
+                                }
+                                ThreadedRequest::RetractLast { epoch, response } => {
+                                    if let Some(submitted) = submitted_events.pop() {
+                                        session.retract_event(&submitted, epoch);
+                                    }
+                                    let _ = response.send(session.drain_epoch(epoch));
+                                }
+                                ThreadedRequest::Shutdown => break,
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        let _ = ready_sender.send(Err(error));
+                    }
+                },
+            );
+        ready_receiver
+            .recv()
+            .map_err(|error| format!("compiled graph worker did not start: {error}"))??;
+        Ok(Self {
+            sender,
+            thread: Some(thread),
+        })
+    }
+
+    pub fn submit_host_tick_and_drain(&self, epoch: u64) -> Result<SmokeOutput, String> {
+        self.request(|response| ThreadedRequest::HostTick { epoch, response })
+    }
+
+    pub fn submit_action_and_drain(
+        &self,
+        action: SourceAction,
+        epoch: u64,
+    ) -> Result<SmokeOutput, String> {
+        self.request(|response| ThreadedRequest::SubmitAction {
+            action,
+            epoch,
+            response,
+        })
+    }
+
+    pub fn retract_last_and_drain(&self, epoch: u64) -> Result<SmokeOutput, String> {
+        self.request(|response| ThreadedRequest::RetractLast { epoch, response })
+    }
+
+    fn request(
+        &self,
+        build: impl FnOnce(mpsc::Sender<Result<SmokeOutput, String>>) -> ThreadedRequest,
+    ) -> Result<SmokeOutput, String> {
+        let (response, receiver) = mpsc::channel();
+        self.sender
+            .send(build(response))
+            .map_err(|error| format!("compiled graph worker stopped: {error}"))?;
+        receiver
+            .recv()
+            .map_err(|error| format!("compiled graph worker response failed: {error}"))?
+    }
+}
+
+impl Drop for ThreadedGraphSession {
+    fn drop(&mut self) {
+        let _ = self.sender.send(ThreadedRequest::Shutdown);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 impl CompiledGraphSession {
@@ -135,7 +260,7 @@ impl CompiledGraphSession {
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut sources = InputSession::<EncodedTime, (u64, GeneratedSourceEvent), Diff>::new();
         let mut probe = ProbeHandle::new();
-        let outputs = Arc::new(Mutex::new(Vec::<SmokeOutput>::new()));
+        let outputs = Arc::new(Mutex::new(VecDeque::<SmokeOutput>::new()));
         let output_in_graph = Arc::clone(&outputs);
         let monitor_in_graph = monitor_node.clone();
         let render_in_graph = render_node.clone();
@@ -149,7 +274,7 @@ impl CompiledGraphSession {
                         output_in_graph
                             .lock()
                             .expect("compiled runtime output lock poisoned")
-                            .push(SmokeOutput {
+                            .push_back(SmokeOutput {
                                 monitor: vec![MonitorRecord::NodeValue {
                                     epoch: BoonTime::decode(*time).epoch,
                                     node: monitor_in_graph.clone(),
@@ -177,11 +302,10 @@ impl CompiledGraphSession {
             monitor_node,
             render_node,
             next_sequence: 0,
-            cursor: 0,
         })
     }
 
-    pub fn submit_action(&mut self, action: &SourceAction, epoch: u64) {
+    pub fn submit_action(&mut self, action: &SourceAction, epoch: u64) -> SubmittedEvent {
         let payload = boon_dd::source_action_payload(action);
         let event = match (&action.owner, action.generation) {
             (Some(owner), generation) => GeneratedSourceEvent::Dynamic {
@@ -204,25 +328,33 @@ impl CompiledGraphSession {
                 payload,
             },
         };
-        self.submit_event(event, epoch);
+        self.submit_event(event, epoch)
     }
 
-    pub fn submit_host_tick(&mut self, epoch: u64) {
+    pub fn submit_host_tick(&mut self, epoch: u64) -> SubmittedEvent {
         self.submit_event(
             GeneratedSourceEvent::Static {
                 source_id: SourceId("__host_tick".to_owned()),
                 payload: GeneratedSourceEventPayload::EmptyRecord,
             },
             epoch,
-        );
+        )
     }
 
-    pub fn submit_event(&mut self, event: GeneratedSourceEvent, epoch: u64) {
+    pub fn submit_event(&mut self, event: GeneratedSourceEvent, epoch: u64) -> SubmittedEvent {
         self.sources
             .advance_to(BoonTime { epoch, phase: 0 }.encode());
         let sequence = self.next_sequence;
         self.next_sequence += 1;
-        self.sources.insert((sequence, event));
+        self.sources.insert((sequence, event.clone()));
+        SubmittedEvent { sequence, event }
+    }
+
+    pub fn retract_event(&mut self, submitted: &SubmittedEvent, epoch: u64) {
+        self.sources
+            .advance_to(BoonTime { epoch, phase: 0 }.encode());
+        self.sources
+            .remove((submitted.sequence, submitted.event.clone()));
     }
 
     pub fn drain_epoch(&mut self, epoch: u64) -> Result<SmokeOutput, String> {
@@ -239,31 +371,24 @@ impl CompiledGraphSession {
             self.worker.step();
             steps += 1;
         }
-        let outputs = self
+        let mut outputs = self
             .outputs
             .lock()
             .map_err(|_| "compiled runtime output lock poisoned".to_owned())?;
-        let latest = outputs
-            .get(self.cursor..)
-            .and_then(|slice| slice.last())
-            .cloned()
-            .or_else(|| outputs.last().cloned())
-            .unwrap_or_else(|| SmokeOutput {
-                monitor: vec![MonitorRecord::NodeValue {
-                    epoch,
-                    node: self.monitor_node.clone(),
-                    owner: OwnerKey("Root".to_owned()),
-                    value_preview: String::new(),
-                }],
-                render: vec![RenderCommand::PatchText {
-                    node: self.render_node.clone(),
-                    text: String::new(),
-                }],
-                effects: Vec::new(),
-                persistence: Vec::new(),
-            });
-        self.cursor = outputs.len();
-        Ok(latest)
+        Ok(outputs.drain(..).last().unwrap_or_else(|| SmokeOutput {
+            monitor: vec![MonitorRecord::NodeValue {
+                epoch,
+                node: self.monitor_node.clone(),
+                owner: OwnerKey("Root".to_owned()),
+                value_preview: String::new(),
+            }],
+            render: vec![RenderCommand::PatchText {
+                node: self.render_node.clone(),
+                text: String::new(),
+            }],
+            effects: Vec::new(),
+            persistence: Vec::new(),
+        }))
     }
 }
 

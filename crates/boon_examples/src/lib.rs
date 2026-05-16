@@ -72,57 +72,13 @@ pub struct GeneratedScenarioStepOutput {
     pub output: boon_dd::SmokeOutput,
 }
 
-fn empty_smoke_output() -> boon_dd::SmokeOutput {
+fn empty_output() -> boon_dd::SmokeOutput {
     boon_dd::SmokeOutput {
         monitor: Vec::new(),
         render: Vec::new(),
         effects: Vec::new(),
         persistence: Vec::new(),
     }
-}
-
-macro_rules! run_generated_fixture_actions {
-    ($expected_name:literal, $fixture:expr, $crate_name:ident, $actions:expr) => {{
-        assert_eq!(
-            $fixture.name, $expected_name,
-            "generated fixture registry order drifted"
-        );
-        let allocator = timely::communication::Allocator::Thread(
-            timely::communication::allocator::Thread::default(),
-        );
-        let mut worker =
-            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
-        let mut graph = $crate_name::graph::build_dataflow(&mut worker);
-        let epoch = 1_u64;
-        let mut submitted = false;
-        for action in $actions {
-            graph.sources.submit_action(action, epoch);
-            submitted = true;
-        }
-        if !submitted {
-            graph.sources.submit_host_tick(epoch);
-        }
-        graph.sources.close_epoch(epoch);
-        let target = $crate_name::graph::completion_time(epoch) + 1;
-        let mut steps = 0_usize;
-        while graph.probe.less_than(&target) {
-            if steps == 1024 {
-                panic!(
-                    "generated fixture {} probe stalled at {target} after {steps} steps",
-                    $fixture.name
-                );
-            }
-            worker.step();
-            steps += 1;
-        }
-        let output = graph
-            .sources
-            .outputs()
-            .into_iter()
-            .last()
-            .unwrap_or_else(empty_smoke_output);
-        ($fixture.name.to_owned(), output)
-    }};
 }
 
 macro_rules! run_generated_fixture_steps {
@@ -185,12 +141,8 @@ macro_rules! run_generated_fixture_steps {
                 worker.step();
                 worker_steps += 1;
             }
-            let output = graph
-                .sources
-                .outputs()
-                .into_iter()
-                .last()
-                .unwrap_or_else(empty_smoke_output);
+            let mut drained_outputs = graph.sources.take_outputs();
+            let output = drained_outputs.pop().unwrap_or_else(empty_output);
             last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {
                 match command {
                     boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),
@@ -221,125 +173,6 @@ macro_rules! run_generated_fixture_steps {
         }
         ($fixture.name.to_owned(), outputs)
     }};
-}
-
-pub fn run_generated_actions_at(
-    index: usize,
-    actions: &[boon_dd::SourceAction],
-) -> Option<(String, boon_dd::SmokeOutput)> {
-    Some(match index {
-        0 => run_generated_fixture_actions!(
-            "counter",
-            &GENERATED_CORPUS[0],
-            generated_counter,
-            actions
-        ),
-        1 => run_generated_fixture_actions!(
-            "counter_hold",
-            &GENERATED_CORPUS[1],
-            generated_counter_hold,
-            actions
-        ),
-        2 => run_generated_fixture_actions!(
-            "interval",
-            &GENERATED_CORPUS[2],
-            generated_interval,
-            actions
-        ),
-        3 => run_generated_fixture_actions!(
-            "interval_hold",
-            &GENERATED_CORPUS[3],
-            generated_interval_hold,
-            actions
-        ),
-        4 => run_generated_fixture_actions!(
-            "latest",
-            &GENERATED_CORPUS[4],
-            generated_latest,
-            actions
-        ),
-        5 => run_generated_fixture_actions!("when", &GENERATED_CORPUS[5], generated_when, actions),
-        6 => {
-            run_generated_fixture_actions!("while", &GENERATED_CORPUS[6], generated_while, actions)
-        }
-        7 => run_generated_fixture_actions!("then", &GENERATED_CORPUS[7], generated_then, actions),
-        8 => run_generated_fixture_actions!(
-            "list_map_block",
-            &GENERATED_CORPUS[8],
-            generated_list_map_block,
-            actions
-        ),
-        9 => run_generated_fixture_actions!(
-            "list_map_external_dep",
-            &GENERATED_CORPUS[9],
-            generated_list_map_external_dep,
-            actions
-        ),
-        10 => run_generated_fixture_actions!(
-            "list_object_state",
-            &GENERATED_CORPUS[10],
-            generated_list_object_state,
-            actions
-        ),
-        11 => run_generated_fixture_actions!(
-            "list_retain_count",
-            &GENERATED_CORPUS[11],
-            generated_list_retain_count,
-            actions
-        ),
-        12 => run_generated_fixture_actions!(
-            "list_retain_reactive",
-            &GENERATED_CORPUS[12],
-            generated_list_retain_reactive,
-            actions
-        ),
-        13 => run_generated_fixture_actions!(
-            "list_retain_remove",
-            &GENERATED_CORPUS[13],
-            generated_list_retain_remove,
-            actions
-        ),
-        14 => run_generated_fixture_actions!(
-            "shopping_list",
-            &GENERATED_CORPUS[14],
-            generated_shopping_list,
-            actions
-        ),
-        15 => run_generated_fixture_actions!(
-            "todo_mvc",
-            &GENERATED_CORPUS[15],
-            generated_todo_mvc,
-            actions
-        ),
-        16 => {
-            run_generated_fixture_actions!("crud", &GENERATED_CORPUS[16], generated_crud, actions)
-        }
-        17 => run_generated_fixture_actions!(
-            "flight_booker",
-            &GENERATED_CORPUS[17],
-            generated_flight_booker,
-            actions
-        ),
-        18 => run_generated_fixture_actions!(
-            "temperature_converter",
-            &GENERATED_CORPUS[18],
-            generated_temperature_converter,
-            actions
-        ),
-        19 => {
-            run_generated_fixture_actions!("pong", &GENERATED_CORPUS[19], generated_pong, actions)
-        }
-        20 => {
-            run_generated_fixture_actions!("cells", &GENERATED_CORPUS[20], generated_cells, actions)
-        }
-        21 => run_generated_fixture_actions!(
-            "todo_mvc_physical",
-            &GENERATED_CORPUS[21],
-            generated_todo_mvc_physical,
-            actions
-        ),
-        _ => return None,
-    })
 }
 
 pub fn run_generated_steps_at(
@@ -455,7 +288,7 @@ pub fn run_generated_scenario_at(
             .into_iter()
             .last()
             .map(|step| step.output)
-            .unwrap_or_else(empty_smoke_output);
+            .unwrap_or_else(empty_output);
         (name, output)
     })
 }
@@ -466,44 +299,6 @@ pub fn run_generated_scenario_steps_at(
 ) -> Option<(String, Vec<GeneratedScenarioStepOutput>)> {
     let steps = scenario_steps_for_text(scenario_text);
     run_generated_steps_at(index, &steps)
-}
-
-pub fn run_generated_for_checked_source(
-    source_text: &str,
-    scenario_text: &str,
-) -> Option<(String, boon_dd::SmokeOutput)> {
-    let plan = boon_compiler::compile_source("host/source.bn", source_text);
-    generated_index_for_graph_id(&plan.dd_graph_ir.graph_id)
-        .and_then(|index| run_generated_scenario_at(index, scenario_text))
-}
-
-fn generated_index_for_graph_id(graph_id: &str) -> Option<usize> {
-    [
-        generated_counter::graph::graph_id(),
-        generated_counter_hold::graph::graph_id(),
-        generated_interval::graph::graph_id(),
-        generated_interval_hold::graph::graph_id(),
-        generated_latest::graph::graph_id(),
-        generated_when::graph::graph_id(),
-        generated_while::graph::graph_id(),
-        generated_then::graph::graph_id(),
-        generated_list_map_block::graph::graph_id(),
-        generated_list_map_external_dep::graph::graph_id(),
-        generated_list_object_state::graph::graph_id(),
-        generated_list_retain_count::graph::graph_id(),
-        generated_list_retain_reactive::graph::graph_id(),
-        generated_list_retain_remove::graph::graph_id(),
-        generated_shopping_list::graph::graph_id(),
-        generated_todo_mvc::graph::graph_id(),
-        generated_crud::graph::graph_id(),
-        generated_flight_booker::graph::graph_id(),
-        generated_temperature_converter::graph::graph_id(),
-        generated_pong::graph::graph_id(),
-        generated_cells::graph::graph_id(),
-        generated_todo_mvc_physical::graph::graph_id(),
-    ]
-    .iter()
-    .position(|candidate| *candidate == graph_id)
 }
 
 pub fn run_embedded_matrix() -> Vec<(String, boon_dd::SmokeOutput)> {
