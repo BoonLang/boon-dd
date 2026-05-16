@@ -167,6 +167,9 @@ schema_errors: []
   plain number.
 - Shape checking and generated DD render code now cover sibling-repo boolean
   combinators `Bool/and`, `Bool/or`, and `Bool/xor` with explicit tag output.
+- Shape checking and generated DD render code now cover a bounded subset of
+  sibling-repo list helpers: `List/any`, `List/every`, `List/get`,
+  `List/is_empty`, `List/latest`, `List/range`, and `List/sum`.
 - `SOURCE { target }` and `LINK { target }` used as render pipe stages now
   preserve the piped render value instead of falling into unsupported generated
   runtime code, while still leaving explicit source/link nodes in the DD render
@@ -267,8 +270,9 @@ inside this repo:
    host event propagation for linked/source-targeted elements, structured
    element render output beyond the current render-text projection, full
    `PASS`/`PASSED` coverage, honest number/tag union typing for `Text/to_number`,
-   bit-vector/list/router/memory/canvas/theme libraries, and any remaining
-   sibling-repo syntax or library semantics not represented in
+   remaining list contracts such as `List/chain`, `List/zip`, `List/sort_by`,
+   `List/remove_last`, and `List/to_u_bits`, bit-vector/router/memory/canvas/theme
+   libraries, and any remaining sibling-repo syntax or library semantics not represented in
    `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every

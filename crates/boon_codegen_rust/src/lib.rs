@@ -358,9 +358,16 @@ fn call_graph_collection_code(
         | "Text/trim"
         | "Text/uppercase"
         | "List/append"
+        | "List/any"
         | "List/map"
+        | "List/every"
+        | "List/get"
+        | "List/is_empty"
+        | "List/latest"
+        | "List/range"
         | "List/retain"
         | "List/count"
+        | "List/sum"
         | "Temperature/c_to_f"
         | "Bool/and"
         | "Bool/not"
@@ -712,6 +719,42 @@ fn call_graph_value_code(
                 input, item
             )
         }
+        "List/range" => {
+            let from = named_graph_arg_code(graph, args, "from", env)
+                .unwrap_or_else(|| unsupported_value_code("List/range missing from"));
+            let to = named_graph_arg_code(graph, args, "to", env)
+                .unwrap_or_else(|| unsupported_value_code("List/range missing to"));
+            format!(
+                "{{ let from = ({}).number(); let to = ({}).number(); GeneratedValue::List(if from <= to {{ (from..=to).map(GeneratedValue::Number).collect() }} else {{ Vec::new() }}) }}",
+                from, to
+            )
+        }
+        "List/get" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("List/get missing input"));
+            let index = named_graph_arg_code(graph, args, "index", env)
+                .or_else(|| first_graph_arg_code(graph, args, env))
+                .unwrap_or_else(|| unsupported_value_code("List/get missing index"));
+            format!(
+                "match {} {{ GeneratedValue::List(values) => {{ let index = ({}).number(); if index <= 0 {{ panic!(\"generated DD render List/get index must be one-based and positive\") }} values.get((index - 1) as usize).cloned().unwrap_or_else(|| panic!(\"generated DD render List/get index out of bounds\")) }}, other => panic!(\"generated DD render List/get expected List, got {{other:?}}\") }}",
+                input, index
+            )
+        }
+        "List/latest" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("List/latest missing input"));
+            format!(
+                "match {} {{ GeneratedValue::List(values) => values.into_iter().last().unwrap_or_else(|| panic!(\"generated DD render List/latest expected non-empty List\")), other => panic!(\"generated DD render List/latest expected List, got {{other:?}}\") }}",
+                input
+            )
+        }
+        "List/is_empty" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("List/is_empty missing input"));
+            format!(
+                "GeneratedValue::Tag((if matches!({}, GeneratedValue::List(values) if values.is_empty()) {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+                input
+            )
+        }
         "List/map" => {
             let input = input.unwrap_or_else(|| unsupported_value_code("List/map missing input"));
             let Some(new_expr) = named_graph_arg(args, "new") else {
@@ -757,6 +800,29 @@ fn call_graph_value_code(
                     input
                 )
             }
+        }
+        "List/sum" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("List/sum missing input"));
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::Number(values.into_iter().map(GeneratedValue::number).sum()), _ => GeneratedValue::Number(0) }}",
+                input
+            )
+        }
+        "List/any" | "List/every" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing input")));
+            let predicate = named_graph_arg(args, "if")
+                .map(|expr| {
+                    let mut nested_env = env.clone();
+                    nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
+                    format!("({}).truthy()", value_graph_code(graph, expr, &nested_env))
+                })
+                .unwrap_or_else(|| "item_value.clone().truthy()".to_owned());
+            let quantifier = if callee == "List/any" { "any" } else { "all" };
+            format!(
+                "match {} {{ GeneratedValue::List(values) => GeneratedValue::Tag((if values.into_iter().{}(|item_value| {}) {{ \"True\" }} else {{ \"False\" }}).to_owned()), _ => GeneratedValue::Tag(\"False\".to_owned()) }}",
+                input, quantifier, predicate
+            )
         }
         "Temperature/c_to_f" => {
             let input =
@@ -1085,5 +1151,23 @@ mod tests {
         assert!(module.contains(".truthy() &&"));
         assert!(module.contains(".truthy() ||"));
         assert!(module.contains(".truthy() ^"));
+    }
+
+    #[test]
+    fn list_helpers_lower_without_generated_fallback() {
+        let plan = boon_compiler::compile_source(
+            "list_helpers.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { List/range(from: 1, to: 3) |> List/get(index: 1) List/range(from: 1, to: 3) |> List/latest() List/range(from: 1, to: 3) |> List/is_empty() List/range(from: 1, to: 3) |> List/sum() List/range(from: 1, to: 3) |> List/any(item, if: Number/greater_than(left: item, right: 2)) List/range(from: 1, to: 3) |> List/every(item, if: Number/greater_than(left: item, right: 0)) }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains(&format!("{}{}", "unsupported library call ", "List/")));
+        assert!(!module.contains(&format!(
+            "{}{}",
+            "unsupported collection library call ", "List/"
+        )));
+        assert!(module.contains("from..=to"));
+        assert!(module.contains(&format!("{}{}", "List", "/get index")));
+        assert!(module.contains(".any(|item_value|"));
+        assert!(module.contains(".all(|item_value|"));
     }
 }

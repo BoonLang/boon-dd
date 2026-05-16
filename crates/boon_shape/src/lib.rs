@@ -223,6 +223,7 @@ impl ShapeContext {
             "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/substring"
             | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
+            "List/range" => Shape::List(Box::new(Shape::Number)),
             "Math/sum" | "Temperature/c_to_f" => Shape::Number,
             "Bool/and" | "Bool/not" | "Bool/or" | "Bool/xor" => {
                 Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
@@ -308,6 +309,34 @@ impl ShapeContext {
                 }
                 Shape::Number
             }
+            "List/get" | "List/latest" => match input {
+                Shape::List(item_shape) => *item_shape,
+                other => {
+                    self.diagnostics.push(ShapeDiagnostic {
+                        message: format!("{callee} expected List input, got {other:?}"),
+                    });
+                    Shape::Unknown
+                }
+            },
+            "List/is_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
+            "List/sum" => Shape::Number,
+            "List/any" | "List/every" => match input {
+                Shape::List(item_shape) => {
+                    let binder = list_binder(args);
+                    if let Some(expr) = named_arg(args, "if") {
+                        self.with_scope([(binder, (*item_shape).clone())], |context| {
+                            context.shape_expr(expr)
+                        });
+                    }
+                    Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
+                }
+                other => {
+                    self.diagnostics.push(ShapeDiagnostic {
+                        message: format!("{callee} expected List input, got {other:?}"),
+                    });
+                    Shape::Unknown
+                }
+            },
             _ => self.call_shape(callee, args),
         }
     }
@@ -330,6 +359,7 @@ impl ShapeContext {
             | "Text/substring" | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
             "Math/sum"
             | "List/count"
+            | "List/sum"
             | "Temperature/c_to_f"
             | "Number/abs"
             | "Number/neg_abs"
@@ -347,7 +377,9 @@ impl ShapeContext {
             | "Geometry/intersects"
             | "Text/is_empty"
             | "Text/is_not_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
-            "List/append" | "List/remove" | "List/map" | "List/retain" => Shape::Unknown,
+            "List/range" => Shape::List(Box::new(Shape::Number)),
+            "List/append" | "List/any" | "List/every" | "List/get" | "List/is_empty"
+            | "List/latest" | "List/map" | "List/remove" | "List/retain" => Shape::Unknown,
             _ => {
                 if let Some(shape) = typed_library_signature(callee) {
                     return shape;
@@ -623,5 +655,27 @@ mod tests {
         assert_eq!(report.definitions.get("both"), Some(&bool_shape));
         assert_eq!(report.definitions.get("either"), Some(&bool_shape));
         assert_eq!(report.definitions.get("only_one"), Some(&bool_shape));
+    }
+
+    #[test]
+    fn checks_list_helper_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "list_helpers.bn",
+            "items: List/range(from: 1, to: 3)\nfirst: items |> List/get(index: 1)\nlatest: items |> List/latest()\nempty: items |> List/is_empty()\nsum: items |> List/sum()\nany_big: items |> List/any(item, if: Number/greater_than(left: item, right: 2))\nevery_big: items |> List/every(item, if: Number/greater_than(left: item, right: 0))\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(
+            report.definitions.get("items"),
+            Some(&Shape::List(Box::new(Shape::Number)))
+        );
+        assert_eq!(report.definitions.get("first"), Some(&Shape::Number));
+        assert_eq!(report.definitions.get("latest"), Some(&Shape::Number));
+        assert_eq!(report.definitions.get("sum"), Some(&Shape::Number));
+        let bool_shape = Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]);
+        assert_eq!(report.definitions.get("empty"), Some(&bool_shape));
+        assert_eq!(report.definitions.get("any_big"), Some(&bool_shape));
+        assert_eq!(report.definitions.get("every_big"), Some(&bool_shape));
     }
 }
