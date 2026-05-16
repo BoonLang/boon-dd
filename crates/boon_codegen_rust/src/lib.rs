@@ -342,6 +342,8 @@ fn call_graph_collection_code(
         "Timer/interval" | "Window/animation_frame" => input.to_owned(),
         "Document/new"
         | "Scene/new"
+        | "Math/min"
+        | "Math/round"
         | "Text/empty"
         | "Text/find"
         | "Text/from_number"
@@ -824,6 +826,11 @@ fn call_graph_value_code(
                 input, quantifier, predicate
             )
         }
+        "Math/min" => math_min_call(graph, input, args, env),
+        "Math/round" => {
+            let value = number_arg_code(graph, input, args, env, "value");
+            format!("GeneratedValue::Number(({}).number())", value)
+        }
         "Temperature/c_to_f" => {
             let input =
                 input.unwrap_or_else(|| unsupported_value_code("Temperature/c_to_f missing input"));
@@ -934,6 +941,26 @@ fn bool_combinator_call(
     format!(
         "GeneratedValue::Tag((if ({}).truthy() {} ({}).truthy() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
         left, op, right
+    )
+}
+
+fn math_min_call(
+    graph: &boon_dd::DdRenderGraph,
+    input: Option<String>,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let left = input
+        .or_else(|| named_graph_arg_code(graph, args, "a", env))
+        .or_else(|| named_graph_arg_code(graph, args, "left", env))
+        .or_else(|| first_graph_arg_code(graph, args, env))
+        .unwrap_or_else(|| unsupported_value_code("Math/min missing left"));
+    let right = named_graph_arg_code(graph, args, "b", env)
+        .or_else(|| named_graph_arg_code(graph, args, "right", env))
+        .unwrap_or_else(|| unsupported_value_code("Math/min missing right"));
+    format!(
+        "GeneratedValue::Number(std::cmp::min(({}).number(), ({}).number()))",
+        left, right
     )
 }
 
@@ -1169,5 +1196,18 @@ mod tests {
         assert!(module.contains(&format!("{}{}", "List", "/get index")));
         assert!(module.contains(".any(|item_value|"));
         assert!(module.contains(".all(|item_value|"));
+    }
+
+    #[test]
+    fn math_helpers_lower_without_generated_fallback() {
+        let plan = boon_compiler::compile_source(
+            "math_helpers.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { 7 |> Math/min(b: 3) 3 |> Math/round() }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Math/"));
+        assert!(!module.contains("unsupported collection library call Math/"));
+        assert!(module.contains("std::cmp::min"));
+        assert!(module.contains("GeneratedValue::Number"));
     }
 }

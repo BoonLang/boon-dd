@@ -170,6 +170,11 @@ schema_errors: []
 - Shape checking and generated DD render code now cover a bounded subset of
   sibling-repo list helpers: `List/any`, `List/every`, `List/get`,
   `List/is_empty`, `List/latest`, `List/range`, and `List/sum`.
+- Shape checking and generated DD render code now cover sibling-repo math
+  helpers `Math/min` and `Math/round` in the current integer generated-value
+  model. This removes the helper-call gap for timer and converter-style
+  examples, but it does not claim full numeric semantics for future decimal or
+  number/tag union cases.
 - `SOURCE { target }` and `LINK { target }` used as render pipe stages now
   preserve the piped render value instead of falling into unsupported generated
   runtime code, while still leaving explicit source/link nodes in the DD render

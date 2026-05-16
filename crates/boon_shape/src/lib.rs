@@ -224,7 +224,7 @@ impl ShapeContext {
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/substring"
             | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
             "List/range" => Shape::List(Box::new(Shape::Number)),
-            "Math/sum" | "Temperature/c_to_f" => Shape::Number,
+            "Math/min" | "Math/round" | "Math/sum" | "Temperature/c_to_f" => Shape::Number,
             "Bool/and" | "Bool/not" | "Bool/or" | "Bool/xor" => {
                 Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
             }
@@ -357,7 +357,9 @@ impl ShapeContext {
             "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/starts_with"
             | "Text/substring" | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
-            "Math/sum"
+            "Math/min"
+            | "Math/round"
+            | "Math/sum"
             | "List/count"
             | "List/sum"
             | "Temperature/c_to_f"
@@ -677,5 +679,18 @@ mod tests {
         assert_eq!(report.definitions.get("empty"), Some(&bool_shape));
         assert_eq!(report.definitions.get("any_big"), Some(&bool_shape));
         assert_eq!(report.definitions.get("every_big"), Some(&bool_shape));
+    }
+
+    #[test]
+    fn checks_math_helper_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "math_helpers.bn",
+            "minimum: 7 |> Math/min(b: 3)\nrounded: minimum |> Math/round()\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("minimum"), Some(&Shape::Number));
+        assert_eq!(report.definitions.get("rounded"), Some(&Shape::Number));
     }
 }
