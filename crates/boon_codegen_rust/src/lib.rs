@@ -303,6 +303,8 @@ fn stage_collection_graph_code(
         boon_dd::DdRenderGraphOperation::Call { callee, args } => {
             call_graph_collection_code(graph, callee, input, args, env)
         }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => input.to_owned(),
         boon_dd::DdRenderGraphOperation::Then { body } => {
             let value = body
                 .last()
@@ -520,6 +522,10 @@ fn stage_graph_value_code(
     match &stage.operation {
         boon_dd::DdRenderGraphOperation::Call { callee, args } => {
             call_graph_value_code(graph, callee, input, args, env)
+        }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => {
+            input.unwrap_or_else(|| unsupported_value_code("SOURCE/LINK stage missing piped input"))
         }
         _ => value_graph_code(graph, &stage.node, env),
     }
@@ -818,4 +824,20 @@ fn unsupported_value_code(reason: &str) -> String {
 
 fn quote(value: &str) -> String {
     format!("{value:?}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_target_pipe_is_render_passthrough_not_runtime_fallback() {
+        let plan = boon_compiler::compile_source(
+            "source_pipe.bn",
+            "store: [button: SOURCE]\ndocument: Document/new(root: Element/button(label: TEXT { A }) |> SOURCE { store.button })\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unlowered SOURCE target expression"));
+        assert!(module.contains("GeneratedValue::Text(\"A\".to_owned())"));
+    }
 }

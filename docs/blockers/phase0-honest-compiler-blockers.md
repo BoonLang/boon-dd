@@ -146,6 +146,10 @@ schema_errors: []
   `Number/abs`, `Number/neg_abs`, `Number/max`, `Number/clamp`,
   `Number/percent_of_range`, `Number/scale_percent`, `Number/less_than`,
   `Number/greater_than`, and `Geometry/intersects`.
+- `SOURCE { target }` and `LINK { target }` used as render pipe stages now
+  preserve the piped render value instead of falling into unsupported generated
+  runtime code, while still leaving explicit source/link nodes in the DD render
+  graph.
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
@@ -193,11 +197,11 @@ schema_errors: []
   blockers.
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
   semantics from local sibling repos. Current open gaps include executable
-  `LINK`/`SOURCE { target }` propagation, complete cross-phase
-  `PASS`/`PASSED` coverage, and any remaining unimported sibling-repo language
-  surface. Marking the manifest accepted before either implementing these or
-  explicitly excluding them as a product decision would make the verifier
-  dishonest.
+  host event propagation for linked/source-targeted elements, complete
+  cross-phase `PASS`/`PASSED` coverage, and any remaining unimported
+  sibling-repo language surface. Marking the manifest accepted before either
+  implementing these or explicitly excluding them as a product decision would
+  make the verifier dishonest.
 
 ## Minimized Repro
 
@@ -227,9 +231,9 @@ No dependency fork is needed for the current blocker. Continue implementation
 inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
-   executable link/source propagation, full `PASS`/`PASSED` coverage,
-   and any remaining sibling-repo syntax or library semantics not represented
-   in `docs/language/boon-language-manifest.toml`.
+   host event propagation for linked/source-targeted elements, full
+   `PASS`/`PASSED` coverage, and any remaining sibling-repo syntax or library
+   semantics not represented in `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
    accepted feature.

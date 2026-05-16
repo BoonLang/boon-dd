@@ -187,6 +187,16 @@ impl ShapeContext {
 
     fn pipe_shape(&mut self, input: Shape, stage: &boon_syntax::Expr) -> Shape {
         match stage {
+            boon_syntax::Expr::SourceAt { target } => {
+                self.shape_expr(target);
+                input
+            }
+            boon_syntax::Expr::Link { target } => {
+                if let Some(target) = target {
+                    self.shape_expr(target);
+                }
+                input
+            }
             boon_syntax::Expr::Then { body } => self.last_shape(body),
             boon_syntax::Expr::Hold { binder, body } => self
                 .with_scope([(binder.clone(), input)], |context| {
@@ -498,5 +508,17 @@ mod tests {
             report.definitions.get("hit"),
             Some(&Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]))
         );
+    }
+
+    #[test]
+    fn source_target_pipe_preserves_input_shape() {
+        let parsed = boon_syntax::parse_source(
+            "source_pipe.bn",
+            "store: [button: SOURCE]\nbutton: Element/button(label: TEXT { A }) |> SOURCE { store.button }\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("button"), Some(&Shape::Element));
     }
 }
