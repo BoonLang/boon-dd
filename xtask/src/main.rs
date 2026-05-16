@@ -3887,9 +3887,14 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let expected_output: boon_dd::SmokeOutput = serde_json::from_str(&expected_render_text)
-        .with_context(|| format!("invalid expected render output for {example}"))?;
-    let outputs = vec![expected_output];
+    let (generated_example, generated_output) =
+        boon_examples::run_generated_for_checked_source(&source_text, &scenario_text)
+            .with_context(|| format!("example {example} has no verified generated graph"))?;
+    ensure!(
+        generated_example == example,
+        "example {example} resolved to generated graph {generated_example}"
+    );
+    let outputs = vec![generated_output];
     let scenario_steps = scenario.steps;
 
     let src_dir = generated_dir.join("src");

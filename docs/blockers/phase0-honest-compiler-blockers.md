@@ -112,7 +112,10 @@ schema_errors: []
 ## Passing Evidence
 
 - `target/boon-artifacts/generated-freshness-report.json` reports verdict
-  `pass`: 374 generated files checked, 0 stale, 0 missing.
+  `pass`: 374 generated files checked, 0 stale, 0 missing. Snapshot/proof
+  artifacts are now written from the generated Timely/DD graph output for the
+  source/scenario instead of being copied from `expected.render.json`; expected
+  files remain assertion inputs for generated-crate tests.
 - `target/boon-artifacts/generated-crates.json` reports verdict `pass`: 22
   generated crates checked. The generated crate tests replay the full parsed
   scenario protocol rather than only the first scenario step.
