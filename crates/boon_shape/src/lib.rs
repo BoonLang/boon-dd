@@ -282,10 +282,10 @@ impl ShapeContext {
                     Shape::Unknown
                 }
             },
-            "List/retain" | "List/remove" => match input {
+            "List/retain" | "List/remove" | "List/sort_by" => match input {
                 Shape::List(item_shape) => {
                     let binder = list_binder(args);
-                    for arg_name in ["if", "on"] {
+                    for arg_name in ["if", "on", "key"] {
                         if let Some(expr) = named_arg(args, arg_name) {
                             self.with_scope([(binder.clone(), (*item_shape).clone())], |context| {
                                 context.shape_expr(expr)
@@ -384,7 +384,9 @@ impl ShapeContext {
             | "Text/is_not_empty" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
             "List/range" => Shape::List(Box::new(Shape::Number)),
             "List/append" | "List/any" | "List/every" | "List/get" | "List/is_empty"
-            | "List/latest" | "List/map" | "List/remove" | "List/retain" => Shape::Unknown,
+            | "List/latest" | "List/map" | "List/remove" | "List/retain" | "List/sort_by" => {
+                Shape::Unknown
+            }
             _ => {
                 if let Some(shape) = typed_library_signature(callee) {
                     return shape;
@@ -712,7 +714,7 @@ mod tests {
     fn checks_list_helper_shapes() {
         let parsed = boon_syntax::parse_source(
             "list_helpers.bn",
-            "items: List/range(from: 1, to: 3)\nfirst: items |> List/get(index: 1)\nlatest: items |> List/latest()\nempty: items |> List/is_empty()\nsum: items |> List/sum()\nany_big: items |> List/any(item, if: Number/greater_than(left: item, right: 2))\nevery_big: items |> List/every(item, if: Number/greater_than(left: item, right: 0))\n",
+            "items: List/range(from: 1, to: 3)\nfirst: items |> List/get(index: 1)\nlatest: items |> List/latest()\nempty: items |> List/is_empty()\nsum: items |> List/sum()\nany_big: items |> List/any(item, if: Number/greater_than(left: item, right: 2))\nevery_big: items |> List/every(item, if: Number/greater_than(left: item, right: 0))\nsorted: items |> List/sort_by(item, key: item)\n",
         );
         let hir = boon_hir::lower(&parsed);
         let report = check_module(&hir);
@@ -724,6 +726,10 @@ mod tests {
         assert_eq!(report.definitions.get("first"), Some(&Shape::Number));
         assert_eq!(report.definitions.get("latest"), Some(&Shape::Number));
         assert_eq!(report.definitions.get("sum"), Some(&Shape::Number));
+        assert_eq!(
+            report.definitions.get("sorted"),
+            Some(&Shape::List(Box::new(Shape::Number)))
+        );
         let bool_shape = Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]);
         assert_eq!(report.definitions.get("empty"), Some(&bool_shape));
         assert_eq!(report.definitions.get("any_big"), Some(&bool_shape));

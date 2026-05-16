@@ -186,7 +186,8 @@ schema_errors: []
   combinators `Bool/and`, `Bool/or`, and `Bool/xor` with explicit tag output.
 - Shape checking and generated DD render code now cover a bounded subset of
   sibling-repo list helpers: `List/any`, `List/every`, `List/get`,
-  `List/is_empty`, `List/latest`, `List/range`, and `List/sum`.
+  `List/is_empty`, `List/latest`, `List/range`, `List/sort_by`, and
+  `List/sum`.
 - Shape checking and generated DD render code now cover sibling-repo math
   helpers `Math/min` and `Math/round` in the current integer generated-value
   model. This removes the helper-call gap for timer and converter-style
@@ -291,9 +292,9 @@ inside this repo:
 1. Import or explicitly classify the missing cross-repo Boon language surface:
    host event propagation for linked/source-targeted elements, structured
    element render output beyond the current render-text projection, full
-   `PASS`/`PASSED` coverage, honest number/tag union typing for `Text/to_number`,
-   remaining list contracts such as `List/chain`, `List/zip`, `List/sort_by`,
-   `List/remove_last`, and `List/to_u_bits`, bit-vector/router/memory/canvas/theme
+  `PASS`/`PASSED` coverage, honest number/tag union typing for `Text/to_number`,
+  remaining list contracts such as `List/chain`, `List/zip`,
+  `List/remove_last`, and `List/to_u_bits`, bit-vector/router/memory/canvas/theme
    libraries, and any remaining sibling-repo syntax or library semantics not represented in
    `docs/language/boon-language-manifest.toml`.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated

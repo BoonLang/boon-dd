@@ -368,6 +368,7 @@ fn call_graph_collection_code(
         | "List/latest"
         | "List/range"
         | "List/retain"
+        | "List/sort_by"
         | "List/count"
         | "List/sum"
         | "Temperature/c_to_f"
@@ -784,6 +785,20 @@ fn call_graph_value_code(
             format!(
                 "match {} {{ GeneratedValue::List(values) => GeneratedValue::List(values.into_iter().filter(|item_value| {{ let item_value = (*item_value).clone(); {} }}).collect()), other => other }}",
                 input, predicate
+            )
+        }
+        "List/sort_by" => {
+            let input =
+                input.unwrap_or_else(|| unsupported_value_code("List/sort_by missing input"));
+            let Some(key_expr) = named_graph_arg(args, "key") else {
+                return unsupported_value_code("List/sort_by missing key expression");
+            };
+            let mut nested_env = env.clone();
+            nested_env.insert("item".to_owned(), "item_value.clone()".to_owned());
+            let key = value_graph_code(graph, key_expr, &nested_env);
+            format!(
+                "match {} {{ GeneratedValue::List(mut values) => {{ values.sort_by_key(|item_value| {{ let item_value = item_value.clone(); {} }}); GeneratedValue::List(values) }}, other => other }}",
+                input, key
             )
         }
         "List/count" => {
@@ -1212,7 +1227,7 @@ mod tests {
     fn list_helpers_lower_without_generated_fallback() {
         let plan = boon_compiler::compile_source(
             "list_helpers.bn",
-            "document: Document/new(root: Element/stripe(items: LIST { List/range(from: 1, to: 3) |> List/get(index: 1) List/range(from: 1, to: 3) |> List/latest() List/range(from: 1, to: 3) |> List/is_empty() List/range(from: 1, to: 3) |> List/sum() List/range(from: 1, to: 3) |> List/any(item, if: Number/greater_than(left: item, right: 2)) List/range(from: 1, to: 3) |> List/every(item, if: Number/greater_than(left: item, right: 0)) }))\n",
+            "document: Document/new(root: Element/stripe(items: LIST { List/range(from: 1, to: 3) |> List/get(index: 1) List/range(from: 1, to: 3) |> List/latest() List/range(from: 1, to: 3) |> List/is_empty() List/range(from: 1, to: 3) |> List/sum() List/range(from: 1, to: 3) |> List/any(item, if: Number/greater_than(left: item, right: 2)) List/range(from: 1, to: 3) |> List/every(item, if: Number/greater_than(left: item, right: 0)) List/range(from: 1, to: 3) |> List/sort_by(item, key: item) }))\n",
         );
         let module = generated_graph_module(&plan);
         assert!(!module.contains(&format!("{}{}", "unsupported library call ", "List/")));
@@ -1224,6 +1239,7 @@ mod tests {
         assert!(module.contains(&format!("{}{}", "List", "/get index")));
         assert!(module.contains(".any(|item_value|"));
         assert!(module.contains(".all(|item_value|"));
+        assert!(module.contains("sort_by_key"));
     }
 
     #[test]
