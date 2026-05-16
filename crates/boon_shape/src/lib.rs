@@ -490,6 +490,7 @@ fn text_call_shape(callee: &str) -> Shape {
 }
 
 fn is_element_call(callee: &str) -> bool {
+    let callee = canonical_element_call(callee);
     matches!(
         callee,
         "Element/block"
@@ -511,6 +512,30 @@ fn is_element_call(callee: &str) -> bool {
             | "Element/text"
             | "Element/text_input"
     )
+}
+
+fn canonical_element_call(callee: &str) -> &str {
+    match callee {
+        "Scene/Element/block" => "Element/block",
+        "Scene/Element/button" => "Element/button",
+        "Scene/Element/checkbox" => "Element/checkbox",
+        "Scene/Element/container" => "Element/container",
+        "Scene/Element/grid" => "Element/grid",
+        "Scene/Element/label" => "Element/label",
+        "Scene/Element/link" => "Element/link",
+        "Scene/Element/panel" => "Element/panel",
+        "Scene/Element/paragraph" => "Element/paragraph",
+        "Scene/Element/rect" => "Element/rect",
+        "Scene/Element/select" => "Element/select",
+        "Scene/Element/slider" => "Element/slider",
+        "Scene/Element/stack" => "Element/stack",
+        "Scene/Element/stripe" => "Element/stripe",
+        "Scene/Element/svg" => "Element/svg",
+        "Scene/Element/svg_circle" => "Element/svg_circle",
+        "Scene/Element/text" => "Element/text",
+        "Scene/Element/text_input" => "Element/text_input",
+        _ => callee,
+    }
 }
 
 fn named_arg<'a>(args: &'a [boon_syntax::CallArg], name: &str) -> Option<&'a boon_syntax::Expr> {
@@ -692,5 +717,17 @@ mod tests {
         assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
         assert_eq!(report.definitions.get("minimum"), Some(&Shape::Number));
         assert_eq!(report.definitions.get("rounded"), Some(&Shape::Number));
+    }
+
+    #[test]
+    fn checks_scene_element_alias_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "scene_elements.bn",
+            "scene: Scene/new(root: Scene/Element/stripe(items: LIST { Scene/Element/text(text: TEXT { A }) Scene/Element/button(label: TEXT { B }) }))\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("scene"), Some(&Shape::Scene));
     }
 }

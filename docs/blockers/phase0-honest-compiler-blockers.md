@@ -158,6 +158,11 @@ schema_errors: []
   `Element/text`, `Element/text_input`, `Text/empty`, and `Text/space`. This is
   a typed generated-code path, not a source-text or example-name heuristic, but
   it is still only a text projection of the render tree.
+- Physical `Scene/Element/*` calls for the same element family now resolve
+  through the structured library-symbol table and lower through the same
+  generated render-text projection. This removes the immediate physical
+  constructor fallback for sibling examples, but it does not yet implement full
+  physical scene geometry/material semantics.
 - Shape checking and generated DD render code now also cover common sibling-repo
   text helper calls with direct generated DD expressions: `Text/find`,
   `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,

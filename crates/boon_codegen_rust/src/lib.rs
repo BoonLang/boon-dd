@@ -573,6 +573,7 @@ fn call_graph_value_code(
     args: &[boon_dd::DdRenderGraphArg],
     env: &BTreeMap<String, String>,
 ) -> String {
+    let callee = canonical_library_call(callee);
     match callee {
         "Document/new" | "Scene/new" => input.unwrap_or_else(|| {
             named_graph_arg_code(graph, args, "root", env)
@@ -913,6 +914,30 @@ fn call_graph_value_code(
     }
 }
 
+fn canonical_library_call(callee: &str) -> &str {
+    match callee {
+        "Scene/Element/block" => "Element/block",
+        "Scene/Element/button" => "Element/button",
+        "Scene/Element/checkbox" => "Element/checkbox",
+        "Scene/Element/container" => "Element/container",
+        "Scene/Element/grid" => "Element/grid",
+        "Scene/Element/label" => "Element/label",
+        "Scene/Element/link" => "Element/link",
+        "Scene/Element/panel" => "Element/panel",
+        "Scene/Element/paragraph" => "Element/paragraph",
+        "Scene/Element/rect" => "Element/rect",
+        "Scene/Element/select" => "Element/select",
+        "Scene/Element/slider" => "Element/slider",
+        "Scene/Element/stack" => "Element/stack",
+        "Scene/Element/stripe" => "Element/stripe",
+        "Scene/Element/svg" => "Element/svg",
+        "Scene/Element/svg_circle" => "Element/svg_circle",
+        "Scene/Element/text" => "Element/text",
+        "Scene/Element/text_input" => "Element/text_input",
+        _ => callee,
+    }
+}
+
 fn number_arg_code(
     graph: &boon_dd::DdRenderGraph,
     input: Option<String>,
@@ -1018,6 +1043,7 @@ fn element_render_text_call(
 }
 
 fn is_element_call(callee: &str) -> bool {
+    let callee = canonical_library_call(callee);
     is_element_container_call(callee)
         || is_element_decorative_call(callee)
         || matches!(
@@ -1031,6 +1057,7 @@ fn is_element_call(callee: &str) -> bool {
 }
 
 fn is_element_container_call(callee: &str) -> bool {
+    let callee = canonical_library_call(callee);
     matches!(
         callee,
         "Element/block"
@@ -1048,6 +1075,7 @@ fn is_element_container_call(callee: &str) -> bool {
 }
 
 fn is_element_decorative_call(callee: &str) -> bool {
+    let callee = canonical_library_call(callee);
     matches!(callee, "Element/rect" | "Element/svg_circle")
 }
 
@@ -1209,5 +1237,18 @@ mod tests {
         assert!(!module.contains("unsupported collection library call Math/"));
         assert!(module.contains("std::cmp::min"));
         assert!(module.contains("GeneratedValue::Number"));
+    }
+
+    #[test]
+    fn scene_element_calls_lower_to_render_text_projection() {
+        let plan = boon_compiler::compile_source(
+            "scene_elements.bn",
+            "document: Document/new(root: Scene/Element/stripe(items: LIST { Scene/Element/text(text: TEXT { A }) Scene/Element/button(label: TEXT { B }) }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Scene/Element/"));
+        assert!(!module.contains("unsupported collection library call Scene/Element/"));
+        assert!(module.contains(".render_text()"));
+        assert!(module.contains("GeneratedValue::Text(\"B\".to_owned())"));
     }
 }
