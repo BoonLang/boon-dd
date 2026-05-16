@@ -168,6 +168,13 @@ schema_errors: []
   graph instead of silently producing an empty render root. Modules that define
   both keep the existing `document` render root until physical-scene output is
   promoted beyond render-text projection.
+- Shape checking now recognizes bare uppercase variant names as tag values and
+  covers the physical theme helper family used in scene style arguments:
+  `Theme/corners`, `Theme/depth`, `Theme/elevation`, `Theme/font`,
+  `Theme/geometry`, `Theme/lights`, `Theme/material`, `Theme/sizing`,
+  `Theme/spacing`, `Theme/spring_range`, and `Theme/text`. This is type-shape
+  coverage only; it does not yet make style/material values part of structured
+  physical render output.
 - Shape checking and generated DD render code now also cover common sibling-repo
   text helper calls with direct generated DD expressions: `Text/find`,
   `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,

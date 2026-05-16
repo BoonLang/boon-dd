@@ -139,6 +139,9 @@ impl ShapeContext {
     }
 
     fn path_shape(&mut self, path: &str) -> Shape {
+        if is_bare_tag_path(path) {
+            return Shape::TagSet(vec![path.to_owned()]);
+        }
         if self.source_paths.contains(path)
             || path
                 .strip_prefix("sources.")
@@ -466,6 +469,19 @@ fn merge_shapes(left: Shape, right: Shape) -> Shape {
 
 fn typed_library_signature(callee: &str) -> Option<Shape> {
     let (library, function) = callee.split_once('/')?;
+    if library == "Theme" {
+        return match function {
+            "corners" | "depth" | "elevation" | "sizing" | "spacing" | "spring_range" => {
+                Some(Shape::Number)
+            }
+            "font" | "material" => Some(Shape::Record(BTreeMap::from([(
+                "color".to_owned(),
+                Shape::Text,
+            )]))),
+            "geometry" | "lights" | "text" => Some(Shape::Record(BTreeMap::new())),
+            _ => None,
+        };
+    }
     let record_library = [("Pong", "initial"), ("Pong", "step")];
     if record_library
         .iter()
@@ -477,6 +493,14 @@ fn typed_library_signature(callee: &str) -> Option<Shape> {
     } else {
         None
     }
+}
+
+fn is_bare_tag_path(path: &str) -> bool {
+    !path.contains('.')
+        && path
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_uppercase())
 }
 
 fn text_call_shape(callee: &str) -> Shape {
@@ -728,6 +752,26 @@ mod tests {
         let hir = boon_hir::lower(&parsed);
         let report = check_module(&hir);
         assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("scene"), Some(&Shape::Scene));
+    }
+
+    #[test]
+    fn checks_theme_helper_shapes_without_unresolved_tag_errors() {
+        let parsed = boon_syntax::parse_source(
+            "theme_helpers.bn",
+            "spacing: Theme/spacing(of: Tight)\nmaterial: Theme/material(of: Surface)\nscene: Scene/new(root: Scene/Element/text(style: Theme/text(of: Hero), text: TEXT { A }))\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("spacing"), Some(&Shape::Number));
+        assert_eq!(
+            report.definitions.get("material"),
+            Some(&Shape::Record(BTreeMap::from([(
+                "color".to_owned(),
+                Shape::Text
+            )])))
+        );
         assert_eq!(report.definitions.get("scene"), Some(&Shape::Scene));
     }
 }
