@@ -203,6 +203,82 @@ pub struct DdRenderProgram {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderGraph {
+    pub source: DdRenderProgramSource,
+    pub root: NodeId,
+    pub nodes: Vec<DdRenderGraphNode>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderGraphNode {
+    pub node: NodeId,
+    pub operator: GraphOperatorKind,
+    pub inputs: Vec<NodeId>,
+    pub operation: DdRenderGraphOperation,
+    pub order: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderGraphOperation {
+    Missing,
+    Path(String),
+    Number(String),
+    Source,
+    Skip,
+    Tag(String),
+    Text(String),
+    Record(Vec<DdRenderGraphField>),
+    List(Vec<NodeId>),
+    Block(Vec<NodeId>),
+    Latest(Vec<NodeId>),
+    Call {
+        callee: String,
+        args: Vec<DdRenderGraphArg>,
+    },
+    Constructor {
+        callee: String,
+        fields: Vec<DdRenderGraphField>,
+    },
+    Pipe {
+        input: NodeId,
+        stage: NodeId,
+    },
+    BinaryAdd {
+        left: NodeId,
+        right: NodeId,
+    },
+    Then {
+        body: Vec<NodeId>,
+    },
+    Hold {
+        binder: String,
+        body: Vec<NodeId>,
+    },
+    Match {
+        kind: DdRenderMatchKind,
+        arms: Vec<DdRenderGraphMatchArm>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderGraphField {
+    pub name: String,
+    pub value: NodeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DdRenderGraphArg {
+    Positional(NodeId),
+    Named { name: String, value: NodeId },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DdRenderGraphMatchArm {
+    pub pattern: String,
+    pub value: NodeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DdRenderProgramSource {
     pub semantic_path: Option<String>,
     pub output_node: NodeId,

@@ -218,6 +218,173 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": "counter",
+      "output_node": "DocumentText"
+    },
+    "root": "Render12Pipe",
+    "nodes": [
+      {
+        "node": "Render1Number",
+        "operator": "ConstantNumber",
+        "inputs": [],
+        "operation": {
+          "Number": "0"
+        },
+        "order": 0
+      },
+      {
+        "node": "Render2Number",
+        "operator": "ConstantNumber",
+        "inputs": [],
+        "operation": {
+          "Number": "1"
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Constructor",
+        "operator": "Record",
+        "inputs": [
+          "Render2Number"
+        ],
+        "operation": {
+          "Constructor": {
+            "callee": "Duration",
+            "fields": [
+              {
+                "name": "seconds",
+                "value": "Render2Number"
+              }
+            ]
+          }
+        },
+        "order": 2
+      },
+      {
+        "node": "Render4Call",
+        "operator": "LibraryCall",
+        "inputs": [],
+        "operation": {
+          "Call": {
+            "callee": "Timer/interval",
+            "args": []
+          }
+        },
+        "order": 3
+      },
+      {
+        "node": "Render5Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render3Constructor",
+          "Render4Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render3Constructor",
+            "stage": "Render4Call"
+          }
+        },
+        "order": 4
+      },
+      {
+        "node": "Render6Path",
+        "operator": "PathReference",
+        "inputs": [],
+        "operation": {
+          "Path": "state"
+        },
+        "order": 5
+      },
+      {
+        "node": "Render7Number",
+        "operator": "ConstantNumber",
+        "inputs": [],
+        "operation": {
+          "Number": "1"
+        },
+        "order": 6
+      },
+      {
+        "node": "Render8BinaryAdd",
+        "operator": "BinaryAdd",
+        "inputs": [
+          "Render6Path",
+          "Render7Number"
+        ],
+        "operation": {
+          "BinaryAdd": {
+            "left": "Render6Path",
+            "right": "Render7Number"
+          }
+        },
+        "order": 7
+      },
+      {
+        "node": "Render9Then",
+        "operator": "Then",
+        "inputs": [
+          "Render8BinaryAdd"
+        ],
+        "operation": {
+          "Then": {
+            "body": [
+              "Render8BinaryAdd"
+            ]
+          }
+        },
+        "order": 8
+      },
+      {
+        "node": "Render10Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render5Pipe",
+          "Render9Then"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render5Pipe",
+            "stage": "Render9Then"
+          }
+        },
+        "order": 9
+      },
+      {
+        "node": "Render11Hold",
+        "operator": "Hold",
+        "inputs": [
+          "Render10Pipe"
+        ],
+        "operation": {
+          "Hold": {
+            "binder": "state",
+            "body": [
+              "Render10Pipe"
+            ]
+          }
+        },
+        "order": 10
+      },
+      {
+        "node": "Render12Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render1Number",
+          "Render11Hold"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render1Number",
+            "stage": "Render11Hold"
+          }
+        },
+        "order": 11
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

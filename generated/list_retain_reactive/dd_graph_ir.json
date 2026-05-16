@@ -117,6 +117,79 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": "visible",
+      "output_node": "DocumentText"
+    },
+    "root": "Render5Pipe",
+    "nodes": [
+      {
+        "node": "Render1Path",
+        "operator": "PathReference",
+        "inputs": [],
+        "operation": {
+          "Path": "selected_filter"
+        },
+        "order": 0
+      },
+      {
+        "node": "Render2Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": "active"
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Skip",
+        "operator": "Skip",
+        "inputs": [],
+        "operation": "Skip",
+        "order": 2
+      },
+      {
+        "node": "Render4While",
+        "operator": "WhileSwitch",
+        "inputs": [
+          "Render2Text",
+          "Render3Skip"
+        ],
+        "operation": {
+          "Match": {
+            "kind": "While",
+            "arms": [
+              {
+                "pattern": "Active",
+                "value": "Render2Text"
+              },
+              {
+                "pattern": "Completed",
+                "value": "Render3Skip"
+              }
+            ]
+          }
+        },
+        "order": 3
+      },
+      {
+        "node": "Render5Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render1Path",
+          "Render4While"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render1Path",
+            "stage": "Render4While"
+          }
+        },
+        "order": 4
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

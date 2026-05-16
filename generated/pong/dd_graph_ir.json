@@ -159,6 +159,51 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": null,
+      "output_node": "DocumentText"
+    },
+    "root": "Render3Pipe",
+    "nodes": [
+      {
+        "node": "Render1Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": "frame 1"
+        },
+        "order": 0
+      },
+      {
+        "node": "Render2Call",
+        "operator": "LibraryCall",
+        "inputs": [],
+        "operation": {
+          "Call": {
+            "callee": "Document/new",
+            "args": []
+          }
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render1Text",
+          "Render2Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render1Text",
+            "stage": "Render2Call"
+          }
+        },
+        "order": 2
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

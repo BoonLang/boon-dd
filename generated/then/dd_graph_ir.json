@@ -101,6 +101,63 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": "value",
+      "output_node": "DocumentText"
+    },
+    "root": "Render4Pipe",
+    "nodes": [
+      {
+        "node": "Render1Path",
+        "operator": "PathReference",
+        "inputs": [],
+        "operation": {
+          "Path": "sources.press"
+        },
+        "order": 0
+      },
+      {
+        "node": "Render2Number",
+        "operator": "ConstantNumber",
+        "inputs": [],
+        "operation": {
+          "Number": "1"
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Then",
+        "operator": "Then",
+        "inputs": [
+          "Render2Number"
+        ],
+        "operation": {
+          "Then": {
+            "body": [
+              "Render2Number"
+            ]
+          }
+        },
+        "order": 2
+      },
+      {
+        "node": "Render4Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render1Path",
+          "Render3Then"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render1Path",
+            "stage": "Render3Then"
+          }
+        },
+        "order": 3
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

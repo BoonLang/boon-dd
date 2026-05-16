@@ -204,6 +204,88 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": "store.counter",
+      "output_node": "DocumentText"
+    },
+    "root": "Render6Pipe",
+    "nodes": [
+      {
+        "node": "Render1Source",
+        "operator": "SourceLeaf",
+        "inputs": [],
+        "operation": "Source",
+        "order": 0
+      },
+      {
+        "node": "Render2Number",
+        "operator": "ConstantNumber",
+        "inputs": [],
+        "operation": {
+          "Number": "1"
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Then",
+        "operator": "Then",
+        "inputs": [
+          "Render2Number"
+        ],
+        "operation": {
+          "Then": {
+            "body": [
+              "Render2Number"
+            ]
+          }
+        },
+        "order": 2
+      },
+      {
+        "node": "Render4Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render1Source",
+          "Render3Then"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render1Source",
+            "stage": "Render3Then"
+          }
+        },
+        "order": 3
+      },
+      {
+        "node": "Render5Call",
+        "operator": "LibraryCall",
+        "inputs": [],
+        "operation": {
+          "Call": {
+            "callee": "Math/sum",
+            "args": []
+          }
+        },
+        "order": 4
+      },
+      {
+        "node": "Render6Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render4Pipe",
+          "Render5Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render4Pipe",
+            "stage": "Render5Call"
+          }
+        },
+        "order": 5
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

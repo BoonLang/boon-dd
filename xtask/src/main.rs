@@ -3067,6 +3067,8 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
     let mut examples = Vec::new();
     let mut unsupported_total = 0_usize;
     let mut limited_render_program_examples = Vec::new();
+    let mut missing_render_graph_examples = Vec::new();
+    let mut render_graph_node_total = 0_usize;
     let mut sink_kinds = std::collections::BTreeSet::new();
     let mut legacy_render_operations = std::collections::BTreeSet::new();
     for example in boon_dd::REQUIRED_EXAMPLES {
@@ -3108,6 +3110,16 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             legacy_render_operations.insert(render_operation);
             limited_render_program_examples.push(example);
         }
+        let render_graph_root_found = plan
+            .dd_graph_ir
+            .render_graph
+            .nodes
+            .iter()
+            .any(|node| node.node == plan.dd_graph_ir.render_graph.root);
+        if !render_graph_root_found || plan.dd_graph_ir.render_graph.nodes.is_empty() {
+            missing_render_graph_examples.push(example);
+        }
+        render_graph_node_total += plan.dd_graph_ir.render_graph.nodes.len();
         examples.push(serde_json::json!({
             "example": example,
             "source_path": format!("examples/{example}/source.bn"),
@@ -3116,11 +3128,25 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "semantic_kinds": semantic_kinds,
             "dd_graph_node_count": plan.dd_graph_ir.nodes.len(),
             "dd_operators": dd_operators,
+            "dd_render_graph_node_count": plan.dd_graph_ir.render_graph.nodes.len(),
+            "dd_render_graph_root": plan.dd_graph_ir.render_graph.root,
+            "dd_render_graph_root_found": render_graph_root_found,
+            "dd_render_graph_operators": plan.dd_graph_ir.render_graph.nodes.iter().map(|node| format!("{:?}", node.operator)).collect::<std::collections::BTreeSet<_>>(),
             "unsupported_semantic_nodes": plan.dd_graph_ir.unsupported_semantic_nodes,
             "dd_render_program": plan.dd_graph_ir.render_program,
+            "dd_render_graph": plan.dd_graph_ir.render_graph,
             "output_protocol": plan.dd_graph_ir.output_protocol,
         }));
     }
+    let codegen_source = fs::read_to_string(root.join("crates/boon_codegen_rust/src/lib.rs"))?;
+    let render_program_execution_hits = [
+        "render_collection_from_program",
+        "render_collection_from_expr",
+        "&dd_graph_ir.render_program",
+    ]
+    .into_iter()
+    .filter(|needle| codegen_source.contains(needle))
+    .collect::<Vec<_>>();
     let required_sink_kinds = [
         "MonitorNodeValue",
         "RenderPatchText",
@@ -3143,26 +3169,41 @@ fn verify_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "some examples still use legacy render-operation shortcuts instead of general semantic IR to DD output lowering",
         );
     }
-    blockers.push(
-        "full semantic render/effect/persistence protocols are not lowered into DD operators yet",
-    );
+    if !missing_render_graph_examples.is_empty() {
+        blockers.push("one or more examples have no complete DD render graph root");
+    }
+    if !render_program_execution_hits.is_empty() {
+        blockers.push(
+            "generated runtime code still executes from render_program instead of DD render graph IR",
+        );
+    }
+    if unsupported_total > 0 {
+        blockers.push("one or more semantic IR nodes do not lower to DD graph operators");
+    }
+    let verdict = if blockers.is_empty() { "pass" } else { "fail" };
     let details = serde_json::json!({
-        "verdict": "fail",
+        "verdict": verdict,
         "shortcut_scan": shortcuts,
         "examples_checked": examples.len(),
         "unsupported_semantic_node_count": unsupported_total,
         "limited_render_program_examples": limited_render_program_examples,
         "legacy_render_operations": legacy_render_operations,
+        "missing_render_graph_examples": missing_render_graph_examples,
+        "render_graph_node_total": render_graph_node_total,
+        "render_program_execution_hits": render_program_execution_hits,
         "output_sink_kinds_seen": sink_kinds,
         "missing_output_sink_kinds": missing_sink_kinds,
         "examples": examples,
         "blockers": blockers,
     });
     let artifact = write_artifact("lowering-coverage-report.json", &details)?;
-    bail!(
-        "DD lowering coverage is incomplete; see {}",
-        artifact.display()
-    )
+    if verdict != "pass" {
+        bail!(
+            "DD lowering coverage is incomplete; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
 }
 
 fn verify_generated_freshness(_args: &[String]) -> Result<serde_json::Value> {

@@ -262,6 +262,234 @@
       }
     }
   },
+  "render_graph": {
+    "source": {
+      "semantic_path": null,
+      "output_node": "DocumentText"
+    },
+    "root": "Render16Pipe",
+    "nodes": [
+      {
+        "node": "Render1Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": "a"
+        },
+        "order": 0
+      },
+      {
+        "node": "Render2Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": "b"
+        },
+        "order": 1
+      },
+      {
+        "node": "Render3Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": "c"
+        },
+        "order": 2
+      },
+      {
+        "node": "Render4List",
+        "operator": "List",
+        "inputs": [
+          "Render1Text",
+          "Render2Text",
+          "Render3Text"
+        ],
+        "operation": {
+          "List": [
+            "Render1Text",
+            "Render2Text",
+            "Render3Text"
+          ]
+        },
+        "order": 3
+      },
+      {
+        "node": "Render5Path",
+        "operator": "PathReference",
+        "inputs": [],
+        "operation": {
+          "Path": "item"
+        },
+        "order": 4
+      },
+      {
+        "node": "Render6Path",
+        "operator": "PathReference",
+        "inputs": [],
+        "operation": {
+          "Path": "item"
+        },
+        "order": 5
+      },
+      {
+        "node": "Render7Tag",
+        "operator": "Tag",
+        "inputs": [],
+        "operation": {
+          "Tag": "True"
+        },
+        "order": 6
+      },
+      {
+        "node": "Render8Call",
+        "operator": "LibraryCall",
+        "inputs": [
+          "Render7Tag"
+        ],
+        "operation": {
+          "Call": {
+            "callee": "Text/uppercase",
+            "args": [
+              {
+                "Named": {
+                  "name": "if",
+                  "value": "Render7Tag"
+                }
+              }
+            ]
+          }
+        },
+        "order": 7
+      },
+      {
+        "node": "Render9Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render6Path",
+          "Render8Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render6Path",
+            "stage": "Render8Call"
+          }
+        },
+        "order": 8
+      },
+      {
+        "node": "Render10Call",
+        "operator": "LibraryCall",
+        "inputs": [
+          "Render5Path",
+          "Render9Pipe"
+        ],
+        "operation": {
+          "Call": {
+            "callee": "List/map",
+            "args": [
+              {
+                "Positional": "Render5Path"
+              },
+              {
+                "Named": {
+                  "name": "new",
+                  "value": "Render9Pipe"
+                }
+              }
+            ]
+          }
+        },
+        "order": 9
+      },
+      {
+        "node": "Render11Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render4List",
+          "Render10Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render4List",
+            "stage": "Render10Call"
+          }
+        },
+        "order": 10
+      },
+      {
+        "node": "Render12Text",
+        "operator": "ConstantText",
+        "inputs": [],
+        "operation": {
+          "Text": ","
+        },
+        "order": 11
+      },
+      {
+        "node": "Render13Call",
+        "operator": "LibraryCall",
+        "inputs": [
+          "Render12Text"
+        ],
+        "operation": {
+          "Call": {
+            "callee": "Text/join",
+            "args": [
+              {
+                "Named": {
+                  "name": "separator",
+                  "value": "Render12Text"
+                }
+              }
+            ]
+          }
+        },
+        "order": 12
+      },
+      {
+        "node": "Render14Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render11Pipe",
+          "Render13Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render11Pipe",
+            "stage": "Render13Call"
+          }
+        },
+        "order": 13
+      },
+      {
+        "node": "Render15Call",
+        "operator": "LibraryCall",
+        "inputs": [],
+        "operation": {
+          "Call": {
+            "callee": "Document/new",
+            "args": []
+          }
+        },
+        "order": 14
+      },
+      {
+        "node": "Render16Pipe",
+        "operator": "Pipe",
+        "inputs": [
+          "Render14Pipe",
+          "Render15Call"
+        ],
+        "operation": {
+          "Pipe": {
+            "input": "Render14Pipe",
+            "stage": "Render15Call"
+          }
+        },
+        "order": 15
+      }
+    ]
+  },
   "output_protocol": {
     "schema_version": "boon-dd-output-v1",
     "sinks": [

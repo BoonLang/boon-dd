@@ -1,7 +1,9 @@
 use boon_dd::{
-    DdOutputProtocol, DdOutputSink, DdRenderArg, DdRenderExpr, DdRenderField, DdRenderMatchArm,
-    DdRenderMatchKind, DdRenderOperation, DdRenderProgram, DdRenderProgramSource, GraphNode,
-    GraphOperator, GraphOperatorKind, NodeId, SourceBinding, SourceId, StaticGraph,
+    DdOutputProtocol, DdOutputSink, DdRenderArg, DdRenderExpr, DdRenderField, DdRenderGraph,
+    DdRenderGraphArg, DdRenderGraphField, DdRenderGraphMatchArm, DdRenderGraphNode,
+    DdRenderGraphOperation, DdRenderMatchArm, DdRenderMatchKind, DdRenderOperation,
+    DdRenderProgram, DdRenderProgramSource, GraphNode, GraphOperator, GraphOperatorKind, NodeId,
+    SourceBinding, SourceId, StaticGraph,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -67,6 +69,7 @@ pub struct DdGraphIr {
     pub nodes: Vec<DdGraphNode>,
     pub unsupported_semantic_nodes: Vec<NodeId>,
     pub render_program: DdRenderProgram,
+    pub render_graph: DdRenderGraph,
     pub output_protocol: DdOutputProtocol,
 }
 
@@ -320,6 +323,7 @@ fn lower_semantic_to_dd(
         .map(|node| node.node.clone())
         .collect::<Vec<_>>();
     let render_program = dd_render_program_from_hir(hir, graph);
+    let render_graph = dd_render_graph_from_program(&render_program);
     DdGraphIr {
         graph_id: graph.graph_id.clone(),
         source_hash: graph.source_hash.clone(),
@@ -340,6 +344,7 @@ fn lower_semantic_to_dd(
             .collect(),
         unsupported_semantic_nodes,
         output_protocol: dd_output_protocol(graph, &render_program, hir),
+        render_graph,
         render_program,
     }
 }
@@ -456,6 +461,234 @@ fn dd_render_program_from_hir(hir: &boon_hir::HirModule, graph: &StaticGraph) ->
             expr: DdRenderExpr::Text(String::new()),
         });
     DdRenderProgram { source, operation }
+}
+
+fn dd_render_graph_from_program(program: &DdRenderProgram) -> DdRenderGraph {
+    let mut builder = DdRenderGraphBuilder {
+        nodes: Vec::new(),
+        next_id: 0,
+    };
+    let root = match &program.operation {
+        DdRenderOperation::Text { expr } => builder.push_expr(expr),
+    };
+    DdRenderGraph {
+        source: program.source.clone(),
+        root,
+        nodes: builder.nodes,
+    }
+}
+
+struct DdRenderGraphBuilder {
+    nodes: Vec<DdRenderGraphNode>,
+    next_id: usize,
+}
+
+impl DdRenderGraphBuilder {
+    fn push_expr(&mut self, expr: &DdRenderExpr) -> NodeId {
+        let mut inputs = Vec::new();
+        let operation = match expr {
+            DdRenderExpr::Missing => DdRenderGraphOperation::Missing,
+            DdRenderExpr::Path(path) => DdRenderGraphOperation::Path(path.clone()),
+            DdRenderExpr::Number(number) => DdRenderGraphOperation::Number(number.clone()),
+            DdRenderExpr::Source => DdRenderGraphOperation::Source,
+            DdRenderExpr::Skip => DdRenderGraphOperation::Skip,
+            DdRenderExpr::Tag(tag) => DdRenderGraphOperation::Tag(tag.clone()),
+            DdRenderExpr::Text(text) => DdRenderGraphOperation::Text(text.clone()),
+            DdRenderExpr::Record(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        let value = self.push_expr(&field.value);
+                        inputs.push(value.clone());
+                        DdRenderGraphField {
+                            name: field.name.clone(),
+                            value,
+                        }
+                    })
+                    .collect();
+                DdRenderGraphOperation::Record(fields)
+            }
+            DdRenderExpr::List(values) => {
+                let values = self.push_exprs(values, &mut inputs);
+                DdRenderGraphOperation::List(values)
+            }
+            DdRenderExpr::Block(values) => {
+                let values = self.push_exprs(values, &mut inputs);
+                DdRenderGraphOperation::Block(values)
+            }
+            DdRenderExpr::Latest(values) => {
+                let values = self.push_exprs(values, &mut inputs);
+                DdRenderGraphOperation::Latest(values)
+            }
+            DdRenderExpr::Call { callee, args } => {
+                let args = args
+                    .iter()
+                    .map(|arg| match arg {
+                        DdRenderArg::Positional(value) => {
+                            let value = self.push_expr(value);
+                            inputs.push(value.clone());
+                            DdRenderGraphArg::Positional(value)
+                        }
+                        DdRenderArg::Named { name, value } => {
+                            let value = self.push_expr(value);
+                            inputs.push(value.clone());
+                            DdRenderGraphArg::Named {
+                                name: name.clone(),
+                                value,
+                            }
+                        }
+                    })
+                    .collect();
+                DdRenderGraphOperation::Call {
+                    callee: callee.clone(),
+                    args,
+                }
+            }
+            DdRenderExpr::Constructor { callee, fields } => {
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        let value = self.push_expr(&field.value);
+                        inputs.push(value.clone());
+                        DdRenderGraphField {
+                            name: field.name.clone(),
+                            value,
+                        }
+                    })
+                    .collect();
+                DdRenderGraphOperation::Constructor {
+                    callee: callee.clone(),
+                    fields,
+                }
+            }
+            DdRenderExpr::Pipe { input, stage } => {
+                let input = self.push_expr(input);
+                let stage = self.push_expr(stage);
+                inputs.push(input.clone());
+                inputs.push(stage.clone());
+                DdRenderGraphOperation::Pipe { input, stage }
+            }
+            DdRenderExpr::BinaryAdd { left, right } => {
+                let left = self.push_expr(left);
+                let right = self.push_expr(right);
+                inputs.push(left.clone());
+                inputs.push(right.clone());
+                DdRenderGraphOperation::BinaryAdd { left, right }
+            }
+            DdRenderExpr::Then { body } => {
+                let body = self.push_exprs(body, &mut inputs);
+                DdRenderGraphOperation::Then { body }
+            }
+            DdRenderExpr::Hold { binder, body } => {
+                let body = self.push_exprs(body, &mut inputs);
+                DdRenderGraphOperation::Hold {
+                    binder: binder.clone(),
+                    body,
+                }
+            }
+            DdRenderExpr::Match { kind, arms } => {
+                let arms = arms
+                    .iter()
+                    .map(|arm| {
+                        let value = self.push_expr(&arm.value);
+                        inputs.push(value.clone());
+                        DdRenderGraphMatchArm {
+                            pattern: arm.pattern.clone(),
+                            value,
+                        }
+                    })
+                    .collect();
+                DdRenderGraphOperation::Match {
+                    kind: kind.clone(),
+                    arms,
+                }
+            }
+        };
+        let node = self.next_node(&operation);
+        let operator = dd_operator_for_render_operation(&operation);
+        self.nodes.push(DdRenderGraphNode {
+            node: node.clone(),
+            operator,
+            inputs,
+            operation,
+            order: self.nodes.len() as u32,
+        });
+        node
+    }
+
+    fn push_exprs(&mut self, values: &[DdRenderExpr], inputs: &mut Vec<NodeId>) -> Vec<NodeId> {
+        values
+            .iter()
+            .map(|value| {
+                let node = self.push_expr(value);
+                inputs.push(node.clone());
+                node
+            })
+            .collect()
+    }
+
+    fn next_node(&mut self, operation: &DdRenderGraphOperation) -> NodeId {
+        self.next_id += 1;
+        NodeId(format!(
+            "Render{}{}",
+            self.next_id,
+            dd_render_operation_label(operation)
+        ))
+    }
+}
+
+fn dd_operator_for_render_operation(operation: &DdRenderGraphOperation) -> GraphOperatorKind {
+    match operation {
+        DdRenderGraphOperation::Missing => GraphOperatorKind::Skip,
+        DdRenderGraphOperation::Path(_) => GraphOperatorKind::PathReference,
+        DdRenderGraphOperation::Number(_) => GraphOperatorKind::ConstantNumber,
+        DdRenderGraphOperation::Source => GraphOperatorKind::SourceLeaf,
+        DdRenderGraphOperation::Skip => GraphOperatorKind::Skip,
+        DdRenderGraphOperation::Tag(_) => GraphOperatorKind::Tag,
+        DdRenderGraphOperation::Text(_) => GraphOperatorKind::ConstantText,
+        DdRenderGraphOperation::Record(_) | DdRenderGraphOperation::Constructor { .. } => {
+            GraphOperatorKind::Record
+        }
+        DdRenderGraphOperation::List(_) | DdRenderGraphOperation::Block(_) => {
+            GraphOperatorKind::List
+        }
+        DdRenderGraphOperation::Latest(_) => GraphOperatorKind::Latest,
+        DdRenderGraphOperation::Call { .. } => GraphOperatorKind::LibraryCall,
+        DdRenderGraphOperation::Pipe { .. } => GraphOperatorKind::Pipe,
+        DdRenderGraphOperation::BinaryAdd { .. } => GraphOperatorKind::BinaryAdd,
+        DdRenderGraphOperation::Then { .. } => GraphOperatorKind::Then,
+        DdRenderGraphOperation::Hold { .. } => GraphOperatorKind::Hold,
+        DdRenderGraphOperation::Match { kind, .. } => match kind {
+            DdRenderMatchKind::When => GraphOperatorKind::When,
+            DdRenderMatchKind::While => GraphOperatorKind::WhileSwitch,
+        },
+    }
+}
+
+fn dd_render_operation_label(operation: &DdRenderGraphOperation) -> &'static str {
+    match operation {
+        DdRenderGraphOperation::Missing => "Missing",
+        DdRenderGraphOperation::Path(_) => "Path",
+        DdRenderGraphOperation::Number(_) => "Number",
+        DdRenderGraphOperation::Source => "Source",
+        DdRenderGraphOperation::Skip => "Skip",
+        DdRenderGraphOperation::Tag(_) => "Tag",
+        DdRenderGraphOperation::Text(_) => "Text",
+        DdRenderGraphOperation::Record(_) => "Record",
+        DdRenderGraphOperation::List(_) => "List",
+        DdRenderGraphOperation::Block(_) => "Block",
+        DdRenderGraphOperation::Latest(_) => "Latest",
+        DdRenderGraphOperation::Call { .. } => "Call",
+        DdRenderGraphOperation::Constructor { .. } => "Constructor",
+        DdRenderGraphOperation::Pipe { .. } => "Pipe",
+        DdRenderGraphOperation::BinaryAdd { .. } => "BinaryAdd",
+        DdRenderGraphOperation::Then { .. } => "Then",
+        DdRenderGraphOperation::Hold { .. } => "Hold",
+        DdRenderGraphOperation::Match { kind, .. } => match kind {
+            DdRenderMatchKind::When => "When",
+            DdRenderMatchKind::While => "While",
+        },
+    }
 }
 
 fn build_static_graph(
