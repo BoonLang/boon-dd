@@ -1838,6 +1838,26 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             "runtime host still evaluates Boon values through a generic Rust evaluator",
         ),
         (
+            concat!("Const", "Value"),
+            "host_runtime_semantics",
+            "runtime host still evaluates DD render graph semantics through a generic const evaluator",
+        ),
+        (
+            concat!("const", "_value("),
+            "host_runtime_semantics",
+            "runtime host recursively evaluates DD render graph nodes as Rust constants",
+        ),
+        (
+            concat!("const", "_call_value"),
+            "host_runtime_semantics",
+            "runtime host evaluates Boon library calls through Rust control flow",
+        ),
+        (
+            concat!("runtime", "_render_collection"),
+            "host_runtime_semantics",
+            "runtime host builds a generic semantic execution graph instead of executing generated graph code",
+        ),
+        (
             concat!("runtime", "_value("),
             "host_runtime_semantics",
             "runtime host recursively evaluates DD render graph nodes as Rust values",
@@ -1851,6 +1871,36 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             concat!("generated", "_source_event_value"),
             "source_identity",
             "source identity can be discarded before semantic evaluation",
+        ),
+        (
+            concat!("runtime", "_payload_text"),
+            "host_runtime_semantics",
+            "runtime host converts source payloads to Boon text semantics outside generated DD graph code",
+        ),
+        (
+            concat!("runtime", "_boon_text"),
+            "host_runtime_semantics",
+            "runtime host recursively renders Boon values as text outside generated DD graph code",
+        ),
+        (
+            concat!("boon_runtime_host::run", "_compiled_source_scenario"),
+            "host_runtime_semantics",
+            "backend or browser proof executes Boon semantics through runtime-host scenario evaluation",
+        ),
+        (
+            concat!("std::collections::BTreeMap::<", "String, String>::from"),
+            "generated_semantics",
+            "generated graph still encodes record semantics as host Rust BTreeMap values",
+        ),
+        (
+            concat!(".into_iter().map(|", "item_value|"),
+            "generated_semantics",
+            "generated graph still encodes list map/text semantics as host Rust iterator loops",
+        ),
+        (
+            concat!(".into_iter().filter(|", "item_value|"),
+            "generated_semantics",
+            "generated graph still encodes list retain/count semantics as host Rust iterator loops",
         ),
         (
             concat!("outputs", "().into_iter().last()"),
@@ -2028,6 +2078,16 @@ fn verify_source_routing(_args: &[String]) -> Result<serde_json::Value> {
             "generated graph maps events to payload while dropping source identity",
         ),
         (
+            concat!("generated_bound_source_ids().is_empty()"),
+            "unbound_event_trigger",
+            "generated graph renders from any injected event when source bindings are empty",
+        ),
+        (
+            concat!("if bound_source_ids_in_graph.is_empty()"),
+            "unbound_event_trigger",
+            "runtime graph path renders from any injected event when source bindings are empty",
+        ),
+        (
             concat!("GeneratedSourceEvent::Static { payload, .. }"),
             "source_identity_drop",
             "static source id is ignored by generated semantic evaluation",
@@ -2079,6 +2139,21 @@ fn verify_dynamic_owner_routing(_args: &[String]) -> Result<serde_json::Value> {
             "missing generation is silently defaulted in the execution path",
         ),
         (
+            concat!("_owner_key_is_part_of_dd_identity = owner_key"),
+            "owner_generation_not_keyed",
+            "dynamic owner is accepted but only parked in an unused variable instead of DD identity",
+        ),
+        (
+            concat!("_generation_is_part_of_dd_identity = generation"),
+            "owner_generation_not_keyed",
+            "dynamic generation is accepted but only parked in an unused variable instead of DD identity",
+        ),
+        (
+            concat!("GeneratedSourceEvent::Dynamic { family_id, .. }"),
+            "owner_generation_drop",
+            "dynamic source routing can check only family id while dropping owner and generation",
+        ),
+        (
             concat!("OwnerKey", "(\"Root\".to_owned())"),
             "root_owner_output",
             "generated output collapses owner identity to Root",
@@ -2093,6 +2168,7 @@ fn verify_dynamic_owner_routing(_args: &[String]) -> Result<serde_json::Value> {
         &[
             "crates/boon_codegen_rust",
             "crates/boon_examples",
+            "crates/boon_runtime_host",
             "generated",
         ],
         &patterns,
@@ -2283,9 +2359,24 @@ fn verify_output_drain_efficiency(_args: &[String]) -> Result<serde_json::Value>
             "generated output API returns an owned full output vector",
         ),
         (
+            concat!("pub fn take", "_outputs(&mut self) -> Vec<SmokeOutput>"),
+            "full_output_drain_api",
+            "generated output API drains all retained outputs into an owned vector",
+        ),
+        (
+            concat!("Result<Vec<", "SmokeOutput>"),
+            "full_output_drain_api",
+            "generated graph drain API returns all outputs as a vector instead of an incremental cursor/result",
+        ),
+        (
             concat!("Ok(self.sources.", "outputs())"),
             "clone_output_api",
             "drain API returns the full cloned output vector",
+        ),
+        (
+            concat!("Ok(self.sources.take", "_outputs())"),
+            "full_output_drain_api",
+            "drain API returns the full retained output vector",
         ),
         (
             concat!(".sources", ".outputs()"),
@@ -2298,15 +2389,31 @@ fn verify_output_drain_efficiency(_args: &[String]) -> Result<serde_json::Value>
             "caller drains all outputs and keeps only the last value",
         ),
         (
+            concat!(".drain(..).", "last()"),
+            "last_after_full_drain",
+            "runtime drains all retained outputs and keeps only the last value",
+        ),
+        (
+            concat!("drained_outputs", ".pop()"),
+            "last_after_full_drain",
+            "generated crate test drains all outputs and pops only the last value",
+        ),
+        (
             concat!("Mutex<Vec<", "SmokeOutput>>"),
             "unbounded_output_retention",
             "generated graph retains all historical outputs behind a mutex",
+        ),
+        (
+            concat!("VecDeque::<", "SmokeOutput>"),
+            "unbounded_output_retention",
+            "generated graph retains outputs in an unbounded queue before draining",
         ),
     ];
     let hits = scan_engine_patterns(
         &[
             "crates/boon_codegen_rust",
             "crates/boon_examples",
+            "crates/boon_runtime_host",
             "crates/boon_wasm_smoke",
             "generated",
             "xtask/src",
@@ -2354,6 +2461,26 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             "runtime host still uses a generic value enum for Boon semantics",
         ),
         (
+            concat!("Const", "Value"),
+            "host_semantics",
+            "runtime host still uses a generic const value enum for Boon semantics",
+        ),
+        (
+            concat!("const", "_value("),
+            "host_semantics",
+            "runtime host recursively evaluates DD render graph nodes as Rust constants",
+        ),
+        (
+            concat!("const", "_call_value"),
+            "host_semantics",
+            "runtime host evaluates Boon library calls outside generated typed DD operators",
+        ),
+        (
+            concat!("runtime", "_render_collection"),
+            "host_semantics",
+            "runtime host builds a generic semantic execution graph instead of executing generated graph code",
+        ),
+        (
             concat!("runtime", "_value("),
             "host_semantics",
             "runtime host recursively evaluates DD render graph nodes as Rust values",
@@ -2392,6 +2519,51 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             concat!("List(Vec<", "Generated", "Value>)"),
             "host_list_semantics",
             "lists are represented as host vectors inside generated values",
+        ),
+        (
+            concat!("std::collections::BTreeMap::<", "String, String>::from"),
+            "host_record_semantics",
+            "records are represented and transformed as host Rust maps in generated execution",
+        ),
+        (
+            concat!(".into_iter().map(|", "item_value|"),
+            "host_list_semantics",
+            "list map/text semantics still run as host Rust iterator loops",
+        ),
+        (
+            concat!(".into_iter().filter(|", "item_value|"),
+            "host_list_semantics",
+            "list retain/count semantics still run as host Rust iterator loops",
+        ),
+        (
+            concat!(".collect::<", "Vec<_>>()"),
+            "host_list_semantics",
+            "generated execution still materializes list semantics into host Rust vectors",
+        ),
+        (
+            concat!(".len() as", " i64"),
+            "host_list_semantics",
+            "list count semantics still use host vector length",
+        ),
+        (
+            concat!(".sort_by", "_key("),
+            "host_list_semantics",
+            "list sort semantics still run as host Rust sort logic",
+        ),
+        (
+            concat!("generated", "_payload_bool"),
+            "host_semantics",
+            "generated payload truthiness remains a Rust helper rather than reported typed DD lowering",
+        ),
+        (
+            concat!("generated", "_payload_text"),
+            "host_semantics",
+            "generated payload text conversion remains a Rust helper rather than reported typed DD lowering",
+        ),
+        (
+            concat!("value", "_to_text(payload)"),
+            "host_semantics",
+            "payload-to-text conversion still delegates to host Boon text rendering",
         ),
     ];
     let hits = scan_engine_patterns(
@@ -2902,6 +3074,18 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
             }))
         })
         .collect::<Result<Vec<_>>>()?;
+    let prompt_hashes = required
+        .iter()
+        .map(|file| {
+            let path = prompt_dir.join(file);
+            let prompt_path = format!("docs/prompts/engine-simplicity/{file}");
+            Ok((
+                prompt_path,
+                path.exists().then(|| sha256_file(&path)).transpose()?,
+            ))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    let current_repo_state_hash = repo_state_hash()?;
     let audit_dir = engine_artifacts_dir()?.join("prompt-audit");
     let audit_files = if audit_dir.exists() {
         fs::read_dir(&audit_dir)?
@@ -2914,19 +3098,27 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
     };
     let mut audits = Vec::new();
     let mut invalid = Vec::new();
+    let mut audit_counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut critical_findings_open = 0_usize;
+    let mut inconclusive_audits = 0_usize;
+    let mut hash_mismatches = 0_usize;
+    let mut missing_deterministic_evidence = 0_usize;
     let mut pass_count = 0_usize;
     for path in audit_files {
-        match serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path)?) {
+        match validate_engine_prompt_audit_file(&path, &prompt_hashes, &current_repo_state_hash) {
             Ok(value) => {
-                if value["verdict"].as_str() == Some("pass") {
+                let prompt_path = value["prompt_path"].as_str().unwrap_or_default().to_owned();
+                *audit_counts.entry(prompt_path).or_default() += 1;
+                critical_findings_open +=
+                    value["critical_findings_open"].as_u64().unwrap_or_default() as usize;
+                inconclusive_audits += (value["verdict"].as_str() == Some("inconclusive")) as usize;
+                hash_mismatches += value["hash_mismatches"].as_u64().unwrap_or_default() as usize;
+                missing_deterministic_evidence +=
+                    (value["deterministic_artifacts_checked"].as_bool() != Some(true)) as usize;
+                if value["accepted"].as_bool() == Some(true) {
                     pass_count += 1;
                 }
-                audits.push(serde_json::json!({
-                    "path": path.display().to_string(),
-                    "sha256": sha256_file(&path)?,
-                    "verdict": value["verdict"],
-                    "prompt_path": value["prompt_path"],
-                }));
+                audits.push(value);
             }
             Err(error) => invalid.push(serde_json::json!({
                 "path": path.display().to_string(),
@@ -2940,16 +3132,50 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
         .cloned()
         .collect::<Vec<_>>();
     let mut failures = Vec::new();
+    let missing_required_audits = required
+        .iter()
+        .filter_map(|file| {
+            let prompt_path = format!("docs/prompts/engine-simplicity/{file}");
+            let found = audit_counts.get(&prompt_path).copied().unwrap_or_default();
+            (found == 0).then(|| {
+                serde_json::json!({
+                    "prompt_path": prompt_path,
+                    "required": 1,
+                    "found": found,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
     if !missing_prompts.is_empty() {
         failures.push(serde_json::json!({
             "requirement": "all engine prompt audit prompts exist",
             "missing_prompts": missing_prompts,
         }));
     }
+    if !missing_required_audits.is_empty() {
+        failures.push(serde_json::json!({
+            "requirement": "every required engine prompt audit must have a current accepted audit output",
+            "missing_required_audits": missing_required_audits,
+        }));
+    }
     if !invalid.is_empty() {
         failures.push(serde_json::json!({
             "requirement": "prompt audit outputs must be valid JSON",
             "invalid": invalid,
+        }));
+    }
+    if critical_findings_open != 0 || inconclusive_audits != 0 || hash_mismatches != 0 {
+        failures.push(serde_json::json!({
+            "requirement": "engine prompt audits must be current pass verdicts with zero open critical findings",
+            "critical_findings_open": critical_findings_open,
+            "inconclusive_audits": inconclusive_audits,
+            "hash_mismatches": hash_mismatches,
+        }));
+    }
+    if missing_deterministic_evidence != 0 {
+        failures.push(serde_json::json!({
+            "requirement": "engine prompt audits must explicitly inspect deterministic artifacts",
+            "missing_deterministic_evidence": missing_deterministic_evidence,
         }));
     }
     if pass_count < required.len() {
@@ -2988,10 +3214,103 @@ fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
         serde_json::json!({
             "prompt_dir": "docs/prompts/engine-simplicity",
             "prompts": prompts,
+            "prompt_hashes": prompt_hashes,
+            "current_repo_state_hash": current_repo_state_hash,
+            "critical_findings_open": critical_findings_open,
+            "inconclusive_audits": inconclusive_audits,
+            "hash_mismatches": hash_mismatches,
+            "missing_deterministic_evidence": missing_deterministic_evidence,
             "audits": audits,
             "blocker_reports": blocker_reports,
         }),
     )
+}
+
+fn validate_engine_prompt_audit_file(
+    path: &Path,
+    prompt_hashes: &std::collections::BTreeMap<String, Option<String>>,
+    current_repo_state_hash: &str,
+) -> Result<serde_json::Value> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("missing audit {}", path.display()))?;
+    let audit: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("invalid JSON {}", path.display()))?;
+    let prompt_path = audit
+        .get("prompt_path")
+        .and_then(|value| value.as_str())
+        .context("audit missing prompt_path")?;
+    let prompt_hash = audit
+        .get("prompt_hash")
+        .and_then(|value| value.as_str())
+        .context("audit missing prompt_hash")?;
+    let repo_state_hash = audit
+        .get("repo_state_hash")
+        .and_then(|value| value.as_str())
+        .context("audit missing repo_state_hash")?;
+    let verdict = audit
+        .get("verdict")
+        .and_then(|value| value.as_str())
+        .context("audit missing verdict")?;
+    let deterministic_artifacts_checked = audit
+        .get("deterministic_artifacts_checked")
+        .and_then(|value| value.as_bool())
+        .context("audit missing deterministic_artifacts_checked bool")?;
+    let critical_findings = audit
+        .get("critical_findings")
+        .and_then(|value| value.as_array())
+        .context("audit missing critical_findings array")?;
+    for (index, finding) in critical_findings.iter().enumerate() {
+        for field in ["summary", "path", "evidence", "required_fix"] {
+            finding
+                .get(field)
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .with_context(|| {
+                    format!("audit critical_findings[{index}] missing non-empty {field}")
+                })?;
+        }
+        finding
+            .get("line")
+            .and_then(|value| value.as_u64())
+            .with_context(|| {
+                format!("audit critical_findings[{index}] missing non-negative line")
+            })?;
+    }
+    for field in [
+        "reviewed_files",
+        "reviewed_artifacts",
+        "commands_reviewed",
+        "fake_pass_attempts",
+    ] {
+        audit
+            .get(field)
+            .and_then(|value| value.as_array())
+            .with_context(|| format!("audit missing {field} array"))?;
+    }
+    let expected_prompt_hash = prompt_hashes
+        .get(prompt_path)
+        .and_then(|hash| hash.as_deref());
+    let hash_mismatches = [
+        expected_prompt_hash != Some(prompt_hash),
+        repo_state_hash != current_repo_state_hash,
+    ]
+    .into_iter()
+    .filter(|mismatch| *mismatch)
+    .count();
+    let accepted = verdict == "pass"
+        && critical_findings.is_empty()
+        && hash_mismatches == 0
+        && deterministic_artifacts_checked;
+    Ok(serde_json::json!({
+        "path": path.display().to_string(),
+        "sha256": sha256_file(path)?,
+        "prompt_path": prompt_path,
+        "verdict": verdict,
+        "accepted": accepted,
+        "critical_findings_open": critical_findings.len(),
+        "hash_mismatches": hash_mismatches,
+        "deterministic_artifacts_checked": deterministic_artifacts_checked,
+    }))
 }
 
 fn active_engine_blocker_reports() -> Result<Vec<serde_json::Value>> {
