@@ -17,116 +17,133 @@ until these generic evaluators are removed or replaced with typed DD lowerings.
 
 ## Checkpoint Git State
 
-Parent HEAD for this checkpoint:
+HEAD before this checkpoint commit:
 
 ```text
-6fac85ef6ab8f07cd01cc36cbcc69b737d9701f6
+7974ef7af3faa7a0495dd1190617781a9a7fee32
 ```
 
-Changes captured by this checkpoint:
+Prepared checkout changes:
 
 ```text
+M Cargo.lock
+M crates/boon_examples/Cargo.toml
+M crates/boon_examples/src/lib.rs
+M crates/boon_runtime_host/src/lib.rs
+M crates/boon_wasm_smoke/Cargo.toml
+M crates/boon_wasm_smoke/src/lib.rs
 M docs/blockers/engine-simplicity-dd-purity-blocker.md
-M examples/crud/scenario.toml
-M examples/flight_booker/scenario.toml
-M examples/list_object_state/expected.render.json
-M examples/list_retain_remove/expected.render.json
-M examples/list_retain_remove/scenario.toml
-M generated/crud/src/lib.rs
-M generated/flight_booker/src/lib.rs
-M generated/list_object_state/monitor_snapshot.json
-M generated/list_object_state/src/lib.rs
-M generated/list_retain_remove/monitor_snapshot.json
-M generated/list_retain_remove/src/lib.rs
+M generated/*/Cargo.toml
+M xtask/Cargo.toml
 M xtask/src/main.rs
 ```
 
-These changes are fixture/source-id and expected-owner corrections
-found after tightening source routing. `crud`, `flight_booker`, and
-`list_retain_remove` now inject the compiler-resolved source ids instead of
-shorthand path fragments, and owner-preserving examples now expect `item-1`
-instead of flattening monitor output to `Root`. The generated files were
-refreshed with `cargo xtask write-generated-artifacts --format json`.
-`xtask/src/main.rs` also tightens `verify-no-fixture-dispatch` so it scans the
-checked generated registry in `crates/boon_examples` and `xtask`, instead of
-reporting a false zero while fixture-index execution remains. The aggregate
-honesty deterministic gate now also catches the checked generated registry as a
-`generated-only-runtime` violation.
+The prepared changes remove the checked generated fixture registry from
+`crates/boon_examples`, remove xtask's dependency on that registry, remove the
+browser/WASM generated-crate fixture matrix, and route deterministic scenario
+proof through compiled graph sessions for all manifest examples. The checked
+generated crates now include a local empty `[workspace]` table so
+`cargo xtask verify-generated-crates --format json` can run each generated
+crate by manifest path without inheriting the parent workspace.
+
+After tightening the scan to include `crates/boon_wasm_smoke`, fixture dispatch
+now passes with zero hits. Deterministic honesty verification also passes.
+The DD purity blocker remains: `boon_runtime_host` still uses `RuntimeValue`,
+and `boon_codegen_rust` plus the checked generated crates still emit `DdValue`
+semantics.
 
 ## Failing Command
 
 ```bash
-cargo xtask verify-dd-stateful-lowering --format json
+cargo xtask verify all --format json
 ```
 
 Exact output:
 
 ```text
-Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
-Running `target/debug/xtask verify-dd-stateful-lowering --format json`
-Error: engine-simplicity gate cargo xtask verify-dd-stateful-lowering --format json reported blocked; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
+Error: verification failed
+```
+
+The refreshed `target/boon-artifacts/verify-report.json` records the exact
+failed gates and failing subcommands:
+
+```text
+verify-honest-compiler: cargo xtask verify-honest-compiler --format json
+verify-prompt-audit: cargo xtask verify-prompt-audit --format json
+verify-dd-purity: cargo xtask verify-dd-purity --format json
+verify-dd-stateful-lowering: cargo xtask verify-dd-stateful-lowering --format json
+verify-engine-prompt-audit: cargo xtask verify-engine-prompt-audit --format json
+verify-engine-simplicity: cargo xtask verify-engine-simplicity --format json
 ```
 
 Current report summary:
 
 ```text
-verdict: blocked
-blockers: stateful lowering is blocked by a checked-in engine-simplicity blocker report
-failure count: 354
+dd_purity verdict: blocked
+dd_purity failure count: 351
+dd_purity categories: generic_dd_value_semantics=201, host_runtime_semantics=150
+
+dd_stateful_lowering verdict: blocked
+dd_stateful_lowering failure count: 354
+dd_stateful_lowering categories: generic_value_evaluator=201, host_semantics=152, global_count_state=1
 ```
 
 Relevant artifact:
 
 ```text
 target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
-sha256: 453b800e79173abf9aaabfceb5a66dd70dade527e7c77c21db47c4208bdc8cf5
+sha256: 08ae88649e3064bad9d3ba0a4ab0afa6e54fec5f96744d3c63c78e4b738a894e
 
 target/boon-artifacts/engine-simplicity/dd-purity-report.json
-sha256: b1e2ff5d5f96e7e4648106fac907589afbc99f617a1c992eb1838cb193f67f87
+sha256: dba326ebfc119c826293992581a5546bddf2252eda38e962838ae2b1c730ee7b
 
 target/boon-artifacts/engine-simplicity/no-fixture-dispatch-report.json
-sha256: ce9f23e581e3e2fac5f2b8fcd2424c31a950fe9238c6bab614e0cf55099185c5
+sha256: 0ee40a9ece790976099fd7d4bc24f7ac4acb2db683b339cad75aff8ffdf16fa9
 
 target/boon-artifacts/engine-simplicity/complexity-report.json
-sha256: 0527cc5b17ea6bf6a19010baa36ad0964857a2f7ff6469b3afa1f333e5f6c388
+sha256: 5c77afe6795bf80bcd4906ae36bea30eae786a7ed668e086a7d10e3eb81f675a
 
 target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
-sha256: d7f31753ff994005f68e88f9c3ff6e71a1659e3da6e3ede9f77e715b068c436e
+sha256: 33aa5631fa3de4fd70efa02af63776f170d7bf32256ae4ba5942f6af4852ac11
 ```
 
 Related passing artifacts from the same checkout:
 
 ```text
 target/boon-artifacts/generated-freshness-report.json
-sha256: cc13484cbbaffeaf33f4ffd3aeb9998321922a5dabba9b4a46fee8d179ec0d00
+sha256: 887d1fbb8e0644b54e83107b41547a5289d59bddeef6d93ae055ca7f3dd34886
 
 target/boon-artifacts/generated-crates.json
 sha256: 1b1538abac12170b00ff2dcb1c1c22ed4f6809fb6f224d2e318409044723c9fc
 
 target/boon-artifacts/engine-simplicity/prompt-audit-report.json
-sha256: 08e3cebe541ccec8b6bef523b693ecc8974665cc85f9f83504df3337e1cb4db9
+sha256: 8fed33566d86d6c58ab143c5c9b084fd31dc938918ccd90b74163e0b2b51fe0d
 
 target/boon-artifacts/honest-compiler-report.json
-sha256: fbcbd69b3c17abbbedf800b96a5854437b66b16867494372db9e2c2997d32f9a
+sha256: 3d6ae0e0101d56d3427319f0da867e399211ed9606efc5755d3ed3d28629afed
 
 target/boon-artifacts/honesty-deterministic-report.json
-sha256: 563e312e233a575cbee802eb67d37eff8d931ac2e1d6a9d77a1986b776d4576d
+sha256: fe733750778fb933d3e38470ad323f2822e64b5482dbc237d8044f9760e1644d
 
 target/boon-artifacts/prompt-audit-report.json
-sha256: 5a9c32a30917da12e100f24bb9816e91af8b94a1f3b26a1088dfa938542376b4
+sha256: 030458b85c1b89a360dba9e051f15226a70a5abd5275dc0e059f766a906cf775
 
 target/boon-artifacts/verify-report.json
-sha256: 6606ff9f6c05f255ca85be50cf96805d00488744ff53049d8057cbe6812dfba4
+sha256: 433e3e011de754e3ae01d807ff669bdc287b2acdada07c3e873f0c09f7de5329
 
 target/boon-artifacts/success.json
-sha256: f30753c71e917d7020690290c270439efcb710505f582bc06df3b8a7f15a965d
+sha256: 90f2dc44c741e48bdb94501001c3dc86f88a245066260f1f449701f0510e5197
 ```
 
 ## Concrete Gates Rechecked
 
-After regenerating artifacts from the current checkout, the concrete terminal
-and generated-crate mismatches that originally appeared while tightening source
-routing have been corrected. These are no longer the blocker.
+After removing the checked generated registry from `boon_examples`, the
+host/xtask registry blocker is gone. After removing and scanning the
+browser/WASM generated matrix, fixture dispatch is also gone. Source routing,
+dynamic owner routing, persistent runtime, output drain efficiency, stress,
+complexity, generated freshness, generated crate tests, cross-host parity, and
+cross-engine comparison pass in the current aggregate engine-simplicity report.
+These are no longer the blocker.
 
 ```bash
 cargo xtask verify-generated-freshness --format json
@@ -146,16 +163,27 @@ cargo xtask test --target terminal
 
 Result: pass.
 
-The remaining deterministic failing or blocked commands are the purity,
-fixture-dispatch, stateful-lowering, complexity, prompt-audit, and aggregate
-commands:
+```bash
+cargo xtask verify-no-fixture-dispatch --format json
+```
+
+Result: pass. `hit_count: 0`.
+
+```bash
+cargo xtask verify-honesty-deterministic --format json
+```
+
+Result: pass. `host_semantics_violations: 0`.
+
+The remaining failing or blocked commands are purity, stateful-lowering,
+prompt-audit, honest-compiler, and aggregate commands:
 
 ```bash
 cargo xtask verify-dd-purity --format json
-cargo xtask verify-no-fixture-dispatch --format json
 cargo xtask verify-dd-stateful-lowering --format json
-cargo xtask verify-engine-complexity --format json
 cargo xtask verify-engine-prompt-audit --format json
+cargo xtask verify-honest-compiler --format json
+cargo xtask verify-prompt-audit --format json
 cargo xtask verify all --format json
 ```
 
@@ -163,9 +191,7 @@ Representative output:
 
 ```text
 Error: engine-simplicity gate cargo xtask verify-dd-purity --format json reported blocked; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dd-purity-report.json
-Error: engine-simplicity gate cargo xtask verify-no-fixture-dispatch --format json reported blocked; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/no-fixture-dispatch-report.json
 Error: engine-simplicity gate cargo xtask verify-dd-stateful-lowering --format json reported blocked; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
-Error: engine-simplicity gate cargo xtask verify-engine-complexity --format json reported fail; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/complexity-report.json
 Error: engine-simplicity gate cargo xtask verify-engine-prompt-audit --format json reported blocked; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/prompt-audit-report.json
 ```
 
@@ -175,24 +201,22 @@ aggregate run writes `success: false` and reports these failed gates:
 
 ```text
 verify-honest-compiler
-verify-honesty-deterministic
 verify-prompt-audit
 verify-dd-purity
-verify-no-fixture-dispatch
 verify-dd-stateful-lowering
-verify-engine-complexity
 verify-engine-prompt-audit
 verify-engine-simplicity
 ```
 
-The latest aggregate `success.json` engine summary is also explicitly nonzero
-for fixture dispatch:
+The latest aggregate `success.json` was refreshed after the browser/WASM matrix
+removal and after generated crates were made standalone workspaces. It is
+current evidence for the blocked state, not a success artifact. It reports:
 
 ```text
-engine_simplicity.fixture_dispatch_paths: 44
-honesty_deterministic.missing_deterministic_gates: ["generated-only-runtime"]
+success: false
+engine_simplicity.fixture_dispatch_paths: 0
 engine_simplicity.stateful_lowering_shortcuts: 354
-engine_simplicity.verdict: blocked
+engine_simplicity.dd_purity: blocked
 ```
 
 ## Minimized Repro
@@ -210,10 +234,10 @@ Representative deterministic hits:
 crates/boon_runtime_host/src/lib.rs:16
 enum RuntimeValue {
 
-crates/boon_runtime_host/src/lib.rs:532
+crates/boon_runtime_host/src/lib.rs:711
 fn runtime_value(...)
 
-crates/boon_runtime_host/src/lib.rs:643
+crates/boon_runtime_host/src/lib.rs:827
 fn runtime_call_value(...)
 
 crates/boon_codegen_rust/src/lib.rs:10
@@ -224,6 +248,7 @@ crates/boon_codegen_rust/src/lib.rs:347
 
 crates/boon_codegen_rust/src/lib.rs:961
 match input { DdValue::List(values) => DdValue::List(values.into_iter().map(...).collect()), ... }
+
 ```
 
 ## Why This Is A Real Blocker
@@ -235,9 +260,10 @@ generic:
 - `crates/boon_runtime_host/src/lib.rs` contains `RuntimeValue`,
   `runtime_value`, and `runtime_call_value`, so a runtime host can recursively
   evaluate DD render graph nodes and Boon library calls as Rust values.
-- `crates/boon_examples/src/lib.rs` still contains `GENERATED_CORPUS` and
-  `run_generated_steps_at`, so checked generated crates can still be selected by
-  fixture index instead of by a general compiled graph artifact.
+- `crates/boon_wasm_smoke/src/lib.rs` no longer contains the generated fixture
+  matrix, but its compiled-manifest proof still routes through
+  `boon_runtime_host` and therefore inherits the same `RuntimeValue` execution
+  path until the runtime is made typed-DD-only.
 - `crates/boon_codegen_rust/src/lib.rs` emits `DdValue` based list, text,
   record, number, boolean, and match semantics directly into generated Rust
   expressions.

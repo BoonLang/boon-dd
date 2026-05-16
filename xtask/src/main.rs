@@ -1947,6 +1947,16 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
             "generated example matrix is driven by checked generated fixture registry",
         ),
         (
+            concat!("run", "_generated_matrix"),
+            "checked_registry",
+            "browser/native proof is driven by a checked generated fixture matrix",
+        ),
+        (
+            concat!("run", "_generated!"),
+            "checked_registry",
+            "browser/native proof selects checked generated crates through a macro matrix",
+        ),
+        (
             concat!("GENERATED", "_CORPUS"),
             "checked_registry",
             "example registry participates in runtime execution",
@@ -1965,6 +1975,7 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
             "crates/boon_backend_wgpu",
             "crates/boon_runtime_host",
             "crates/boon_examples",
+            "crates/boon_wasm_smoke",
             "xtask/src",
         ],
         &patterns,
@@ -3252,9 +3263,9 @@ fn deterministic_cross_host_parity_gate_result(
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     let browser_outputs = browser
-        .get("wasm_generated_matrix")
+        .get("wasm_compiled_manifest")
         .and_then(serde_json::Value::as_array)
-        .context("browser-playground-result.json missing wasm_generated_matrix")?
+        .context("browser-playground-result.json missing wasm_compiled_manifest")?
         .iter()
         .filter_map(|entry| {
             let pair = entry.as_array()?;
@@ -3516,16 +3527,19 @@ fn deterministic_verification_harness_self_test_gate_result(
         }),
     );
 
-    let counter_index = boon_examples::GENERATED_CORPUS
-        .iter()
-        .position(|fixture| fixture.name == "counter")
-        .context("missing generated counter fixture")?;
     let counter_scenario_path = root.join("examples/counter/scenario.toml");
     let counter_scenario_text = fs::read_to_string(&counter_scenario_path)
         .with_context(|| format!("missing {}", counter_scenario_path.display()))?;
-    let (_name, actual_counter_output) =
-        boon_examples::run_generated_scenario_at(counter_index, &counter_scenario_text)
-            .context("generated counter scenario did not run")?;
+    let counter_source_path = root.join("examples/counter/source.bn");
+    let counter_source_text = fs::read_to_string(&counter_source_path)
+        .with_context(|| format!("missing {}", counter_source_path.display()))?;
+    let actual_counter_output = boon_runtime_host::run_compiled_source_scenario(
+        "examples/counter/source.bn",
+        counter_source_text.clone(),
+        &counter_scenario_text,
+    )
+    .map_err(|error| anyhow::anyhow!(error))
+    .context("compiled counter scenario did not run")?;
     let mut tampered_counter_output = actual_counter_output.clone();
     tampered_counter_output.render.clear();
     record_check(
@@ -3538,9 +3552,6 @@ fn deterministic_verification_harness_self_test_gate_result(
         }),
     );
 
-    let counter_source_path = root.join("examples/counter/source.bn");
-    let counter_source_text = fs::read_to_string(&counter_source_path)
-        .with_context(|| format!("missing {}", counter_source_path.display()))?;
     let counter_plan =
         boon_compiler::compile_source("examples/counter/source.bn", counter_source_text);
     let injected_disabled_lowering_node_count = 0_usize;
@@ -3586,11 +3597,13 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
         "compile_and_run_scenario",
         "run_dd_graph_template",
         "execute_scenario",
-        "GENERATED_CORPUS",
-        "run_generated_steps_at",
-        "run_generated_scenario_at",
-        "run_generated_scenario_steps_at",
-        "run_embedded_matrix",
+        concat!("GENERATED", "_CORPUS"),
+        concat!("run", "_generated_steps_at"),
+        concat!("run", "_generated_scenario_at"),
+        concat!("run", "_generated_scenario_steps_at"),
+        concat!("run", "_embedded_matrix"),
+        concat!("run", "_generated_matrix"),
+        concat!("run", "_generated!"),
     ];
     let mut hits = Vec::new();
     for rel in [
@@ -3599,6 +3612,7 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
         "crates/boon_backend_ratatui",
         "crates/boon_backend_wgpu",
         "crates/boon_examples",
+        "crates/boon_wasm_smoke",
     ] {
         let path = root.join(rel);
         if path.exists()
@@ -3611,24 +3625,77 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
             }));
         }
     }
-    let generated_outputs = boon_examples::run_embedded_matrix();
-    let generated_count = generated_outputs.len();
+    let mut execution_failures = Vec::new();
+    let mut compiled_scenarios = 0_usize;
+    match read_language_manifest() {
+        Ok(manifest) => {
+            for example in &manifest.examples {
+                let source = match fs::read_to_string(root.join(&example.source)) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        execution_failures.push(serde_json::json!({
+                            "example": example.id,
+                            "path": example.source,
+                            "error": format!("{error:#}"),
+                        }));
+                        continue;
+                    }
+                };
+                let scenario = match fs::read_to_string(root.join(&example.scenario)) {
+                    Ok(scenario) => scenario,
+                    Err(error) => {
+                        execution_failures.push(serde_json::json!({
+                            "example": example.id,
+                            "path": example.scenario,
+                            "error": format!("{error:#}"),
+                        }));
+                        continue;
+                    }
+                };
+                match boon_runtime_host::run_compiled_source_scenario(
+                    example.source.clone(),
+                    source,
+                    &scenario,
+                ) {
+                    Ok(output) if !output.render.is_empty() || !output.monitor.is_empty() => {
+                        compiled_scenarios += 1;
+                    }
+                    Ok(output) => execution_failures.push(serde_json::json!({
+                        "example": example.id,
+                        "error": "compiled scenario produced no structured output",
+                        "output": output,
+                    })),
+                    Err(error) => execution_failures.push(serde_json::json!({
+                        "example": example.id,
+                        "error": error,
+                    })),
+                }
+            }
+        }
+        Err(error) => execution_failures.push(serde_json::json!({
+            "error": format!("{error:#}"),
+        })),
+    }
     let expected_count = boon_dd::REQUIRED_EXAMPLES.len();
-    let status = if hits.is_empty() && generated_count == expected_count {
-        "passed"
-    } else {
-        "failed"
-    };
+    let status =
+        if hits.is_empty() && execution_failures.is_empty() && compiled_scenarios == expected_count
+        {
+            "passed"
+        } else {
+            "failed"
+        };
     let blockers = if status == "passed" {
         Vec::<&str>::new()
     } else {
         vec![
-            "backend/example/xtask execution paths still reference non-generated runtime helpers or generated fixture count is incomplete",
+            "backend/example execution paths still reference fixture helpers or manifest sources do not execute through compiled graph sessions",
         ]
     };
     GateReport {
         name: "generated-only-runtime".to_owned(),
-        command: "scan backend/example execution paths and run generated fixture matrix".to_owned(),
+        command:
+            "scan backend/example execution paths and execute manifest compiled graph sessions"
+                .to_owned(),
         status: status.to_owned(),
         duration_ms: started.elapsed().as_millis(),
         artifacts: Vec::new(),
@@ -3636,8 +3703,9 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
             "runtime_execution_patterns": runtime_execution_patterns,
             "hits": hits,
             "hit_count": hits.len(),
-            "generated_fixture_outputs": generated_count,
+            "compiled_manifest_scenarios": compiled_scenarios,
             "required_examples": expected_count,
+            "execution_failures": execution_failures,
             "blockers": blockers,
         }),
     }
@@ -4229,15 +4297,18 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                 .any(|event| matches!(event, boon_dd::ScenarioEvent::Command(_)))
                         })
                         .count();
-                    let generated_index = boon_examples::GENERATED_CORPUS
-                        .iter()
-                        .position(|fixture| fixture.name == example.id);
-                    let execution = generated_index.and_then(|index| {
-                        boon_examples::run_generated_scenario_steps_at(index, &text)
-                    });
+                    let execution = match fs::read_to_string(root.join(&example.source)) {
+                        Ok(source_text) => boon_runtime_host::run_compiled_source_scenario_steps(
+                            example.source.clone(),
+                            source_text,
+                            &text,
+                        )
+                        .map_err(|error| format!("compiled scenario failed: {error}")),
+                        Err(error) => Err(format!("missing source {}: {error:#}", example.source)),
+                    };
                     let execution_steps = execution
                         .as_ref()
-                        .map(|(_name, steps)| {
+                        .map(|steps| {
                             steps
                                 .iter()
                                 .map(|step| {
@@ -4251,7 +4322,7 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                             "expected_text": step.expected_text.clone(),
                                             "actual_text": actual_text.clone(),
                                             "commands": step.commands.iter().map(|command| command.command.clone()).collect::<Vec<_>>(),
-                                            "error": "generated scenario step output does not match expected text",
+                                            "error": "compiled scenario step output does not match expected text",
                                         }));
                                     }
                                     serde_json::json!({
@@ -4272,16 +4343,17 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                 })
                                 .collect::<Vec<_>>()
                         })
-                        .unwrap_or_else(|| {
+                        .unwrap_or_else(|error| {
                             failures.push(serde_json::json!({
                                 "example": example.id,
-                                "error": "manifest example has no generated fixture execution path",
+                                "error": error,
                             }));
                             Vec::new()
                         });
                     let structured_final = execution
                         .as_ref()
-                        .and_then(|(_name, steps)| steps.last())
+                        .ok()
+                        .and_then(|steps| steps.last())
                         .map(|step| &step.output);
                     let structured_final_matches_expected = match (
                         expected_output.as_ref(),
@@ -4564,23 +4636,11 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         .iter()
         .map(|example| (*example).to_owned())
         .collect::<std::collections::BTreeSet<_>>();
-    let embedded_fixture_examples = boon_examples::GENERATED_CORPUS
-        .iter()
-        .map(|fixture| fixture.name.to_owned())
-        .collect::<std::collections::BTreeSet<_>>();
     let manifest_missing_from_required_examples = manifest_example_ids
         .difference(&embedded_required_examples)
         .cloned()
         .collect::<Vec<_>>();
     let required_examples_missing_from_manifest = embedded_required_examples
-        .difference(&manifest_example_ids)
-        .cloned()
-        .collect::<Vec<_>>();
-    let manifest_missing_from_embedded_fixtures = manifest_example_ids
-        .difference(&embedded_fixture_examples)
-        .cloned()
-        .collect::<Vec<_>>();
-    let embedded_fixtures_missing_from_manifest = embedded_fixture_examples
         .difference(&manifest_example_ids)
         .cloned()
         .collect::<Vec<_>>();
@@ -4713,8 +4773,6 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         features_without_negative.is_empty(),
         manifest_missing_from_required_examples.is_empty(),
         required_examples_missing_from_manifest.is_empty(),
-        manifest_missing_from_embedded_fixtures.is_empty(),
-        embedded_fixtures_missing_from_manifest.is_empty(),
         negative_files_missing.is_empty(),
         incomplete_negative_examples.is_empty(),
     ]
@@ -4818,12 +4876,9 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         "examples_on_disk": examples,
         "manifest_example_count": manifest_example_ids.len(),
         "required_examples_count": embedded_required_examples.len(),
-        "embedded_fixture_count": embedded_fixture_examples.len(),
         "missing_examples_in_manifest": missing_examples,
         "manifest_missing_from_required_examples": manifest_missing_from_required_examples,
         "required_examples_missing_from_manifest": required_examples_missing_from_manifest,
-        "manifest_missing_from_embedded_fixtures": manifest_missing_from_embedded_fixtures,
-        "embedded_fixtures_missing_from_manifest": embedded_fixtures_missing_from_manifest,
         "missing_example_files": missing_example_files,
         "feature_count": parsed_manifest.features.len(),
         "features_without_positive_examples": features_without_positive,
@@ -5919,7 +5974,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     fs::write(
         generated_dir.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nserde_json = \"1\"\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
+            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nserde_json = \"1\"\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n\n[workspace]\n"
         ),
     )?;
     fs::write(
@@ -6372,7 +6427,7 @@ fn smoke_html() -> &'static str {
     r#"<!doctype html>
 <meta charset="utf-8">
 <script type="module">
-import init, { run_generated_matrix_json } from "./boon_wasm_smoke.js";
+import init, { run_compiled_manifest_json } from "./boon_wasm_smoke.js";
 try {
   await init();
   if (!("gpu" in navigator)) {
@@ -6392,7 +6447,7 @@ try {
       adapter: true,
       device: true
     },
-    wasm_generated_matrix: JSON.parse(run_generated_matrix_json())
+    wasm_compiled_manifest: JSON.parse(run_compiled_manifest_json())
   });
   document.body.textContent = result;
   await fetch("/result", { method: "POST", body: result });
@@ -6430,10 +6485,10 @@ pre { margin: 0; padding: 12px; white-space: pre-wrap; border-top: 1px solid #30
   </main>
 </div>
 <script type="module">
-import init, { run_generated_matrix_json } from "./boon_wasm_smoke.js";
+import init, { run_compiled_manifest_json } from "./boon_wasm_smoke.js";
 try {
   await init();
-  const rows = JSON.parse(run_generated_matrix_json());
+  const rows = JSON.parse(run_compiled_manifest_json());
   const loadedExamples = rows.map((row) => row[0]);
   const outputs = new Map(rows);
   const nav = document.getElementById("examples");
@@ -6515,7 +6570,7 @@ try {
     example_count: loadedExamples.length,
     selected_initial: loadedExamples[0],
     selected_after_simulated_click: selected,
-    wasm_generated_matrix: rows
+    wasm_compiled_manifest: rows
   });
   document.body.dataset.result = result;
   await fetch("/result", { method: "POST", body: result });

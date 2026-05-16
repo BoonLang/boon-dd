@@ -10,7 +10,6 @@ anyhow.workspace = true
 boon_codegen_rust = { path = "../crates/boon_codegen_rust" }
 boon_compiler = { path = "../crates/boon_compiler" }
 boon_dd = { path = "../crates/boon_dd" }
-boon_examples = { path = "../crates/boon_examples" }
 boon_hir = { path = "../crates/boon_hir" }
 boon_runtime_host = { path = "../crates/boon_runtime_host" }
 boon_shape = { path = "../crates/boon_shape" }

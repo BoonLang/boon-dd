@@ -77,14 +77,41 @@ pub fn run_compiled_source_scenario(
     source_text: impl Into<String>,
     scenario_text: &str,
 ) -> Result<SmokeOutput, String> {
+    Ok(
+        run_compiled_source_scenario_steps(source_path, source_text, scenario_text)?
+            .into_iter()
+            .last()
+            .map(|step| step.output)
+            .unwrap_or_else(empty_structured_output),
+    )
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledScenarioStepOutput {
+    pub step_index: usize,
+    pub description: String,
+    pub event_count: usize,
+    pub event_order: Vec<String>,
+    pub action_count: usize,
+    pub commands: Vec<ScenarioCommand>,
+    pub expected_text: String,
+    pub output: SmokeOutput,
+}
+
+pub fn run_compiled_source_scenario_steps(
+    source_path: impl Into<String>,
+    source_text: impl Into<String>,
+    scenario_text: &str,
+) -> Result<Vec<CompiledScenarioStepOutput>, String> {
     let source_path = source_path.into();
     let source_text = source_text.into();
     let scenario = parse_scenario_result(scenario_text)?;
     let mut session = CompiledGraphSession::new(source_path.clone(), source_text.clone())?;
-    let mut last = session.drain_epoch(0)?;
+    let _ = session.drain_epoch(0)?;
     let mut persistence_enabled = false;
     let mut persisted_text: Option<String> = None;
     let mut last_generated_persisted_text: Option<String> = None;
+    let mut outputs = Vec::new();
     for (step_index, step) in scenario.steps.iter().enumerate() {
         let epoch = step_index as u64 + 1;
         let mut submitted = false;
@@ -115,17 +142,37 @@ pub fn run_compiled_source_scenario(
         if !submitted {
             session.submit_host_tick(epoch);
         }
-        last = session.drain_epoch(epoch)?;
+        let output = session.drain_epoch(epoch)?;
         last_generated_persisted_text =
-            last.persistence
+            output
+                .persistence
                 .iter()
                 .rev()
                 .find_map(|command| match command {
                     PersistenceCommand::SaveText { value, .. } => Some(value.clone()),
                     PersistenceCommand::LoadText { .. } => None,
                 });
+        outputs.push(CompiledScenarioStepOutput {
+            step_index,
+            description: step.description.clone(),
+            event_count: step.events.len(),
+            event_order: step
+                .events
+                .iter()
+                .map(|event| match event {
+                    ScenarioEvent::Source(action) => format!("source:{}", action.source),
+                    ScenarioEvent::Command(command) => {
+                        format!("command:{}", command.command)
+                    }
+                })
+                .collect(),
+            action_count: step.actions.len(),
+            commands: step.commands.clone(),
+            expected_text: step.expect_text.clone(),
+            output,
+        });
     }
-    Ok(last)
+    Ok(outputs)
 }
 
 pub fn run_compiled_source_actions(
@@ -517,6 +564,15 @@ impl CompiledGraphSession {
 
 fn completion_time(epoch: u64) -> u64 {
     BoonTime { epoch, phase: 3 }.encode()
+}
+
+fn empty_structured_output() -> SmokeOutput {
+    SmokeOutput {
+        monitor: Vec::new(),
+        render: Vec::new(),
+        effects: Vec::new(),
+        persistence: Vec::new(),
+    }
 }
 
 fn runtime_render_collection<'scope>(
