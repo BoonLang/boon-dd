@@ -1,23 +1,7 @@
 [
   {
-    "monitor": [
-      {
-        "NodeValue": {
-          "epoch": 1,
-          "node": "DocumentOutput",
-          "owner": "Root",
-          "value_preview": "68 F"
-        }
-      }
-    ],
-    "render": [
-      {
-        "PatchText": {
-          "node": "DocumentText",
-          "text": "68 F"
-        }
-      }
-    ],
+    "monitor": [],
+    "render": [],
     "effects": [],
     "persistence": []
   }

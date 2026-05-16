@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 boon_dd = { path = "../boon_dd" }
-boon_examples = { path = "../boon_examples" }
+boon_runtime_host = { path = "../boon_runtime_host" }
 boon_backend_wgpu = { path = "../boon_backend_wgpu" }
 wasm-bindgen.workspace = true
 wgpu.workspace = true

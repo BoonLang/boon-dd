@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 const WASM_BINDGEN_VERSION: &str = "0.2.120";
 const COSMIC_WORKSPACE: &str = "boon-dd";
 const HONEST_COMPILER_PLAN: &str = "BOON_DD_HONEST_COMPILER_PLAN.md";
+const ENGINE_SIMPLICITY_PLAN: &str = "BOON_DD_ENGINE_SIMPLICITY_PLAN.md";
 const LANGUAGE_MANIFEST: &str = "docs/language/boon-language-manifest.toml";
+const ENGINE_SIMPLICITY_SCHEMA_VERSION: &str = "1";
 
 const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
     concat!("detect", "_operators"),
@@ -78,7 +80,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         bail!(
-            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-syntax-corpus|verify-resolver-corpus|verify-shape-corpus|verify-semantic-ir|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|verify-generated-crates|write-honest-compiler-prompts|verify-prompt-audit|verify> ..."
+            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-syntax-corpus|verify-resolver-corpus|verify-shape-corpus|verify-semantic-ir|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|verify-generated-crates|write-generated-artifacts|write-honest-compiler-prompts|verify-prompt-audit|verify-engine-simplicity|verify-dd-purity|verify-no-fixture-dispatch|verify-source-routing|verify-dynamic-owner-routing|verify-persistent-runtime|verify-output-drain-efficiency|verify-dd-stateful-lowering|verify-engine-stress|verify-engine-complexity|verify-engine-prompt-audit|compare-engines|verify> ..."
         );
     }
 
@@ -102,8 +104,21 @@ fn main() -> Result<()> {
         "verify-lowering" => verify_lowering(&args).map(|_| ()),
         "verify-generated-freshness" => verify_generated_freshness(&args).map(|_| ()),
         "verify-generated-crates" => verify_generated_crates().map(|_| ()),
+        "write-generated-artifacts" => write_generated_artifacts(&args).map(|_| ()),
         "write-honest-compiler-prompts" => write_honest_compiler_prompts(&args).map(|_| ()),
         "verify-prompt-audit" => verify_prompt_audit(&args).map(|_| ()),
+        "verify-engine-simplicity" => verify_engine_simplicity(&args).map(|_| ()),
+        "verify-dd-purity" => verify_dd_purity(&args).map(|_| ()),
+        "verify-no-fixture-dispatch" => verify_no_fixture_dispatch(&args).map(|_| ()),
+        "verify-source-routing" => verify_source_routing(&args).map(|_| ()),
+        "verify-dynamic-owner-routing" => verify_dynamic_owner_routing(&args).map(|_| ()),
+        "verify-persistent-runtime" => verify_persistent_runtime(&args).map(|_| ()),
+        "verify-output-drain-efficiency" => verify_output_drain_efficiency(&args).map(|_| ()),
+        "verify-dd-stateful-lowering" => verify_dd_stateful_lowering(&args).map(|_| ()),
+        "verify-engine-stress" => verify_engine_stress(&args).map(|_| ()),
+        "verify-engine-complexity" => verify_engine_complexity(&args).map(|_| ()),
+        "verify-engine-prompt-audit" => verify_engine_prompt_audit(&args).map(|_| ()),
+        "compare-engines" => compare_engines(&args).map(|_| ()),
         "verify" => verify(&args),
         other => bail!("unknown xtask command: {other}"),
     }
@@ -125,6 +140,12 @@ fn repo_root() -> Result<PathBuf> {
 
 fn artifacts_dir() -> Result<PathBuf> {
     let path = repo_root()?.join("target/boon-artifacts");
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn engine_artifacts_dir() -> Result<PathBuf> {
+    let path = artifacts_dir()?.join("engine-simplicity");
     fs::create_dir_all(&path)?;
     Ok(path)
 }
@@ -832,6 +853,66 @@ fn verify(args: &[String]) -> Result<()> {
         || verify_prompt_audit(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
+        "compare-engines",
+        "cargo xtask compare-engines --format json",
+        || compare_engines(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-dd-purity",
+        "cargo xtask verify-dd-purity --format json",
+        || verify_dd_purity(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-no-fixture-dispatch",
+        "cargo xtask verify-no-fixture-dispatch --format json",
+        || verify_no_fixture_dispatch(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-source-routing",
+        "cargo xtask verify-source-routing --format json",
+        || verify_source_routing(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-dynamic-owner-routing",
+        "cargo xtask verify-dynamic-owner-routing --format json",
+        || verify_dynamic_owner_routing(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-persistent-runtime",
+        "cargo xtask verify-persistent-runtime --format json",
+        || verify_persistent_runtime(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-output-drain-efficiency",
+        "cargo xtask verify-output-drain-efficiency --format json",
+        || verify_output_drain_efficiency(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-dd-stateful-lowering",
+        "cargo xtask verify-dd-stateful-lowering --format json",
+        || verify_dd_stateful_lowering(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-engine-stress",
+        "cargo xtask verify-engine-stress --format json",
+        || verify_engine_stress(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-engine-complexity",
+        "cargo xtask verify-engine-complexity --format json",
+        || verify_engine_complexity(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-engine-prompt-audit",
+        "cargo xtask verify-engine-prompt-audit --format json",
+        || verify_engine_prompt_audit(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
+        "verify-engine-simplicity",
+        "cargo xtask verify-engine-simplicity --format json",
+        || verify_engine_simplicity(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
         "generated-crates",
         "cargo test --manifest-path generated/<example>/Cargo.toml",
         verify_generated_crates,
@@ -870,6 +951,7 @@ fn verify(args: &[String]) -> Result<()> {
             "no_shortcuts_report": read_artifact_json("no-shortcuts-report.json")?,
             "honest_compiler_prompt_pack": read_artifact_json("honest-compiler-prompt-pack.json")?,
             "prompt_audit_report": read_artifact_json("prompt-audit-report.json")?,
+            "engine_simplicity": engine_success_summary()?,
         }))?,
     )?;
     if !success {
@@ -1015,6 +1097,382 @@ fn read_artifact_json(name: &str) -> Result<serde_json::Value> {
     }
     serde_json::from_str(&fs::read_to_string(&artifact)?)
         .with_context(|| format!("artifact is not JSON: {}", artifact.display()))
+}
+
+fn read_engine_artifact_json(name: &str) -> Result<serde_json::Value> {
+    let artifact = engine_artifacts_dir()?.join(name);
+    if !artifact.exists() {
+        return Ok(serde_json::json!({
+            "missing": true,
+            "path": artifact,
+        }));
+    }
+    serde_json::from_str(&fs::read_to_string(&artifact)?)
+        .with_context(|| format!("engine artifact is not JSON: {}", artifact.display()))
+}
+
+fn write_engine_artifact(name: &str, details: &serde_json::Value) -> Result<PathBuf> {
+    let artifact = engine_artifacts_dir()?.join(name);
+    fs::write(&artifact, serde_json::to_vec_pretty(details)?)?;
+    Ok(artifact)
+}
+
+fn engine_report(
+    artifact_name: &str,
+    command: &str,
+    verdict: &str,
+    failures: Vec<serde_json::Value>,
+    blockers: Vec<String>,
+    evidence: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let status = run_capture("git", &["status", "--short"])?;
+    let details = serde_json::json!({
+        "schema_version": ENGINE_SIMPLICITY_SCHEMA_VERSION,
+        "verdict": verdict,
+        "plan_path": ENGINE_SIMPLICITY_PLAN,
+        "git_head": run_capture("git", &["rev-parse", "HEAD"])?,
+        "dirty_worktree": !status.trim().is_empty(),
+        "commands_run": [command],
+        "input_hashes": engine_input_hashes()?,
+        "artifact_hashes": engine_artifact_hashes()?,
+        "failures": failures,
+        "blockers": blockers,
+        "evidence": evidence,
+    });
+    let artifact = write_engine_artifact(artifact_name, &details)?;
+    if verdict != "pass" {
+        bail!(
+            "engine-simplicity gate {command} reported {verdict}; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
+}
+
+fn engine_input_hashes() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let paths = [
+        ENGINE_SIMPLICITY_PLAN,
+        HONEST_COMPILER_PLAN,
+        LANGUAGE_MANIFEST,
+        "Cargo.lock",
+        "Cargo.toml",
+        "xtask/src/main.rs",
+        "crates/boon_codegen_rust/src/lib.rs",
+        "crates/boon_compiler/src/lib.rs",
+        "crates/boon_dd/src/lib.rs",
+        "crates/boon_examples/src/lib.rs",
+        "crates/boon_runtime_host/src/lib.rs",
+    ];
+    let mut hashes = serde_json::Map::new();
+    for path in paths {
+        let full = root.join(path);
+        hashes.insert(
+            path.to_owned(),
+            if full.exists() {
+                serde_json::json!(sha256_file(&full)?)
+            } else {
+                serde_json::json!({ "missing": true })
+            },
+        );
+    }
+    Ok(serde_json::Value::Object(hashes))
+}
+
+fn engine_artifact_hashes() -> Result<serde_json::Value> {
+    let root = artifacts_dir()?;
+    let engine_root = engine_artifacts_dir()?;
+    let paths = [
+        root.join("success.json"),
+        root.join("verify-report.json"),
+        root.join("honest-compiler-report.json"),
+        root.join("honesty-deterministic-report.json"),
+        root.join("generated-freshness-report.json"),
+        root.join("lowering-coverage-report.json"),
+        engine_root.join("no-fixture-dispatch-report.json"),
+        engine_root.join("source-routing-report.json"),
+        engine_root.join("dynamic-owner-routing-report.json"),
+        engine_root.join("persistent-runtime-report.json"),
+        engine_root.join("output-drain-efficiency-report.json"),
+        engine_root.join("dd-stateful-lowering-report.json"),
+        engine_root.join("stress-report.json"),
+        engine_root.join("complexity-report.json"),
+        engine_root.join("cross-engine-comparison.json"),
+        engine_root.join("prompt-audit-report.json"),
+    ];
+    let mut hashes = serde_json::Map::new();
+    for path in paths {
+        let key = path.display().to_string();
+        hashes.insert(
+            key,
+            if path.exists() {
+                serde_json::json!(sha256_file(&path)?)
+            } else {
+                serde_json::json!({ "missing": true })
+            },
+        );
+    }
+    Ok(serde_json::Value::Object(hashes))
+}
+
+fn engine_success_summary() -> Result<serde_json::Value> {
+    let engine = read_engine_artifact_json("engine-simplicity-report.json")?;
+    let dd_purity = read_engine_artifact_json("dd-purity-report.json")?;
+    let no_fixture = read_engine_artifact_json("no-fixture-dispatch-report.json")?;
+    let source_routing = read_engine_artifact_json("source-routing-report.json")?;
+    let dynamic_owner = read_engine_artifact_json("dynamic-owner-routing-report.json")?;
+    let persistent = read_engine_artifact_json("persistent-runtime-report.json")?;
+    let output_drain = read_engine_artifact_json("output-drain-efficiency-report.json")?;
+    let stateful = read_engine_artifact_json("dd-stateful-lowering-report.json")?;
+    let prompt = read_engine_artifact_json("prompt-audit-report.json")?;
+    Ok(serde_json::json!({
+        "verdict": engine["verdict"],
+        "dd_purity": dd_purity["verdict"],
+        "fixture_dispatch_paths": no_fixture["evidence"]["hit_count"],
+        "source_routing_wrong_id_failures": source_routing["failures"].as_array().map_or(0, Vec::len),
+        "dynamic_owner_leaks": dynamic_owner["failures"].as_array().map_or(0, Vec::len),
+        "runtime_graph_builds_per_interaction_session": if persistent["verdict"].as_str() == Some("pass") { serde_json::json!(1) } else { serde_json::Value::Null },
+        "full_output_vector_clones_in_execution_paths": output_drain["failures"].as_array().map_or(0, Vec::len),
+        "stateful_lowering_shortcuts": stateful["failures"].as_array().map_or(0, Vec::len),
+        "stale_artifacts": read_artifact_json("generated-freshness-report.json")?["stale"].as_array().map_or(0, Vec::len),
+        "prompt_audit_verdict": prompt["verdict"],
+        "reports": {
+            "engine_simplicity": "target/boon-artifacts/engine-simplicity/engine-simplicity-report.json",
+            "dd_purity": "target/boon-artifacts/engine-simplicity/dd-purity-report.json",
+            "no_fixture_dispatch": "target/boon-artifacts/engine-simplicity/no-fixture-dispatch-report.json",
+            "source_routing": "target/boon-artifacts/engine-simplicity/source-routing-report.json",
+            "dynamic_owner_routing": "target/boon-artifacts/engine-simplicity/dynamic-owner-routing-report.json",
+            "persistent_runtime": "target/boon-artifacts/engine-simplicity/persistent-runtime-report.json",
+            "output_drain_efficiency": "target/boon-artifacts/engine-simplicity/output-drain-efficiency-report.json",
+            "dd_stateful_lowering": "target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json",
+            "engine_stress": "target/boon-artifacts/engine-simplicity/stress-report.json",
+            "engine_complexity": "target/boon-artifacts/engine-simplicity/complexity-report.json",
+            "cross_engine_comparison": "target/boon-artifacts/engine-simplicity/cross-engine-comparison.json",
+            "engine_prompt_audit": "target/boon-artifacts/engine-simplicity/prompt-audit-report.json"
+        }
+    }))
+}
+
+fn scan_engine_patterns(
+    bases: &[&str],
+    patterns: &[(&str, &str, &str)],
+) -> Result<Vec<serde_json::Value>> {
+    let root = repo_root()?;
+    let mut hits = Vec::new();
+    for base in bases {
+        let path = root.join(base);
+        if path.exists() {
+            scan_engine_patterns_in_path(&root, &path, patterns, &mut hits)?;
+        }
+    }
+    Ok(hits)
+}
+
+fn scan_engine_patterns_in_path(
+    root: &Path,
+    path: &Path,
+    patterns: &[(&str, &str, &str)],
+    hits: &mut Vec<serde_json::Value>,
+) -> Result<()> {
+    if path.is_dir() {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        if matches!(
+            name,
+            ".git" | ".jj" | "target" | "node_modules" | ".boon-local" | "dist" | "build"
+        ) {
+            return Ok(());
+        }
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            scan_engine_patterns_in_path(root, &entry.path(), patterns, hits)?;
+        }
+        return Ok(());
+    }
+
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    if !matches!(extension, "rs" | "js" | "ts" | "json" | "toml" | "md") {
+        return Ok(());
+    }
+    let text = fs::read_to_string(path)?;
+    let relative = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .display()
+        .to_string();
+    for (line_index, line) in text.lines().enumerate() {
+        for (pattern, category, reason) in patterns {
+            if line.contains(pattern) {
+                hits.push(serde_json::json!({
+                    "path": relative,
+                    "line": line_index + 1,
+                    "pattern": pattern,
+                    "category": category,
+                    "reason": reason,
+                    "excerpt": truncate_for_report(line.trim(), 240),
+                }));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn truncate_for_report(text: &str, max_chars: usize) -> String {
+    let mut truncated = text.chars().take(max_chars).collect::<String>();
+    if text.chars().count() > max_chars {
+        truncated.push_str("...");
+    }
+    truncated
+}
+
+fn source_file_metrics(root: &Path, bases: &[&str]) -> Result<serde_json::Value> {
+    let mut files = 0_usize;
+    let mut rust_files = 0_usize;
+    let mut code_lines = 0_usize;
+    let mut rust_lines = 0_usize;
+    let mut functions = 0_usize;
+    let mut structs = 0_usize;
+    let mut enums = 0_usize;
+    let mut impls = 0_usize;
+    let mut matches = 0_usize;
+    let mut branch_like = 0_usize;
+    for base in bases {
+        let path = root.join(base);
+        if path.exists() {
+            collect_source_file_metrics(&path, &mut |path, text| {
+                files += 1;
+                let line_count = text.lines().filter(|line| !line.trim().is_empty()).count();
+                code_lines += line_count;
+                if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                    rust_files += 1;
+                    rust_lines += line_count;
+                    functions += text.matches("fn ").count();
+                    structs += text.matches("struct ").count();
+                    enums += text.matches("enum ").count();
+                    impls += text.matches("impl ").count();
+                    matches += text.matches("match ").count();
+                    branch_like += text.matches(" if ").count()
+                        + text.matches("else").count()
+                        + text.matches("match ").count()
+                        + text.matches("for ").count()
+                        + text.matches("while ").count();
+                }
+            })?;
+        }
+    }
+    Ok(serde_json::json!({
+        "files": files,
+        "rust_files": rust_files,
+        "code_lines": code_lines,
+        "rust_lines": rust_lines,
+        "functions": functions,
+        "structs": structs,
+        "enums": enums,
+        "impls": impls,
+        "match_tokens": matches,
+        "branch_like_tokens": branch_like,
+    }))
+}
+
+fn collect_source_file_metrics<F>(path: &Path, visit: &mut F) -> Result<()>
+where
+    F: FnMut(&Path, &str),
+{
+    if path.is_dir() {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        if matches!(
+            name,
+            ".git"
+                | ".jj"
+                | ".zig-cache"
+                | "target"
+                | "node_modules"
+                | ".boon-local"
+                | ".artifacts"
+                | "dist"
+                | "build"
+                | "zig-out"
+                | "zig-pkg"
+                | "third_party"
+        ) {
+            return Ok(());
+        }
+        for entry in fs::read_dir(path)? {
+            collect_source_file_metrics(&entry?.path(), visit)?;
+        }
+        return Ok(());
+    }
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    if !matches!(
+        extension,
+        "rs" | "json"
+            | "toml"
+            | "txt"
+            | "md"
+            | "js"
+            | "ts"
+            | "html"
+            | "css"
+            | "gleam"
+            | "pony"
+            | "zig"
+            | "zon"
+            | "c"
+            | "h"
+            | "cpp"
+            | "hpp"
+    ) {
+        return Ok(());
+    }
+    let text = fs::read_to_string(path)?;
+    visit(path, &text);
+    Ok(())
+}
+
+fn git_tree_metrics(commit: &str, prefixes: &[&str]) -> Result<serde_json::Value> {
+    run_capture("git", &["cat-file", "-e", &format!("{commit}^{{commit}}")])
+        .with_context(|| format!("missing baseline commit {commit}"))?;
+    let listing = run_capture("git", &["ls-tree", "-r", "--name-only", commit])?;
+    let mut files = 0_usize;
+    let mut rust_files = 0_usize;
+    let mut code_lines = 0_usize;
+    let mut rust_lines = 0_usize;
+    for path in listing.lines() {
+        if !prefixes.iter().any(|prefix| path.starts_with(prefix)) {
+            continue;
+        }
+        let extension = Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        if !matches!(
+            extension,
+            "rs" | "json" | "toml" | "txt" | "md" | "js" | "ts" | "html"
+        ) {
+            continue;
+        }
+        let spec = format!("{commit}:{path}");
+        let text = run_capture("git", &["show", &spec])?;
+        let line_count = text.lines().filter(|line| !line.trim().is_empty()).count();
+        files += 1;
+        code_lines += line_count;
+        if extension == "rs" {
+            rust_files += 1;
+            rust_lines += line_count;
+        }
+    }
+    Ok(serde_json::json!({
+        "commit": commit,
+        "files": files,
+        "rust_files": rust_files,
+        "code_lines": code_lines,
+        "rust_lines": rust_lines,
+    }))
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -1239,6 +1697,879 @@ fn verify_no_shortcuts(_args: &[String]) -> Result<serde_json::Value> {
             artifact.display()
         );
     }
+    Ok(details)
+}
+
+fn verify_engine_simplicity(_args: &[String]) -> Result<serde_json::Value> {
+    let gate_specs: [(&str, &str, fn(&[String]) -> Result<serde_json::Value>); 10] = [
+        (
+            "verify-dd-purity",
+            "cargo xtask verify-dd-purity --format json",
+            verify_dd_purity,
+        ),
+        (
+            "verify-no-fixture-dispatch",
+            "cargo xtask verify-no-fixture-dispatch --format json",
+            verify_no_fixture_dispatch,
+        ),
+        (
+            "verify-source-routing",
+            "cargo xtask verify-source-routing --format json",
+            verify_source_routing,
+        ),
+        (
+            "verify-dynamic-owner-routing",
+            "cargo xtask verify-dynamic-owner-routing --format json",
+            verify_dynamic_owner_routing,
+        ),
+        (
+            "verify-persistent-runtime",
+            "cargo xtask verify-persistent-runtime --format json",
+            verify_persistent_runtime,
+        ),
+        (
+            "verify-output-drain-efficiency",
+            "cargo xtask verify-output-drain-efficiency --format json",
+            verify_output_drain_efficiency,
+        ),
+        (
+            "verify-dd-stateful-lowering",
+            "cargo xtask verify-dd-stateful-lowering --format json",
+            verify_dd_stateful_lowering,
+        ),
+        (
+            "verify-engine-stress",
+            "cargo xtask verify-engine-stress --format json",
+            verify_engine_stress,
+        ),
+        (
+            "verify-engine-complexity",
+            "cargo xtask verify-engine-complexity --format json",
+            verify_engine_complexity,
+        ),
+        (
+            "verify-engine-prompt-audit",
+            "cargo xtask verify-engine-prompt-audit --format json",
+            verify_engine_prompt_audit,
+        ),
+    ];
+    let mut gates = Vec::new();
+    for (name, command, function) in gate_specs {
+        gates.push(capture_simple_gate(name, command, || {
+            function(&["--format".to_owned(), "json".to_owned()])
+        }));
+    }
+    gates.push(capture_simple_gate(
+        "compare-engines",
+        "cargo xtask compare-engines --format json",
+        || compare_engines(&["--format".to_owned(), "json".to_owned()]),
+    ));
+
+    let failures = gates
+        .iter()
+        .filter(|gate| gate.status != "passed")
+        .map(|gate| {
+            serde_json::json!({
+                "gate": gate.name,
+                "status": gate.status,
+                "details": gate.details,
+            })
+        })
+        .collect::<Vec<_>>();
+    let blockers = failures
+        .iter()
+        .filter_map(|failure| failure["gate"].as_str())
+        .map(|gate| format!("{gate} is not passing"))
+        .collect::<Vec<_>>();
+    let verdict = if failures.is_empty() { "pass" } else { "fail" };
+    engine_report(
+        "engine-simplicity-report.json",
+        "cargo xtask verify-engine-simplicity --format json",
+        verdict,
+        failures,
+        blockers,
+        serde_json::json!({
+            "gates": gates,
+        }),
+    )
+}
+
+fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("run", "_generated_for_checked_source"),
+            "fixture_dispatch",
+            "runtime selects checked generated fixtures instead of a general compiled graph",
+        ),
+        (
+            concat!("run", "_generated_actions_at"),
+            "fixture_dispatch",
+            "interactive runtime re-enters checked generated fixture registry",
+        ),
+        (
+            concat!("run", "_smoke_json"),
+            "smoke_verification",
+            "browser proof can be reduced to precomputed smoke JSON",
+        ),
+        (
+            concat!("Generated", "Value"),
+            "generated_semantics",
+            "generated graph still carries a generic value evaluator",
+        ),
+        (
+            concat!("generated", "_source_event_value"),
+            "source_identity",
+            "source identity can be discarded before semantic evaluation",
+        ),
+        (
+            concat!("outputs", "().into_iter().last()"),
+            "output_drain",
+            "runtime clones/drains all outputs and keeps only the last value",
+        ),
+        (
+            concat!("render", "_collection_from_program"),
+            "lowering_shortcut",
+            "codegen can still execute from legacy render program metadata",
+        ),
+        (
+            concat!("smoke", "_output"),
+            "smoke_verification",
+            "verifier still accepts smoke-oriented output as proof",
+        ),
+    ];
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_backend_app_window",
+            "crates/boon_backend_browser",
+            "crates/boon_backend_ratatui",
+            "crates/boon_backend_wgpu",
+            "crates/boon_codegen_rust",
+            "crates/boon_examples",
+            "crates/boon_wasm_smoke",
+            "generated",
+            "xtask/src",
+        ],
+        &patterns,
+    )?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "DD purity is not proven; fixture dispatch, smoke proof, generated value evaluators, or clone-heavy output drains remain".to_owned(),
+        ]
+    };
+    engine_report(
+        "dd-purity-report.json",
+        "cargo xtask verify-dd-purity --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("run", "_generated_for_checked_source"),
+            "checked_source_dispatch",
+            "backend/runtime maps source text to a checked generated fixture",
+        ),
+        (
+            concat!("run", "_generated_actions_at"),
+            "checked_index_dispatch",
+            "runtime selects generated behavior through fixture index",
+        ),
+        (
+            concat!("run", "_generated_steps_at"),
+            "checked_index_dispatch",
+            "runtime selects generated behavior through fixture index",
+        ),
+        (
+            concat!("GENERATED", "_CORPUS"),
+            "checked_registry",
+            "example registry participates in runtime execution",
+        ),
+        (
+            concat!("fixture", "_index"),
+            "checked_registry",
+            "native runtime carries fixture index as semantic selector",
+        ),
+    ];
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_backend_app_window",
+            "crates/boon_backend_browser",
+            "crates/boon_backend_ratatui",
+            "crates/boon_backend_wgpu",
+            "crates/boon_runtime_host",
+        ],
+        &patterns,
+    )?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "runtime execution still contains checked-example or fixture-index dispatch paths"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "no-fixture-dispatch-report.json",
+        "cargo xtask verify-no-fixture-dispatch --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_source_routing(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("!generated", "_event_is_host_tick(event)"),
+            "all_non_host_events",
+            "generated graph consumes all non-host events instead of resolved source ids",
+        ),
+        (
+            concat!("generated", "_source_event_value(&event)"),
+            "source_payload_only",
+            "generated graph maps events to payload while dropping source identity",
+        ),
+        (
+            concat!("GeneratedSourceEvent::Static { payload, .. }"),
+            "source_identity_drop",
+            "static source id is ignored by generated semantic evaluation",
+        ),
+        (
+            concat!("GeneratedSourceEvent::Dynamic { payload, .. }"),
+            "source_identity_drop",
+            "dynamic source family/owner/generation are ignored by generated semantic evaluation",
+        ),
+    ];
+    let hits = scan_engine_patterns(&["crates/boon_codegen_rust", "generated"], &patterns)?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "source routing is not compiler-keyed; wrong source ids could still affect outputs"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "source-routing-report.json",
+        "cargo xtask verify-source-routing --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "negative_checks_required": [
+                "wrong static source id does not affect output",
+                "same payload on two source ids remains separated",
+                "browser proof routes through generated graph source ids"
+            ],
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_dynamic_owner_routing(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("GeneratedSourceEvent::Dynamic { payload, .. }"),
+            "owner_identity_drop",
+            "dynamic family, owner, and generation are dropped before generated semantics",
+        ),
+        (
+            concat!("generation", ".unwrap_or_default()"),
+            "generation_defaulting",
+            "missing generation is silently defaulted in the execution path",
+        ),
+        (
+            concat!("OwnerKey", "(\"Root\".to_owned())"),
+            "root_owner_output",
+            "generated output collapses owner identity to Root",
+        ),
+        (
+            concat!("family_id: SourceFamilyId(action.source.clone())"),
+            "path_family_identity",
+            "dynamic family identity is derived from host action path instead of typed source-family key",
+        ),
+    ];
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_codegen_rust",
+            "crates/boon_examples",
+            "generated",
+        ],
+        &patterns,
+    )?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "dynamic owner and generation identity is not preserved through DD keys and outputs"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "dynamic-owner-routing-report.json",
+        "cargo xtask verify-dynamic-owner-routing --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "negative_checks_required": [
+                "two owners with same payload remain isolated",
+                "stale generation does not update current owner",
+                "remove and recreate does not leak state",
+                "persistence reload restores only intended owner"
+            ],
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_persistent_runtime(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("build", "_dataflow(&mut worker)"),
+            "graph_rebuild",
+            "runtime/test path constructs a new graph inside interaction or scenario execution",
+        ),
+        (
+            concat!("run", "_generated_actions_at"),
+            "replay_fixture",
+            "native interaction replays through fixture runner instead of a long-lived session",
+        ),
+        (
+            concat!("run", "_generated_scenario_at"),
+            "scenario_replay",
+            "verification/native path replays a whole checked scenario",
+        ),
+        (
+            concat!("command.command == \"reload\""),
+            "host_reload_semantics",
+            "host-side reload logic recreates worker and graph",
+        ),
+        (
+            concat!("persistence_enabled = true"),
+            "host_persistence_semantics",
+            "host-side persistence mode participates in Boon semantics",
+        ),
+    ];
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_backend_app_window",
+            "crates/boon_examples",
+            "crates/boon_wasm_smoke",
+            "xtask/src",
+            "generated",
+        ],
+        &patterns,
+    )?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "runtime does not prove one long-lived generated graph session per interactive app load"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "persistent-runtime-report.json",
+        "cargo xtask verify-persistent-runtime --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "required_session_checks": {
+                "interactions": 100,
+                "expected_graph_builds": 1,
+                "reload_expected_increment": 1
+            },
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_output_drain_efficiency(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("pub fn outputs(&self) -> Vec<SmokeOutput>"),
+            "clone_output_api",
+            "generated output API returns an owned full output vector",
+        ),
+        (
+            concat!("Ok(self.sources.outputs())"),
+            "clone_output_api",
+            "drain API returns the full cloned output vector",
+        ),
+        (
+            concat!(".sources", ".outputs()"),
+            "full_output_read",
+            "execution path reads all retained outputs",
+        ),
+        (
+            concat!("outputs", "().into_iter().last()"),
+            "last_after_full_drain",
+            "caller drains all outputs and keeps only the last value",
+        ),
+        (
+            concat!("Mutex<Vec<SmokeOutput>>"),
+            "unbounded_output_retention",
+            "generated graph retains all historical outputs behind a mutex",
+        ),
+    ];
+    let hits = scan_engine_patterns(
+        &[
+            "crates/boon_codegen_rust",
+            "crates/boon_examples",
+            "crates/boon_wasm_smoke",
+            "generated",
+            "xtask/src",
+        ],
+        &patterns,
+    )?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "output draining is not incremental; full retained output vectors are still cloned or read"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "output-drain-efficiency-report.json",
+        "cargo xtask verify-output-drain-efficiency --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "required_api": "take_outputs, cursor iteration, or bounded drain of diffs since previous step",
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
+    let patterns = [
+        (
+            concat!("Generated", "Value"),
+            "generic_value_evaluator",
+            "generated graph still uses a generic value enum for Boon semantics",
+        ),
+        (
+            concat!("fn truthy"),
+            "host_semantics",
+            "boolean coercion is implemented as generated Rust helper logic",
+        ),
+        (
+            concat!("fn field"),
+            "host_semantics",
+            "record field semantics are implemented as generated Rust helper logic",
+        ),
+        (
+            concat!("generated", "_pattern_matches"),
+            "host_semantics",
+            "match semantics are implemented as generated Rust helper logic",
+        ),
+        (
+            concat!(".map(|_| ()).count()"),
+            "global_count_state",
+            "stateful lowering uses global count instead of keyed DD state",
+        ),
+        (
+            concat!("Vec::<GeneratedValue>"),
+            "host_list_semantics",
+            "list semantics can run inside host/generated Rust Vec operations",
+        ),
+        (
+            concat!("List(Vec<GeneratedValue>)"),
+            "host_list_semantics",
+            "lists are represented as host vectors inside generated values",
+        ),
+    ];
+    let hits = scan_engine_patterns(&["crates/boon_codegen_rust", "generated"], &patterns)?;
+    let failures = hits.clone();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "stateful Boon semantics are not proven to lower to keyed Timely/Differential state"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "dd-stateful-lowering-report.json",
+        "cargo xtask verify-dd-stateful-lowering --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "required_lowerings": [
+                "LATEST",
+                "HOLD",
+                "keyed hold",
+                "list map/retain/count/latest",
+                "text input state",
+                "timers",
+                "command acknowledgements"
+            ],
+            "hit_count": hits.len(),
+            "hits": hits,
+        }),
+    )
+}
+
+fn verify_engine_stress(_args: &[String]) -> Result<serde_json::Value> {
+    let required_workloads = [
+        "counter_1000_events",
+        "counter_10000_events",
+        "dynamic_owners_1000_update_remove_recreate",
+        "growing_list_map_retain_count",
+        "repeated_text_input_edits",
+        "persistence_reload_after_many_events",
+        "native_human_style_mouse_keyboard",
+        "firefox_browser_generated_graph_interaction",
+    ];
+    let stress_dir = engine_artifacts_dir()?.join("stress");
+    let present = required_workloads
+        .iter()
+        .map(|workload| {
+            let path = stress_dir.join(format!("{workload}.json"));
+            serde_json::json!({
+                "workload": workload,
+                "path": path.display().to_string(),
+                "exists": path.exists(),
+                "sha256": path.exists().then(|| sha256_file(&path)).transpose().unwrap_or(None),
+            })
+        })
+        .collect::<Vec<_>>();
+    let failures = present
+        .iter()
+        .filter(|entry| entry["exists"].as_bool() != Some(true))
+        .cloned()
+        .collect::<Vec<_>>();
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "required engine stress workloads and structural reports are not implemented"
+                .to_owned(),
+        ]
+    };
+    engine_report(
+        "stress-report.json",
+        "cargo xtask verify-engine-stress --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "required_workloads": required_workloads,
+            "stress_dir": stress_dir,
+            "workloads": present,
+            "required_fields": [
+                "wall_clock_ms",
+                "graph_build_count",
+                "peak_retained_outputs",
+                "total_emitted_diffs",
+                "average_step_latency_ms",
+                "p95_step_latency_ms",
+                "runtime_path"
+            ],
+        }),
+    )
+}
+
+fn verify_engine_complexity(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let handwritten = source_file_metrics(&root, &["crates", "xtask"])?;
+    let generated = source_file_metrics(&root, &["generated"])?;
+    let engine_start = git_tree_metrics("d2cbcb5", &["crates/", "xtask/"])?;
+    let engine_start_generated = git_tree_metrics("d2cbcb5", &["generated/"])?;
+    let pre_honest = git_tree_metrics("a64893b", &["crates/", "xtask/"])?;
+    let pre_honest_generated = git_tree_metrics("a64893b", &["generated/"])?;
+    let mut duplicate_generated_graphs = Vec::new();
+    let generated_dir = root.join("generated");
+    if generated_dir.exists() {
+        for entry in fs::read_dir(&generated_dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let example = entry.file_name().to_string_lossy().to_string();
+            let top = entry.path().join("generated_graph.rs");
+            let nested = entry.path().join("src/graph.rs");
+            if top.exists() && nested.exists() {
+                duplicate_generated_graphs.push(serde_json::json!({
+                    "example": example,
+                    "top_level": top.strip_prefix(&root).unwrap_or(&top).display().to_string(),
+                    "nested": nested.strip_prefix(&root).unwrap_or(&nested).display().to_string(),
+                    "top_level_sha256": sha256_file(&top)?,
+                    "nested_sha256": sha256_file(&nested)?,
+                    "same_hash": sha256_file(&top)? == sha256_file(&nested)?,
+                }));
+            }
+        }
+    }
+
+    let generated_rust = generated["rust_lines"].as_u64().unwrap_or(0);
+    let engine_start_generated_rust = engine_start_generated["rust_lines"].as_u64().unwrap_or(0);
+    let handwritten_rust = handwritten["rust_lines"].as_u64().unwrap_or(0);
+    let engine_start_rust = engine_start["rust_lines"].as_u64().unwrap_or(0);
+    let mut failures = Vec::new();
+    if !duplicate_generated_graphs.is_empty() {
+        failures.push(serde_json::json!({
+            "requirement": "generated graph source must not be written twice",
+            "duplicate_generated_graphs": duplicate_generated_graphs,
+        }));
+    }
+    if generated_rust >= engine_start_generated_rust {
+        failures.push(serde_json::json!({
+            "requirement": "generated Rust LOC must be lower than engine_start",
+            "current_generated_rust_lines": generated_rust,
+            "engine_start_generated_rust_lines": engine_start_generated_rust,
+        }));
+    }
+    let allowed_handwritten = ((engine_start_rust as f64) * 1.15).ceil() as u64;
+    if handwritten_rust > allowed_handwritten {
+        failures.push(serde_json::json!({
+            "requirement": "handwritten Rust may not grow more than 15 percent over engine_start without explicit replacement/deletion evidence",
+            "current_handwritten_rust_lines": handwritten_rust,
+            "engine_start_handwritten_rust_lines": engine_start_rust,
+            "allowed_handwritten_rust_lines": allowed_handwritten,
+        }));
+    }
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec!["engine complexity/code-size budget is not satisfied".to_owned()]
+    };
+    engine_report(
+        "complexity-report.json",
+        "cargo xtask verify-engine-complexity --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "current": {
+                "handwritten": handwritten,
+                "generated": generated,
+            },
+            "baselines": {
+                "engine_start": {
+                    "handwritten": engine_start,
+                    "generated": engine_start_generated,
+                },
+                "pre_honest_compiler": {
+                    "handwritten": pre_honest,
+                    "generated": pre_honest_generated,
+                },
+            },
+            "cross_engine_comparison": read_engine_artifact_json("cross-engine-comparison.json")?,
+        }),
+    )
+}
+
+fn verify_engine_prompt_audit(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let prompt_dir = root.join("docs/prompts/engine-simplicity");
+    let required = [
+        "01_pure_dd_architecture_audit.md",
+        "02_runtime_simplicity_and_performance_audit.md",
+        "03_verifier_honesty_audit.md",
+    ];
+    let prompts = required
+        .iter()
+        .map(|file| {
+            let path = prompt_dir.join(file);
+            Ok(serde_json::json!({
+                "path": format!("docs/prompts/engine-simplicity/{file}"),
+                "exists": path.exists(),
+                "sha256": path.exists().then(|| sha256_file(&path)).transpose()?,
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let audit_dir = engine_artifacts_dir()?.join("prompt-audit");
+    let audit_files = if audit_dir.exists() {
+        fs::read_dir(&audit_dir)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let mut audits = Vec::new();
+    let mut invalid = Vec::new();
+    let mut pass_count = 0_usize;
+    for path in audit_files {
+        match serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&path)?) {
+            Ok(value) => {
+                if value["verdict"].as_str() == Some("pass") {
+                    pass_count += 1;
+                }
+                audits.push(serde_json::json!({
+                    "path": path.display().to_string(),
+                    "sha256": sha256_file(&path)?,
+                    "verdict": value["verdict"],
+                    "prompt_path": value["prompt_path"],
+                }));
+            }
+            Err(error) => invalid.push(serde_json::json!({
+                "path": path.display().to_string(),
+                "error": format!("{error:#}"),
+            })),
+        }
+    }
+    let missing_prompts = prompts
+        .iter()
+        .filter(|prompt| prompt["exists"].as_bool() != Some(true))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut failures = Vec::new();
+    if !missing_prompts.is_empty() {
+        failures.push(serde_json::json!({
+            "requirement": "all engine prompt audit prompts exist",
+            "missing_prompts": missing_prompts,
+        }));
+    }
+    if !invalid.is_empty() {
+        failures.push(serde_json::json!({
+            "requirement": "prompt audit outputs must be valid JSON",
+            "invalid": invalid,
+        }));
+    }
+    if pass_count < required.len() {
+        failures.push(serde_json::json!({
+            "requirement": "every required engine prompt audit must have a pass output",
+            "required_pass_count": required.len(),
+            "actual_pass_count": pass_count,
+            "audit_dir": audit_dir.display().to_string(),
+        }));
+    }
+    let blockers = if failures.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            "engine prompt audits are missing, failing, inconclusive, or schema-invalid".to_owned(),
+        ]
+    };
+    engine_report(
+        "prompt-audit-report.json",
+        "cargo xtask verify-engine-prompt-audit --format json",
+        if failures.is_empty() { "pass" } else { "fail" },
+        failures,
+        blockers,
+        serde_json::json!({
+            "prompt_dir": "docs/prompts/engine-simplicity",
+            "prompts": prompts,
+            "audits": audits,
+        }),
+    )
+}
+
+fn compare_engines(_args: &[String]) -> Result<serde_json::Value> {
+    let repos_dir = PathBuf::from("/home/martinkavik/repos");
+    let mut repos = Vec::new();
+    if repos_dir.exists() {
+        for entry in fs::read_dir(&repos_dir)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with("boon-") {
+                continue;
+            }
+            let root = entry.path();
+            let metrics = source_file_metrics(
+                &root,
+                &[
+                    "crates",
+                    "xtask",
+                    "src",
+                    "generated",
+                    "generated_zig",
+                    "browser",
+                    "playground",
+                    "native",
+                    "tools",
+                    "tests",
+                ],
+            )
+            .unwrap_or_else(|error| {
+                serde_json::json!({
+                    "unavailable": true,
+                    "error": format!("{error:#}"),
+                })
+            });
+            let git_head = if root.join(".git").exists() {
+                Command::new("git")
+                    .args([
+                        "-C",
+                        root.to_str().unwrap_or_default(),
+                        "rev-parse",
+                        "--short",
+                        "HEAD",
+                    ])
+                    .output()
+                    .ok()
+                    .and_then(|output| {
+                        output
+                            .status
+                            .success()
+                            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+                    })
+            } else {
+                None
+            };
+            repos.push(serde_json::json!({
+                "repo": name,
+                "path": root.display().to_string(),
+                "git_head": git_head,
+                "metrics": metrics,
+            }));
+        }
+    }
+    repos.sort_by(|left, right| {
+        left["repo"]
+            .as_str()
+            .unwrap_or_default()
+            .cmp(right["repo"].as_str().unwrap_or_default())
+    });
+    let details = serde_json::json!({
+        "schema_version": ENGINE_SIMPLICITY_SCHEMA_VERSION,
+        "verdict": "pass",
+        "plan_path": ENGINE_SIMPLICITY_PLAN,
+        "git_head": run_capture("git", &["rev-parse", "HEAD"])?,
+        "dirty_worktree": !run_capture("git", &["status", "--short"])?.trim().is_empty(),
+        "commands_run": ["cargo xtask compare-engines --format json"],
+        "input_hashes": engine_input_hashes()?,
+        "artifact_hashes": engine_artifact_hashes()?,
+        "failures": Vec::<serde_json::Value>::new(),
+        "blockers": Vec::<String>::new(),
+        "repos_dir": repos_dir,
+        "repositories": repos,
+    });
+    write_engine_artifact("cross-engine-comparison.json", &details)?;
     Ok(details)
 }
 
@@ -3407,6 +4738,26 @@ fn verify_generated_freshness(_args: &[String]) -> Result<serde_json::Value> {
             artifact.display()
         );
     }
+    Ok(details)
+}
+
+fn write_generated_artifacts(_args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let generated_root = root.join("generated");
+    let mut written = Vec::new();
+    for example in boon_dd::REQUIRED_EXAMPLES {
+        let dir = generated_root.join(example);
+        write_generated_artifacts_at(example, &dir)?;
+        written.push(serde_json::json!({
+            "example": example,
+            "dir": dir.display().to_string(),
+        }));
+    }
+    let details = serde_json::json!({
+        "verdict": "pass",
+        "written_examples": written,
+    });
+    write_artifact("write-generated-artifacts.json", &details)?;
     Ok(details)
 }
 

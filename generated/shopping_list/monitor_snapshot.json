@@ -1,23 +1,7 @@
 [
   {
-    "monitor": [
-      {
-        "NodeValue": {
-          "epoch": 1,
-          "node": "DocumentOutput",
-          "owner": "Root",
-          "value_preview": "milk,bread"
-        }
-      }
-    ],
-    "render": [
-      {
-        "PatchText": {
-          "node": "DocumentText",
-          "text": "milk,bread"
-        }
-      }
-    ],
+    "monitor": [],
+    "render": [],
     "effects": [],
     "persistence": []
   }

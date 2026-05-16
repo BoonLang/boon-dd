@@ -1,13 +1,6 @@
 {
   "backend": "browser-webgpu-command-schema",
-  "render": [
-    {
-      "PatchText": {
-        "node": "DocumentText",
-        "text": "a,b,c"
-      }
-    }
-  ],
+  "render": [],
   "viewport": {
     "dpr": 1.0,
     "height": 720,

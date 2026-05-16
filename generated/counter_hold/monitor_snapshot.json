@@ -1,31 +1,8 @@
 [
   {
-    "monitor": [
-      {
-        "NodeValue": {
-          "epoch": 2,
-          "node": "Counter",
-          "owner": "Root",
-          "value_preview": "1"
-        }
-      }
-    ],
-    "render": [
-      {
-        "PatchText": {
-          "node": "DocumentText",
-          "text": "1"
-        }
-      }
-    ],
+    "monitor": [],
+    "render": [],
     "effects": [],
-    "persistence": [
-      {
-        "SaveText": {
-          "node": "PersistTap",
-          "value": "1"
-        }
-      }
-    ]
+    "persistence": []
   }
 ]

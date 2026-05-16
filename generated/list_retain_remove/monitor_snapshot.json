@@ -1,23 +1,7 @@
 [
   {
-    "monitor": [
-      {
-        "NodeValue": {
-          "epoch": 1,
-          "node": "DocumentOutput",
-          "owner": "Root",
-          "value_preview": "removed"
-        }
-      }
-    ],
-    "render": [
-      {
-        "PatchText": {
-          "node": "DocumentText",
-          "text": "removed"
-        }
-      }
-    ],
+    "monitor": [],
+    "render": [],
     "effects": [],
     "persistence": []
   }

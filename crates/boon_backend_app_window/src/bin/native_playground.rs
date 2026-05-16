@@ -69,14 +69,58 @@ struct SmokeRequest {
 }
 
 struct PlaygroundExample {
-    fixture_index: usize,
     name: String,
+    source_path: &'static str,
+    source_text: &'static str,
     scenario_text: &'static str,
     scenario_actions: Vec<SourceAction>,
     actions: Vec<SourceAction>,
     output: SmokeOutput,
     last_auto_tick: Instant,
 }
+
+struct PlaygroundFixture {
+    name: &'static str,
+    source_path: &'static str,
+    source: &'static str,
+    scenario: &'static str,
+}
+
+macro_rules! playground_fixture {
+    ($name:literal) => {
+        PlaygroundFixture {
+            name: $name,
+            source_path: concat!("examples/", $name, "/source.bn"),
+            source: include_str!(concat!("../../../../examples/", $name, "/source.bn")),
+            scenario: include_str!(concat!("../../../../examples/", $name, "/scenario.toml")),
+        }
+    };
+}
+
+const PLAYGROUND_FIXTURES: &[PlaygroundFixture] = &[
+    playground_fixture!("counter"),
+    playground_fixture!("counter_hold"),
+    playground_fixture!("interval"),
+    playground_fixture!("interval_hold"),
+    playground_fixture!("latest"),
+    playground_fixture!("when"),
+    playground_fixture!("while"),
+    playground_fixture!("then"),
+    playground_fixture!("list_map_block"),
+    playground_fixture!("list_map_external_dep"),
+    playground_fixture!("list_object_state"),
+    playground_fixture!("list_retain_count"),
+    playground_fixture!("list_retain_reactive"),
+    playground_fixture!("list_retain_remove"),
+    playground_fixture!("shopping_list"),
+    playground_fixture!("todo_mvc"),
+    playground_fixture!("crud"),
+    playground_fixture!("flight_booker"),
+    playground_fixture!("temperature_converter"),
+    playground_fixture!("pong"),
+    playground_fixture!("cells"),
+    playground_fixture!("todo_mvc_physical"),
+];
 
 fn main() {
     let mut args = env::args().skip(1);
@@ -337,18 +381,26 @@ fn surface_config_size(size: Size, scale: f64) -> (u32, u32) {
 }
 
 fn build_playground_examples() -> Vec<PlaygroundExample> {
-    boon_examples::GENERATED_CORPUS
+    PLAYGROUND_FIXTURES
         .iter()
-        .enumerate()
-        .map(|(fixture_index, fixture)| {
-            let scenario_actions =
-                boon_examples::scenario_source_actions_for_text(fixture.scenario);
-            let output = boon_examples::run_generated_actions_at(fixture_index, &[])
-                .unwrap_or_else(|| panic!("missing generated fixture {}", fixture.name))
-                .1;
+        .map(|fixture| {
+            let scenario_actions = boon_runtime_host::parse_scenario(fixture.scenario)
+                .steps
+                .into_iter()
+                .flat_map(|step| step.actions)
+                .collect::<Vec<_>>();
+            let output = boon_runtime_host::run_compiled_source_actions(
+                fixture.source_path,
+                fixture.source,
+                &[],
+            )
+            .unwrap_or_else(|error| {
+                panic!("failed to run compiled fixture {}: {error}", fixture.name)
+            });
             PlaygroundExample {
-                fixture_index,
                 name: fixture.name.to_owned(),
+                source_path: fixture.source_path,
+                source_text: fixture.source,
                 scenario_text: fixture.scenario,
                 scenario_actions,
                 actions: Vec::new(),
@@ -461,10 +513,17 @@ fn trigger_example_action(example: &mut PlaygroundExample) {
 }
 
 fn refresh_example_output(example: &mut PlaygroundExample) {
-    example.output =
-        boon_examples::run_generated_actions_at(example.fixture_index, &example.actions)
-            .unwrap_or_else(|| panic!("missing generated fixture {}", example.name))
-            .1;
+    example.output = boon_runtime_host::run_compiled_source_actions(
+        example.source_path,
+        example.source_text,
+        &example.actions,
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "failed to refresh compiled fixture {}: {error}",
+            example.name
+        )
+    });
 }
 
 fn render_frame(
@@ -1326,9 +1385,12 @@ fn write_per_example_screenshots(
         let pixels = rasterize_vertices(WIDTH, HEIGHT, &vertices);
         let screenshot = screenshots_dir.join(format!("{:02}-{}.png", index + 1, example.name));
         write_png_rgb(&screenshot, WIDTH, HEIGHT, &pixels)?;
-        let generated_output =
-            boon_examples::run_generated_scenario_at(example.fixture_index, example.scenario_text)
-                .map(|(_name, output)| output);
+        let generated_output = boon_runtime_host::run_compiled_source_scenario(
+            example.source_path,
+            example.source_text,
+            example.scenario_text,
+        )
+        .ok();
         entries.push(serde_json::json!({
             "example": &example.name,
             "selected_index": index,

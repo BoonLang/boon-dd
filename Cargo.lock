@@ -544,7 +544,7 @@ dependencies = [
  "boon_backend_wgpu",
  "boon_compiler",
  "boon_dd",
- "boon_examples",
+ "boon_runtime_host",
  "serde_json",
  "some_executor",
  "wgpu",
@@ -556,7 +556,7 @@ version = "0.1.0"
 dependencies = [
  "boon_backend_wgpu",
  "boon_dd",
- "boon_examples",
+ "boon_runtime_host",
  "wasm-bindgen",
  "wgpu",
 ]
@@ -566,7 +566,7 @@ name = "boon_backend_ratatui"
 version = "0.1.0"
 dependencies = [
  "boon_dd",
- "boon_examples",
+ "boon_runtime_host",
  "crossterm",
  "ratatui",
  "serde_json",
@@ -577,7 +577,7 @@ name = "boon_backend_wgpu"
 version = "0.1.0"
 dependencies = [
  "boon_dd",
- "boon_examples",
+ "boon_runtime_host",
  "wesl",
  "wgpu",
  "wgsl_bindgen",
@@ -674,8 +674,11 @@ dependencies = [
 name = "boon_runtime_host"
 version = "0.1.0"
 dependencies = [
+ "boon_compiler",
  "boon_dd",
+ "differential-dataflow",
  "serde",
+ "timely",
  "toml",
 ]
 

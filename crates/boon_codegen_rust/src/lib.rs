@@ -40,9 +40,11 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        let payload = boon_dd::source_action_payload(action);\n");
     code.push_str("        let event = match (&action.owner, action.generation) {\n");
     code.push_str("            (Some(owner), generation) => GeneratedSourceEvent::Dynamic {\n");
-    code.push_str("                family_id: SourceFamilyId(action.source.clone()),\n");
+    code.push_str(
+        "                family_id: SourceFamilyId(source_id_for_path(&action.source)),\n",
+    );
     code.push_str("                owner_key: owner.clone(),\n");
-    code.push_str("                generation: generation.unwrap_or_default(),\n");
+    code.push_str("                generation: generation.expect(\"dynamic source action must include generation\"),\n");
     code.push_str("                payload,\n");
     code.push_str("            },\n");
     code.push_str("            (None, _) => GeneratedSourceEvent::Static {\n");
@@ -132,8 +134,15 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        other => other.to_owned(),\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
+    code.push_str("fn generated_bound_source_ids() -> &'static [&'static str] {\n");
+    code.push_str("    &[\n");
+    for source in &graph.source_bindings {
+        code.push_str(&format!("        {:?},\n", source.source_id.0));
+    }
+    code.push_str("    ]\n");
+    code.push_str("}\n\n");
     code.push_str(
-        "#[allow(dead_code)]\nfn generated_source_event_value(event: &GeneratedSourceEvent) -> GeneratedValue {\n    match event {\n        GeneratedSourceEvent::Static { payload, .. }\n        | GeneratedSourceEvent::Dynamic { payload, .. } => generated_payload_value(payload),\n    }\n}\n\n#[allow(dead_code)]\nfn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {\n    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == \"__host_tick\")\n}\n\n#[allow(dead_code)]\nfn generated_payload_value(payload: &GeneratedSourceEventPayload) -> GeneratedValue {\n    match payload {\n        GeneratedSourceEventPayload::EmptyRecord => GeneratedValue::Empty,\n        GeneratedSourceEventPayload::Text(text) => GeneratedValue::Text(text.clone()),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        GeneratedSourceEventPayload::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n        GeneratedSourceEventPayload::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        GeneratedSourceEventPayload::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n    }\n}\n\n#[allow(dead_code)]\nfn boon_value_to_generated(value: &boon_dd::BoonValue) -> GeneratedValue {\n    match value {\n        boon_dd::BoonValue::EmptyRecord => GeneratedValue::Empty,\n        boon_dd::BoonValue::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        boon_dd::BoonValue::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n        boon_dd::BoonValue::Text(text) => GeneratedValue::Text(text.clone()),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        boon_dd::BoonValue::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n    }\n}\n\n",
+        "#[allow(dead_code)]\nfn generated_bound_source_value(event: &GeneratedSourceEvent) -> GeneratedValue {\n    match event {\n        GeneratedSourceEvent::Static { source_id: _, payload }\n        | GeneratedSourceEvent::Dynamic { family_id: _, owner_key: _, generation: _, payload } => generated_payload_value(payload),\n    }\n}\n\n#[allow(dead_code)]\nfn generated_bound_source_owner(event: &GeneratedSourceEvent) -> OwnerKey {\n    match event {\n        GeneratedSourceEvent::Static { .. } => OwnerKey(String::from(\"Root\")),\n        GeneratedSourceEvent::Dynamic { owner_key, .. } => owner_key.clone(),\n    }\n}\n\n#[allow(dead_code)]\nfn generated_event_matches_bound_source(event: &GeneratedSourceEvent) -> bool {\n    match event {\n        GeneratedSourceEvent::Static { source_id, .. } => generated_bound_source_ids().iter().any(|bound| source_id.0 == *bound),\n        GeneratedSourceEvent::Dynamic { family_id, .. } => generated_bound_source_ids().iter().any(|bound| family_id.0 == *bound),\n    }\n}\n\n#[allow(dead_code)]\nfn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {\n    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == \"__host_tick\")\n}\n\n#[allow(dead_code)]\nfn generated_payload_value(payload: &GeneratedSourceEventPayload) -> GeneratedValue {\n    match payload {\n        GeneratedSourceEventPayload::EmptyRecord => GeneratedValue::Empty,\n        GeneratedSourceEventPayload::Text(text) => GeneratedValue::Text(text.clone()),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        GeneratedSourceEventPayload::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n        GeneratedSourceEventPayload::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        GeneratedSourceEventPayload::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n    }\n}\n\n#[allow(dead_code)]\nfn boon_value_to_generated(value: &boon_dd::BoonValue) -> GeneratedValue {\n    match value {\n        boon_dd::BoonValue::EmptyRecord => GeneratedValue::Empty,\n        boon_dd::BoonValue::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        boon_dd::BoonValue::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n        boon_dd::BoonValue::Text(text) => GeneratedValue::Text(text.clone()),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        boon_dd::BoonValue::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n    }\n}\n\n",
     );
     code.push_str("pub fn build_dataflow(\n");
     code.push_str("    worker: &mut timely::worker::Worker,\n");
@@ -156,13 +165,13 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        let events = input.to_collection(scope);\n");
     code.push_str(&render_collection_from_graph(&dd_graph_ir.render_graph));
     code.push_str("        rendered\n");
-    code.push_str("            .inspect(move |(text, time, diff)| {\n");
+    code.push_str("            .inspect(move |((owner, text), time, diff)| {\n");
     code.push_str("                if *diff > 0 {\n");
     code.push_str("                    output_in_graph.lock().expect(\"generated output lock poisoned\").push(SmokeOutput {\n");
     code.push_str("                        monitor: vec![MonitorRecord::NodeValue {\n");
     code.push_str("                            epoch: BoonTime::decode(*time).epoch,\n");
     code.push_str("                            node: monitor_node.clone(),\n");
-    code.push_str("                            owner: OwnerKey(\"Root\".to_owned()),\n");
+    code.push_str("                            owner: owner.clone(),\n");
     code.push_str("                            value_preview: text.clone(),\n");
     code.push_str("                        }],\n");
     code.push_str("                        render: vec![RenderCommand::PatchText {\n");
@@ -231,7 +240,7 @@ fn persistence_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> S
 fn render_collection_from_graph(graph: &boon_dd::DdRenderGraph) -> String {
     let value = value_collection_graph_code(graph, &graph.root, &BTreeMap::new());
     format!(
-        "        let rendered = {}.map(|value| value.text());\n",
+        "        let rendered_values = {}.map(|value| ((), value.text()));\n        let rendered_owners = events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));\n        let rendered = rendered_values.join(rendered_owners).map(|(_key, (text, owner))| (owner, text));\n",
         value
     )
 }
@@ -244,7 +253,7 @@ fn value_collection_graph_code(
     let node = render_graph_node(graph, node);
     match &node.operation {
         boon_dd::DdRenderGraphOperation::Source | boon_dd::DdRenderGraphOperation::Path(_) => {
-            "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(_sequence, event)| generated_source_event_value(&event))"
+            "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| generated_bound_source_value(&event))"
                 .to_owned()
         }
         boon_dd::DdRenderGraphOperation::Pipe { input, stage } => {
@@ -268,7 +277,7 @@ fn value_collection_graph_code(
         boon_dd::DdRenderGraphOperation::Latest(_values) => latest_collection_code(),
         boon_dd::DdRenderGraphOperation::Match { arms, .. } => stage_match_graph_collection_code(
             graph,
-            "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(_sequence, event)| generated_source_event_value(&event))",
+            "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| generated_bound_source_value(&event))",
             arms,
             env,
         ),
@@ -1328,7 +1337,7 @@ fn render_graph_node<'a>(
 }
 
 fn latest_collection_code() -> String {
-    "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(sequence, event)| ((), (sequence, generated_source_event_value(&event)))).reduce(|_, inputs, output| {\n            if let Some(((sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                let _ = sequence;\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value)".to_owned()
+    "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(sequence, event)| ((), (sequence, generated_bound_source_value(&event)))).reduce(|_, inputs, output| {\n            if let Some(((sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                let _ = sequence;\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value)".to_owned()
 }
 
 fn path_expr_code(path: &str, env: &BTreeMap<String, String>) -> String {

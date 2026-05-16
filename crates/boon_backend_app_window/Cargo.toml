@@ -10,7 +10,7 @@ app_window.workspace = true
 boon_dd = { path = "../boon_dd" }
 boon_backend_wgpu = { path = "../boon_backend_wgpu" }
 boon_compiler = { path = "../boon_compiler" }
-boon_examples = { path = "../boon_examples" }
+boon_runtime_host = { path = "../boon_runtime_host" }
 serde_json.workspace = true
 some_executor = "0.6.3"
 wgpu.workspace = true

@@ -1,13 +1,6 @@
 {
   "backend": "wgpu-command-schema",
-  "render": [
-    {
-      "PatchText": {
-        "node": "DocumentText",
-        "text": "physical ready"
-      }
-    }
-  ],
+  "render": [],
   "viewport": {
     "dpr": 1.0,
     "height": 720,

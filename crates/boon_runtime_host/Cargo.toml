@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+boon_compiler = { path = "../boon_compiler" }
 boon_dd = { path = "../boon_dd" }
+differential-dataflow.workspace = true
 serde.workspace = true
+timely.workspace = true
 toml.workspace = true

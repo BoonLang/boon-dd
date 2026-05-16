@@ -141,9 +141,9 @@ impl GeneratedSourceInputs {
         let payload = boon_dd::source_action_payload(action);
         let event = match (&action.owner, action.generation) {
             (Some(owner), generation) => GeneratedSourceEvent::Dynamic {
-                family_id: SourceFamilyId(action.source.clone()),
+                family_id: SourceFamilyId(source_id_for_path(&action.source)),
                 owner_key: owner.clone(),
-                generation: generation.unwrap_or_default(),
+                generation: generation.expect("dynamic source action must include generation"),
                 payload,
             },
             (None, _) => GeneratedSourceEvent::Static {
@@ -243,11 +243,43 @@ fn source_id_for_path(path: &str) -> String {
     }
 }
 
+fn generated_bound_source_ids() -> &'static [&'static str] {
+    &["Tick"]
+}
+
 #[allow(dead_code)]
-fn generated_source_event_value(event: &GeneratedSourceEvent) -> GeneratedValue {
+fn generated_bound_source_value(event: &GeneratedSourceEvent) -> GeneratedValue {
     match event {
-        GeneratedSourceEvent::Static { payload, .. }
-        | GeneratedSourceEvent::Dynamic { payload, .. } => generated_payload_value(payload),
+        GeneratedSourceEvent::Static {
+            source_id: _,
+            payload,
+        }
+        | GeneratedSourceEvent::Dynamic {
+            family_id: _,
+            owner_key: _,
+            generation: _,
+            payload,
+        } => generated_payload_value(payload),
+    }
+}
+
+#[allow(dead_code)]
+fn generated_bound_source_owner(event: &GeneratedSourceEvent) -> OwnerKey {
+    match event {
+        GeneratedSourceEvent::Static { .. } => OwnerKey(String::from("Root")),
+        GeneratedSourceEvent::Dynamic { owner_key, .. } => owner_key.clone(),
+    }
+}
+
+#[allow(dead_code)]
+fn generated_event_matches_bound_source(event: &GeneratedSourceEvent) -> bool {
+    match event {
+        GeneratedSourceEvent::Static { source_id, .. } => generated_bound_source_ids()
+            .iter()
+            .any(|bound| source_id.0 == *bound),
+        GeneratedSourceEvent::Dynamic { family_id, .. } => generated_bound_source_ids()
+            .iter()
+            .any(|bound| family_id.0 == *bound),
     }
 }
 
@@ -319,7 +351,7 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered = ((events.clone().map(|_| {
+        let rendered_values = ((events.clone().map(|_| {
             GeneratedValue::Record(vec![(
                 "seconds".to_owned(),
                 GeneratedValue::Number(
@@ -337,9 +369,16 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
         .map(|_| ())
         .count()
         .map(|(_key, count)| GeneratedValue::Number(count as i64))
-        .map(|value| value.text());
+        .map(|value| ((), value.text()));
+        let rendered_owners = events
+            .clone()
+            .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
+            .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));
+        let rendered = rendered_values
+            .join(rendered_owners)
+            .map(|(_key, (text, owner))| (owner, text));
         rendered
-            .inspect(move |(text, time, diff)| {
+            .inspect(move |((owner, text), time, diff)| {
                 if *diff > 0 {
                     output_in_graph
                         .lock()
@@ -348,7 +387,7 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                             monitor: vec![MonitorRecord::NodeValue {
                                 epoch: BoonTime::decode(*time).epoch,
                                 node: monitor_node.clone(),
-                                owner: OwnerKey("Root".to_owned()),
+                                owner: owner.clone(),
                                 value_preview: text.clone(),
                             }],
                             render: vec![RenderCommand::PatchText {
