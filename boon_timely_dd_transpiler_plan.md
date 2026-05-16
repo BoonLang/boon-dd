@@ -63,7 +63,7 @@ Browser-hosted Timely/Differential WASM is part of the final deliverable. If it 
 All commands that open native or browser windows during verification must launch the actual window-creating process through:
 
 ```bash
-cosmic-background-launch -- <command> [args...]
+cosmic-background-launch --workspace boon-dd -- <command> [args...]
 ```
 
 Before any native/browser GUI verification, `xtask` must check:
@@ -398,16 +398,16 @@ Do not require GitHub Actions or any other remote automation for this plan. All 
 
 ### 1.3 Focus-safe native/browser launch
 
-Native window and browser playground commands must be launched through `cosmic-background-launch` when they create GUI windows. `xtask` must keep the helper close to the actual GUI phase so the environment variable and compositor launch id are inherited by the process that creates the window.
+Native window and browser playground commands must be launched through `cosmic-background-launch --workspace boon-dd -- ...` when they create GUI windows. `xtask` must keep the helper close to the actual GUI phase so the environment variable and compositor launch id are inherited by the process that creates the window.
 
 Use these command shapes for interactive/manual launches:
 
 ```bash
-cosmic-background-launch -- cargo xtask run --example counter --target native
-cosmic-background-launch -- cargo xtask run --example counter --target browser
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example counter --target native
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example counter --target browser
 ```
 
-For automated verification, prefer non-interactive/headless assertions when possible. When Firefox or a native window must open, the verifier must use `cosmic-background-launch` and fail if the helper or user D-Bus service is unavailable.
+For automated verification, prefer non-interactive/headless assertions when possible. When Firefox or a native window must open, the verifier must use `cosmic-background-launch --workspace boon-dd -- ...` and fail if the helper or user D-Bus service is unavailable.
 
 ---
 
@@ -1627,8 +1627,8 @@ Acceptance tests:
 Target command:
 
 ```bash
-cosmic-background-launch -- cargo xtask run --example counter --target native
-cosmic-background-launch -- cargo xtask run --example todo_mvc_physical --target native
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example counter --target native
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example todo_mvc_physical --target native
 cargo xtask test --target native
 ```
 
@@ -1652,15 +1652,15 @@ Acceptance tests:
 - TodoMVC: add/toggle/filter/clear, render-command assertion and optional readback.
 - Pong: deterministic synthetic frame events, game state/render patch assertions.
 - TodoMVC Physical: smoke test scene renders and responds to source events.
-- Any test that opens a native window must be launched through `cosmic-background-launch`; foreground native windows are a verification failure.
+- Any test that opens a native window must be launched through `cosmic-background-launch --workspace boon-dd -- ...`; foreground native windows are a verification failure.
 
 ### 11.4 Browser window playground
 
 Target commands:
 
 ```bash
-cosmic-background-launch -- cargo xtask run --example counter --target browser
-cosmic-background-launch -- cargo xtask run --example todo_mvc_physical --target browser
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example counter --target browser
+cosmic-background-launch --workspace boon-dd -- cargo xtask run --example todo_mvc_physical --target browser
 cargo xtask test --target browser --browser firefox
 ```
 
@@ -1688,7 +1688,7 @@ Acceptance tests:
 - Scenario scripts inject events and assert monitor/render command outputs.
 - Local verification must run a minimal browser/WASM graph smoke test before browser renderer work is accepted.
 - If `timely` or `differential-dataflow` fails to compile or run in browser-hosted WASM, stop the browser milestone and fix/pin/fork the dependency. Do not build a bridge fallback.
-- Any test that opens Firefox or another browser window must be launched through `cosmic-background-launch`; foreground browser windows are a verification failure.
+- Any test that opens Firefox or another browser window must be launched through `cosmic-background-launch --workspace boon-dd -- ...`; foreground browser windows are a verification failure.
 
 ---
 
@@ -1848,7 +1848,7 @@ Tasks:
 - Create a tiny generated graph crate that uses Timely + Differential Dataflow with default features disabled where required.
 - Prove `BoonTime` or the chosen encoded timestamp in a real Timely/DD graph with `map`, `join` or `reduce`, `probe`, `then_const`, and `hold`.
 - Compile it to `wasm32-unknown-unknown`.
-- Run a Firefox smoke test through `cosmic-background-launch` that inserts one input record, advances/probes the graph with bounded drain, and observes one expected monitor/render output diff.
+- Run a Firefox smoke test through `cosmic-background-launch --workspace boon-dd -- ...` that inserts one input record, advances/probes the graph with bounded drain, and observes one expected monitor/render output diff.
 - Create a minimal hand-written Boon DD graph using `timely` + `differential-dataflow`: one source, one `then_const`, one `hold`, one monitor output.
 - Keep all default features disabled where needed.
 
@@ -1947,7 +1947,7 @@ Tasks:
 Acceptance:
 
 - `cargo xtask verify-render-deps --format json` passes locally.
-- Native window opens only through `cosmic-background-launch`.
+- Native window opens only through `cosmic-background-launch --workspace boon-dd -- ...`.
 - Native window loads examples from scripted launch.
 - Input events route to source injection.
 - Render-command JSON or framebuffer/readback artifacts match fixtures.
@@ -1973,7 +1973,7 @@ Acceptance:
 Tasks:
 
 - Build browser playground infrastructure after Gate 0.5 has passed.
-- Add Firefox test harness launched through `cosmic-background-launch`.
+- Add Firefox test harness launched through `cosmic-background-launch --workspace boon-dd -- ...`.
 - Run counter, TodoMVC, Pong, and non-physical matrix rows inside browser-hosted WASM.
 - Grow browser-WASM tests with each DD kernel operator; do not leave browser coverage as a single smoke graph.
 
