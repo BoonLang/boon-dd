@@ -90,6 +90,8 @@ pub enum CallArg {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
+    Subtract,
+    Equal,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,7 +185,9 @@ enum TokenKind {
     Colon,
     Comma,
     Plus,
+    Minus,
     Equals,
+    DoubleEquals,
     Pipe,
     FatArrow,
     LBracket,
@@ -210,6 +214,12 @@ fn lex(text: &str, base_offset: usize, diagnostics: &mut Vec<SyntaxDiagnostic>) 
             }
             continue;
         }
+        if text[index..].starts_with("--") {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
         let start = index;
         let kind = match ch {
             ':' => {
@@ -223,6 +233,10 @@ fn lex(text: &str, base_offset: usize, diagnostics: &mut Vec<SyntaxDiagnostic>) 
             '+' => {
                 index += 1;
                 TokenKind::Plus
+            }
+            '-' => {
+                index += 1;
+                TokenKind::Minus
             }
             '[' => {
                 index += 1;
@@ -255,6 +269,10 @@ fn lex(text: &str, base_offset: usize, diagnostics: &mut Vec<SyntaxDiagnostic>) 
             '=' if text[index..].starts_with("=>") => {
                 index += 2;
                 TokenKind::FatArrow
+            }
+            '=' if text[index..].starts_with("==") => {
+                index += 2;
+                TokenKind::DoubleEquals
             }
             '=' => {
                 index += 1;
@@ -323,9 +341,9 @@ struct Parser<'a, 'd> {
 
 impl Parser<'_, '_> {
     fn parse_expr_until(&mut self, stop: &[TokenStop]) -> Expr {
-        let mut expr = self.parse_add(stop);
+        let mut expr = self.parse_equality(stop);
         while !self.is_at_end() && !self.at_stop(stop) && self.match_kind(&TokenKind::Pipe) {
-            let stage = self.parse_add(stop);
+            let stage = self.parse_equality(stop);
             expr = Expr::Pipe {
                 input: Box::new(expr),
                 stage: Box::new(stage),
@@ -334,12 +352,36 @@ impl Parser<'_, '_> {
         expr
     }
 
+    fn parse_equality(&mut self, stop: &[TokenStop]) -> Expr {
+        let mut expr = self.parse_add(stop);
+        while !self.is_at_end() && !self.at_stop(stop) && self.match_kind(&TokenKind::DoubleEquals)
+        {
+            let right = self.parse_add(stop);
+            expr = Expr::Binary {
+                op: BinaryOp::Equal,
+                left: Box::new(expr),
+                right: Box::new(right),
+            };
+        }
+        expr
+    }
+
     fn parse_add(&mut self, stop: &[TokenStop]) -> Expr {
         let mut expr = self.parse_primary(stop);
-        while !self.is_at_end() && !self.at_stop(stop) && self.match_kind(&TokenKind::Plus) {
+        while !self.is_at_end() && !self.at_stop(stop) {
+            let op = if self.match_kind(&TokenKind::Plus) {
+                Some(BinaryOp::Add)
+            } else if self.match_kind(&TokenKind::Minus) {
+                Some(BinaryOp::Subtract)
+            } else {
+                None
+            };
+            let Some(op) = op else {
+                break;
+            };
             let right = self.parse_primary(stop);
             expr = Expr::Binary {
-                op: BinaryOp::Add,
+                op,
                 left: Box::new(expr),
                 right: Box::new(right),
             };
@@ -357,6 +399,32 @@ impl Parser<'_, '_> {
         let span_token = token.clone();
         match token.kind {
             TokenKind::Number(value) => Expr::Number(value),
+            TokenKind::Minus => match self.advance().cloned() {
+                Some(Token {
+                    kind: TokenKind::Number(value),
+                    ..
+                }) => Expr::Number(format!("-{value}")),
+                Some(next) => {
+                    self.diagnostics.push(SyntaxDiagnostic {
+                        message: format!("expected number after unary `-`, found {:?}", next.kind),
+                        span: SourceSpan {
+                            start: token.start,
+                            end: next.end,
+                        },
+                    });
+                    Expr::Missing
+                }
+                None => {
+                    self.diagnostics.push(SyntaxDiagnostic {
+                        message: "expected number after unary `-`".to_owned(),
+                        span: SourceSpan {
+                            start: token.start,
+                            end: token.end,
+                        },
+                    });
+                    Expr::Missing
+                }
+            },
             TokenKind::Word(word) => self.parse_word(word, &span_token, stop),
             TokenKind::LBracket => self.parse_record(),
             TokenKind::LParen => {
@@ -690,7 +758,9 @@ fn same_token_variant(left: &TokenKind, right: &TokenKind) -> bool {
             | (TokenKind::Colon, TokenKind::Colon)
             | (TokenKind::Comma, TokenKind::Comma)
             | (TokenKind::Plus, TokenKind::Plus)
+            | (TokenKind::Minus, TokenKind::Minus)
             | (TokenKind::Equals, TokenKind::Equals)
+            | (TokenKind::DoubleEquals, TokenKind::DoubleEquals)
             | (TokenKind::Pipe, TokenKind::Pipe)
             | (TokenKind::FatArrow, TokenKind::FatArrow)
             | (TokenKind::LBracket, TokenKind::LBracket)
@@ -768,5 +838,41 @@ mod tests {
         assert_eq!(module.definitions[0].name, "store");
         assert_eq!(module.definitions[1].name, "document");
         assert!(module.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn parses_cross_repo_numeric_and_equality_syntax_without_text_scans() {
+        let module = parse_source(
+            "cross_repo_numeric.bn",
+            "-- sibling repos use these operators\nvalue: Number/max(left: score - 1, right: -12)\nvisible: item.id == selected_id\n",
+        );
+        assert!(module.diagnostics.is_empty(), "{:#?}", module.diagnostics);
+        assert_eq!(module.definitions.len(), 2);
+
+        let Expr::Call { args, .. } = &module.definitions[0].expression else {
+            panic!("expected Number/max call");
+        };
+        let Some(CallArg::Named { value, .. }) = args.first() else {
+            panic!("expected named left argument");
+        };
+        assert!(matches!(
+            value,
+            Expr::Binary {
+                op: BinaryOp::Subtract,
+                ..
+            }
+        ));
+        let Some(CallArg::Named { value, .. }) = args.get(1) else {
+            panic!("expected named right argument");
+        };
+        assert_eq!(value, &Expr::Number("-12".to_owned()));
+
+        assert!(matches!(
+            &module.definitions[1].expression,
+            Expr::Binary {
+                op: BinaryOp::Equal,
+                ..
+            }
+        ));
     }
 }

@@ -95,7 +95,7 @@ impl ShapeContext {
                 let left = self.shape_expr(left);
                 let right = self.shape_expr(right);
                 match op {
-                    boon_syntax::BinaryOp::Add
+                    boon_syntax::BinaryOp::Add | boon_syntax::BinaryOp::Subtract
                         if left == Shape::Number && right == Shape::Number =>
                     {
                         Shape::Number
@@ -105,6 +105,15 @@ impl ShapeContext {
                             message: format!("cannot add shapes {left:?} and {right:?}"),
                         });
                         Shape::Unknown
+                    }
+                    boon_syntax::BinaryOp::Subtract => {
+                        self.diagnostics.push(ShapeDiagnostic {
+                            message: format!("cannot subtract shapes {left:?} and {right:?}"),
+                        });
+                        Shape::Unknown
+                    }
+                    boon_syntax::BinaryOp::Equal => {
+                        Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
                     }
                 }
             }

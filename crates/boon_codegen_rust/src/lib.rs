@@ -278,7 +278,9 @@ fn value_collection_graph_code(
         | boon_dd::DdRenderGraphOperation::Block(_)
         | boon_dd::DdRenderGraphOperation::Call { .. }
         | boon_dd::DdRenderGraphOperation::Constructor { .. }
-        | boon_dd::DdRenderGraphOperation::BinaryAdd { .. } => {
+        | boon_dd::DdRenderGraphOperation::BinaryAdd { .. }
+        | boon_dd::DdRenderGraphOperation::BinarySubtract { .. }
+        | boon_dd::DdRenderGraphOperation::BinaryEqual { .. } => {
             let value = value_graph_code(graph, &node.node, env);
             format!("events.clone().map(|_| {value})")
         }
@@ -458,6 +460,16 @@ fn value_graph_code(
         }
         boon_dd::DdRenderGraphOperation::BinaryAdd { left, right } => format!(
             "GeneratedValue::Number(({}).number() + ({}).number())",
+            value_graph_code(graph, left, env),
+            value_graph_code(graph, right, env)
+        ),
+        boon_dd::DdRenderGraphOperation::BinarySubtract { left, right } => format!(
+            "GeneratedValue::Number(({}).number() - ({}).number())",
+            value_graph_code(graph, left, env),
+            value_graph_code(graph, right, env)
+        ),
+        boon_dd::DdRenderGraphOperation::BinaryEqual { left, right } => format!(
+            "GeneratedValue::Tag((if ({}) == ({}) {{ \"True\" }} else {{ \"False\" }}).to_owned())",
             value_graph_code(graph, left, env),
             value_graph_code(graph, right, env)
         ),

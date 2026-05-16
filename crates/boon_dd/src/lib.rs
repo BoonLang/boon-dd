@@ -185,6 +185,8 @@ pub enum GraphOperatorKind {
     MonitorTap,
     LibraryCall,
     BinaryAdd,
+    BinarySubtract,
+    BinaryEqual,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +246,14 @@ pub enum DdRenderGraphOperation {
         stage: NodeId,
     },
     BinaryAdd {
+        left: NodeId,
+        right: NodeId,
+    },
+    BinarySubtract {
+        left: NodeId,
+        right: NodeId,
+    },
+    BinaryEqual {
         left: NodeId,
         right: NodeId,
     },
@@ -342,6 +352,14 @@ pub enum DdRenderExpr {
         stage: Box<DdRenderExpr>,
     },
     BinaryAdd {
+        left: Box<DdRenderExpr>,
+        right: Box<DdRenderExpr>,
+    },
+    BinarySubtract {
+        left: Box<DdRenderExpr>,
+        right: Box<DdRenderExpr>,
+    },
+    BinaryEqual {
         left: Box<DdRenderExpr>,
         right: Box<DdRenderExpr>,
     },

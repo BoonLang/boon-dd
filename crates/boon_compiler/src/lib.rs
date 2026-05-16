@@ -43,6 +43,8 @@ pub enum SemanticNodeKind {
     Record,
     List,
     BinaryAdd,
+    BinarySubtract,
+    BinaryEqual,
     Pipe,
     Then,
     Hold,
@@ -297,7 +299,11 @@ fn semantic_kind(expression: &boon_syntax::Expr) -> SemanticNodeKind {
         boon_syntax::Expr::Latest(_) => SemanticNodeKind::Latest,
         boon_syntax::Expr::Call { .. } => SemanticNodeKind::LibraryCall,
         boon_syntax::Expr::Pipe { .. } => SemanticNodeKind::Pipe,
-        boon_syntax::Expr::Binary { .. } => SemanticNodeKind::BinaryAdd,
+        boon_syntax::Expr::Binary { op, .. } => match op {
+            boon_syntax::BinaryOp::Add => SemanticNodeKind::BinaryAdd,
+            boon_syntax::BinaryOp::Subtract => SemanticNodeKind::BinarySubtract,
+            boon_syntax::BinaryOp::Equal => SemanticNodeKind::BinaryEqual,
+        },
         boon_syntax::Expr::Then { .. } => SemanticNodeKind::Then,
         boon_syntax::Expr::Hold { .. } => SemanticNodeKind::Hold,
         boon_syntax::Expr::Match {
@@ -360,6 +366,8 @@ fn dd_operator_for_semantic_kind(kind: &SemanticNodeKind) -> Option<GraphOperato
         SemanticNodeKind::Record => GraphOperatorKind::Record,
         SemanticNodeKind::List => GraphOperatorKind::List,
         SemanticNodeKind::BinaryAdd => GraphOperatorKind::BinaryAdd,
+        SemanticNodeKind::BinarySubtract => GraphOperatorKind::BinarySubtract,
+        SemanticNodeKind::BinaryEqual => GraphOperatorKind::BinaryEqual,
         SemanticNodeKind::Pipe => GraphOperatorKind::Pipe,
         SemanticNodeKind::Then => GraphOperatorKind::Then,
         SemanticNodeKind::Hold => GraphOperatorKind::Hold,
@@ -575,6 +583,20 @@ impl DdRenderGraphBuilder {
                 inputs.push(right.clone());
                 DdRenderGraphOperation::BinaryAdd { left, right }
             }
+            DdRenderExpr::BinarySubtract { left, right } => {
+                let left = self.push_expr(left);
+                let right = self.push_expr(right);
+                inputs.push(left.clone());
+                inputs.push(right.clone());
+                DdRenderGraphOperation::BinarySubtract { left, right }
+            }
+            DdRenderExpr::BinaryEqual { left, right } => {
+                let left = self.push_expr(left);
+                let right = self.push_expr(right);
+                inputs.push(left.clone());
+                inputs.push(right.clone());
+                DdRenderGraphOperation::BinaryEqual { left, right }
+            }
             DdRenderExpr::Then { body } => {
                 let body = self.push_exprs(body, &mut inputs);
                 DdRenderGraphOperation::Then { body }
@@ -656,6 +678,8 @@ fn dd_operator_for_render_operation(operation: &DdRenderGraphOperation) -> Graph
         DdRenderGraphOperation::Call { .. } => GraphOperatorKind::LibraryCall,
         DdRenderGraphOperation::Pipe { .. } => GraphOperatorKind::Pipe,
         DdRenderGraphOperation::BinaryAdd { .. } => GraphOperatorKind::BinaryAdd,
+        DdRenderGraphOperation::BinarySubtract { .. } => GraphOperatorKind::BinarySubtract,
+        DdRenderGraphOperation::BinaryEqual { .. } => GraphOperatorKind::BinaryEqual,
         DdRenderGraphOperation::Then { .. } => GraphOperatorKind::Then,
         DdRenderGraphOperation::Hold { .. } => GraphOperatorKind::Hold,
         DdRenderGraphOperation::Match { kind, .. } => match kind {
@@ -682,6 +706,8 @@ fn dd_render_operation_label(operation: &DdRenderGraphOperation) -> &'static str
         DdRenderGraphOperation::Constructor { .. } => "Constructor",
         DdRenderGraphOperation::Pipe { .. } => "Pipe",
         DdRenderGraphOperation::BinaryAdd { .. } => "BinaryAdd",
+        DdRenderGraphOperation::BinarySubtract { .. } => "BinarySubtract",
+        DdRenderGraphOperation::BinaryEqual { .. } => "BinaryEqual",
         DdRenderGraphOperation::Then { .. } => "Then",
         DdRenderGraphOperation::Hold { .. } => "Hold",
         DdRenderGraphOperation::Match { kind, .. } => match kind {
@@ -1037,6 +1063,14 @@ fn render_expr_from_syntax(
         },
         boon_syntax::Expr::Binary { op, left, right } => match op {
             boon_syntax::BinaryOp::Add => DdRenderExpr::BinaryAdd {
+                left: Box::new(render_expr_from_syntax(left, hir)),
+                right: Box::new(render_expr_from_syntax(right, hir)),
+            },
+            boon_syntax::BinaryOp::Subtract => DdRenderExpr::BinarySubtract {
+                left: Box::new(render_expr_from_syntax(left, hir)),
+                right: Box::new(render_expr_from_syntax(right, hir)),
+            },
+            boon_syntax::BinaryOp::Equal => DdRenderExpr::BinaryEqual {
                 left: Box::new(render_expr_from_syntax(left, hir)),
                 right: Box::new(render_expr_from_syntax(right, hir)),
             },

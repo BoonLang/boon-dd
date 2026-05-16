@@ -126,6 +126,11 @@ schema_errors: []
   output sink families seen, 164 DD render graph nodes, no missing render graph
   roots, and no generated code execution hits for legacy render-program helper
   paths.
+- The parser/shape/DD render IR now has first-class support for sibling-repo
+  numeric/equality syntax patterns including `--` comments, unary negative
+  numbers, binary subtraction, and binary equality. This is not full cross-repo
+  language completion; it removes one parser/IR gap without relying on source
+  text scans.
 - The generated host dispatch path no longer uses source-text hash fixture
   lookup. It compiles source through the compiler, dispatches by generated graph
   id, and runs checked generated Timely/DD graph crates.
@@ -173,10 +178,10 @@ schema_errors: []
   blockers.
 - The cross-repo prompt audit still identifies unsupported Boon syntax and
   semantics from local sibling repos. Current open gaps include `LINK`,
-  `PASS`/`PASSED`, `FUNCTION`, extra arithmetic/comparison behavior, and
-  `Number/*` and `Geometry/*` style library semantics. Marking the manifest
-  accepted before either implementing these or explicitly excluding them as a
-  product decision would make the verifier dishonest.
+  `PASS`/`PASSED`, `FUNCTION`, remaining comparison behavior, and `Number/*`
+  and `Geometry/*` style library semantics. Marking the manifest accepted
+  before either implementing these or explicitly excluding them as a product
+  decision would make the verifier dishonest.
 
 ## Minimized Repro
 
@@ -206,7 +211,7 @@ No dependency fork is needed for the current blocker. Continue implementation
 inside this repo:
 
 1. Import or explicitly classify the missing cross-repo Boon language surface:
-   `LINK`, `PASS`/`PASSED`, `FUNCTION`, arithmetic/comparison operators, and
+   `LINK`, `PASS`/`PASSED`, `FUNCTION`, remaining comparison operators, and
    numeric/geometry library semantics.
 2. Expand syntax, resolver, shape, semantic IR, DD graph lowering, generated
    runtime, host parity, positive fixtures, and negative diagnostics for every
