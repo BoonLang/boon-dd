@@ -11,7 +11,7 @@ pub mod values;
 mod tests {
     #[test]
     fn generated_graph_matches_checked_scenario_output() {
-        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"item-1\",\n        \"value_preview\": \"2 active\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"2 active\"\n      }\n    }\n  ],\n  \"effects\": [],\n  \"persistence\": []\n}")
+        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"2 active\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"2 active\"\n      }\n    }\n  ],\n  \"effects\": [],\n  \"persistence\": []\n}")
             .expect("checked expected render JSON should deserialize");
         let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str("[{\"description\":\"row state update\",\"events\":[{\"Source\":{\"source\":\"item.checkbox.event.click\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}}],\"actions\":[{\"source\":\"item.checkbox.event.click\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}],\"commands\":[],\"expect_text\":\"2 active\",\"expect_monitor_changed\":[\"DocumentOutput\",\"DocumentText\"]}]")
             .expect("checked scenario steps should deserialize");
@@ -62,7 +62,7 @@ mod tests {
                     boon_dd::ScenarioEvent::Command(_) => {}
                 }
             }
-            if !submitted {
+            if !submitted || !crate::graph::has_bound_source_ids() {
                 graph.sources.submit_host_tick(epoch);
             }
             graph.sources.close_epoch(epoch);
@@ -75,10 +75,11 @@ mod tests {
                 worker.step();
                 worker_steps += 1;
             }
-            let mut drained_outputs = graph.sources.take_outputs();
-            let output = drained_outputs
-                .pop()
-                .expect("generated graph emitted no scenario output");
+            let mut step_output = None;
+            while let Some(output) = graph.sources.take_output() {
+                step_output = Some(output);
+            }
+            let output = step_output.expect("generated graph emitted no scenario output");
             last_generated_persisted_text =
                 output
                     .persistence

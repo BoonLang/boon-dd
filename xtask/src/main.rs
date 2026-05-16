@@ -2436,7 +2436,7 @@ fn verify_output_drain_efficiency(_args: &[String]) -> Result<serde_json::Value>
         failures,
         blockers,
         serde_json::json!({
-            "required_api": "take_outputs, cursor iteration, or bounded drain of diffs since previous step",
+            "required_api": "cursor iteration or bounded drain of diffs since previous step",
             "hit_count": hits.len(),
             "hits": hits,
         }),
@@ -6397,11 +6397,121 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
 fn generated_lib_rs(steps: &[boon_dd::ScenarioStep], expected_render_text: &str) -> String {
     let steps_json =
         serde_json::to_string(steps).expect("scenario steps should serialize into generated test");
-    format!(
-        "pub mod graph;\npub mod ids;\npub mod monitor_bindings;\npub mod persist_bindings;\npub mod render_bindings;\npub mod shapes;\npub mod source_events;\npub mod values;\n\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn generated_graph_matches_checked_scenario_output() {{\n        let expected: boon_dd::SmokeOutput = serde_json::from_str({expected:?})\n            .expect(\"checked expected render JSON should deserialize\");\n        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str({steps:?})\n            .expect(\"checked scenario steps should deserialize\");\n        let allocator = || timely::communication::Allocator::Thread(\n            timely::communication::allocator::Thread::default(),\n        );\n        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);\n        let mut graph = crate::graph::build_dataflow(&mut worker);\n        let has_persistence_tap = crate::persist_bindings::has_persistence_tap();\n        let mut persistence_enabled = false;\n        let mut persisted_text: Option<String> = None;\n        let mut last_generated_persisted_text: Option<String> = None;\n        let mut last_output: Option<boon_dd::SmokeOutput> = None;\n        for (step_index, step) in scenario_steps.iter().enumerate() {{\n            let epoch = step_index as u64 + 1;\n            let mut submitted = false;\n            for event in &step.events {{\n                match event {{\n                    boon_dd::ScenarioEvent::Source(action) => {{\n                        graph.sources.submit_action(action, epoch);\n                        submitted = true;\n                    }}\n                    boon_dd::ScenarioEvent::Command(command)\n                        if command.command == \"enable_persistence\" =>\n                    {{\n                        if has_persistence_tap {{\n                            persistence_enabled = true;\n                            persisted_text = last_generated_persisted_text.clone();\n                        }}\n                    }}\n                    boon_dd::ScenarioEvent::Command(command) if command.command == \"reload\" => {{\n                        worker = timely::worker::Worker::new(\n                            timely::WorkerConfig::default(),\n                            allocator(),\n                            None,\n                        );\n                        graph = crate::graph::build_dataflow(&mut worker);\n                        if persistence_enabled {{\n                            if let Some(value) = persisted_text.clone() {{\n                                graph.sources.submit_persisted_text(value, epoch);\n                                submitted = true;\n                            }}\n                        }}\n                    }}\n                    boon_dd::ScenarioEvent::Command(_) => {{}}\n                }}\n            }}\n            if !submitted {{\n                graph.sources.submit_host_tick(epoch);\n            }}\n            graph.sources.close_epoch(epoch);\n            let target = crate::graph::completion_time(epoch) + 1;\n            let mut worker_steps = 0_usize;\n            while graph.probe.less_than(&target) {{\n                if worker_steps == 1024 {{\n                    panic!(\"generated graph step {{step_index}} probe stalled at {{target}} after {{worker_steps}} steps\");\n                }}\n                worker.step();\n                worker_steps += 1;\n            }}\n            let mut drained_outputs = graph.sources.take_outputs();\n            let output = drained_outputs\n                .pop()\n                .expect(\"generated graph emitted no scenario output\");\n            last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {{\n                match command {{\n                    boon_dd::PersistenceCommand::SaveText {{ value, .. }} => Some(value.clone()),\n                    boon_dd::PersistenceCommand::LoadText {{ .. }} => None,\n                }}\n            }});\n            last_output = Some(output);\n        }}\n        let actual = last_output\n            .as_ref()\n            .expect(\"generated graph emitted no scenario output\");\n        assert_eq!(actual, &expected);\n    }}\n}}\n",
-        expected = expected_render_text.trim(),
-        steps = steps_json,
-    )
+    let mut code = String::new();
+    code.push_str("pub mod graph;\n");
+    code.push_str("pub mod ids;\n");
+    code.push_str("pub mod monitor_bindings;\n");
+    code.push_str("pub mod persist_bindings;\n");
+    code.push_str("pub mod render_bindings;\n");
+    code.push_str("pub mod shapes;\n");
+    code.push_str("pub mod source_events;\n");
+    code.push_str("pub mod values;\n\n");
+    code.push_str("#[cfg(test)]\n");
+    code.push_str("mod tests {\n");
+    code.push_str("    #[test]\n");
+    code.push_str("    fn generated_graph_matches_checked_scenario_output() {\n");
+    code.push_str(&format!(
+        "        let expected: boon_dd::SmokeOutput = serde_json::from_str({:?})\n",
+        expected_render_text.trim()
+    ));
+    code.push_str("            .expect(\"checked expected render JSON should deserialize\");\n");
+    code.push_str(&format!(
+        "        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str({steps_json:?})\n"
+    ));
+    code.push_str("            .expect(\"checked scenario steps should deserialize\");\n");
+    code.push_str("        let allocator = || {\n");
+    code.push_str("            timely::communication::Allocator::Thread(\n");
+    code.push_str("                timely::communication::allocator::Thread::default(),\n");
+    code.push_str("            )\n");
+    code.push_str("        };\n");
+    code.push_str(
+        "        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);\n",
+    );
+    code.push_str("        let mut graph = crate::graph::build_dataflow(&mut worker);\n");
+    code.push_str(
+        "        let has_persistence_tap = crate::persist_bindings::has_persistence_tap();\n",
+    );
+    code.push_str("        let mut persistence_enabled = false;\n");
+    code.push_str("        let mut persisted_text: Option<String> = None;\n");
+    code.push_str("        let mut last_generated_persisted_text: Option<String> = None;\n");
+    code.push_str("        let mut last_output: Option<boon_dd::SmokeOutput> = None;\n");
+    code.push_str("        for (step_index, step) in scenario_steps.iter().enumerate() {\n");
+    code.push_str("            let epoch = step_index as u64 + 1;\n");
+    code.push_str("            let mut submitted = false;\n");
+    code.push_str("            for event in &step.events {\n");
+    code.push_str("                match event {\n");
+    code.push_str("                    boon_dd::ScenarioEvent::Source(action) => {\n");
+    code.push_str("                        graph.sources.submit_action(action, epoch);\n");
+    code.push_str("                        submitted = true;\n");
+    code.push_str("                    }\n");
+    code.push_str("                    boon_dd::ScenarioEvent::Command(command)\n");
+    code.push_str("                        if command.command == \"enable_persistence\" =>\n");
+    code.push_str("                    {\n");
+    code.push_str("                        if has_persistence_tap {\n");
+    code.push_str("                            persistence_enabled = true;\n");
+    code.push_str(
+        "                            persisted_text = last_generated_persisted_text.clone();\n",
+    );
+    code.push_str("                        }\n");
+    code.push_str("                    }\n");
+    code.push_str(
+        "                    boon_dd::ScenarioEvent::Command(command) if command.command == \"reload\" => {\n",
+    );
+    code.push_str("                        worker = timely::worker::Worker::new(\n");
+    code.push_str("                            timely::WorkerConfig::default(),\n");
+    code.push_str("                            allocator(),\n");
+    code.push_str("                            None,\n");
+    code.push_str("                        );\n");
+    code.push_str("                        graph = crate::graph::build_dataflow(&mut worker);\n");
+    code.push_str("                        if persistence_enabled {\n");
+    code.push_str("                            if let Some(value) = persisted_text.clone() {\n");
+    code.push_str(
+        "                                graph.sources.submit_persisted_text(value, epoch);\n",
+    );
+    code.push_str("                                submitted = true;\n");
+    code.push_str("                            }\n");
+    code.push_str("                        }\n");
+    code.push_str("                    }\n");
+    code.push_str("                    boon_dd::ScenarioEvent::Command(_) => {}\n");
+    code.push_str("                }\n");
+    code.push_str("            }\n");
+    code.push_str("            if !submitted || !crate::graph::has_bound_source_ids() {\n");
+    code.push_str("                graph.sources.submit_host_tick(epoch);\n");
+    code.push_str("            }\n");
+    code.push_str("            graph.sources.close_epoch(epoch);\n");
+    code.push_str("            let target = crate::graph::completion_time(epoch) + 1;\n");
+    code.push_str("            let mut worker_steps = 0_usize;\n");
+    code.push_str("            while graph.probe.less_than(&target) {\n");
+    code.push_str("                if worker_steps == 1024 {\n");
+    code.push_str("                    panic!(\"generated graph step {step_index} probe stalled at {target} after {worker_steps} steps\");\n");
+    code.push_str("                }\n");
+    code.push_str("                worker.step();\n");
+    code.push_str("                worker_steps += 1;\n");
+    code.push_str("            }\n");
+    code.push_str("            let mut step_output = None;\n");
+    code.push_str("            while let Some(output) = graph.sources.take_output() {\n");
+    code.push_str("                step_output = Some(output);\n");
+    code.push_str("            }\n");
+    code.push_str(
+        "            let output = step_output.expect(\"generated graph emitted no scenario output\");\n",
+    );
+    code.push_str(
+        "            last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {\n",
+    );
+    code.push_str("                match command {\n");
+    code.push_str("                    boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),\n");
+    code.push_str("                    boon_dd::PersistenceCommand::LoadText { .. } => None,\n");
+    code.push_str("                }\n");
+    code.push_str("            });\n");
+    code.push_str("            last_output = Some(output);\n");
+    code.push_str("        }\n");
+    code.push_str("        let actual = last_output\n");
+    code.push_str("            .as_ref()\n");
+    code.push_str("            .expect(\"generated graph emitted no scenario output\");\n");
+    code.push_str("        assert_eq!(actual, &expected);\n");
+    code.push_str("    }\n");
+    code.push_str("}\n");
+    code
 }
 
 fn generated_ids_rs(graph: &boon_dd::StaticGraph) -> String {

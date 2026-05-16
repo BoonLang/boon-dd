@@ -6,9 +6,8 @@ use boon_dd::{
 };
 use differential_dataflow::collection::VecCollection;
 use differential_dataflow::input::InputSession;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
@@ -79,7 +78,7 @@ pub fn run_compiled_source_scenario_steps(
                 ScenarioEvent::Command(_) => {}
             }
         }
-        if !submitted {
+        if !submitted || !session.has_bound_sources() {
             session.submit_host_tick(epoch);
         }
         let output = session.drain_epoch(epoch)?;
@@ -136,11 +135,12 @@ pub struct CompiledGraphSession {
     worker: timely::worker::Worker,
     sources: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
     probe: ProbeHandle<EncodedTime>,
-    outputs: Arc<Mutex<VecDeque<SmokeOutput>>>,
+    outputs: mpsc::Receiver<SmokeOutput>,
     source_ids_by_path: BTreeMap<String, SourceId>,
     monitor_node: NodeId,
     render_node: NodeId,
     persistence_nodes: Vec<NodeId>,
+    has_bound_sources: bool,
     next_sequence: u64,
 }
 
@@ -318,8 +318,7 @@ impl CompiledGraphSession {
             timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
         let mut sources = InputSession::<EncodedTime, (u64, GeneratedSourceEvent), Diff>::new();
         let mut probe = ProbeHandle::new();
-        let outputs = Arc::new(Mutex::new(VecDeque::<SmokeOutput>::new()));
-        let output_in_graph = Arc::clone(&outputs);
+        let (output_in_graph, outputs) = mpsc::channel::<SmokeOutput>();
         let monitor_in_graph = monitor_node.clone();
         let render_in_graph = render_node.clone();
         let effect_requests_in_graph = effect_requests.clone();
@@ -328,57 +327,54 @@ impl CompiledGraphSession {
 
         worker.dataflow::<EncodedTime, _, _>(|scope| {
             let events = sources.to_collection(scope);
-            let rendered_values =
-                runtime_render_collection(&graph, &events, &bound_source_ids_in_graph)
-                    .map(|text| ((), text));
-            let rendered_owners = if bound_source_ids_in_graph.is_empty() {
-                events
-                    .clone()
-                    .map(|(_sequence, event)| ((), runtime_source_event_owner(&event)))
-            } else {
+            let render_events = if bound_source_ids_in_graph.first().is_some() {
                 let bound_source_ids = bound_source_ids_in_graph.clone();
+                events.clone().filter(move |(_sequence, event)| {
+                    runtime_event_matches_bound_source(event, &bound_source_ids)
+                })
+            } else {
                 events
                     .clone()
-                    .filter(move |(_sequence, event)| {
-                        runtime_event_matches_bound_source(event, &bound_source_ids)
-                    })
-                    .map(|(_sequence, event)| ((), runtime_source_event_owner(&event)))
+                    .filter(|(_sequence, event)| runtime_event_is_host_tick(event))
             };
+            let rendered_values =
+                runtime_render_collection(&graph, &render_events, &bound_source_ids_in_graph)
+                    .map(|text| ((), text));
+            let rendered_owners = render_events
+                .clone()
+                .map(|(_sequence, event)| ((), runtime_source_event_owner(&event)));
             let rendered = rendered_values
                 .join(rendered_owners)
                 .map(|(_key, (text, owner))| (owner, text));
             rendered
                 .inspect(move |((owner, text), time, diff)| {
                     if *diff > 0 {
-                        output_in_graph
-                            .lock()
-                            .expect("compiled runtime output lock poisoned")
-                            .push_back(SmokeOutput {
-                                monitor: vec![MonitorRecord::NodeValue {
-                                    epoch: BoonTime::decode(*time).epoch,
-                                    node: monitor_in_graph.clone(),
-                                    owner: owner.clone(),
-                                    value_preview: text.clone(),
-                                }],
-                                render: vec![RenderCommand::PatchText {
-                                    node: render_in_graph.clone(),
-                                    text: text.clone(),
-                                }],
-                                effects: effect_requests_in_graph
-                                    .iter()
-                                    .map(|(node, name)| EffectCommand::Requested {
-                                        node: node.clone(),
-                                        name: name.clone(),
-                                    })
-                                    .collect(),
-                                persistence: persistence_nodes_in_graph
-                                    .iter()
-                                    .map(|node| PersistenceCommand::SaveText {
-                                        node: node.clone(),
-                                        value: text.clone(),
-                                    })
-                                    .collect(),
-                            });
+                        let _ = output_in_graph.send(SmokeOutput {
+                            monitor: vec![MonitorRecord::NodeValue {
+                                epoch: BoonTime::decode(*time).epoch,
+                                node: monitor_in_graph.clone(),
+                                owner: owner.clone(),
+                                value_preview: text.clone(),
+                            }],
+                            render: vec![RenderCommand::PatchText {
+                                node: render_in_graph.clone(),
+                                text: text.clone(),
+                            }],
+                            effects: effect_requests_in_graph
+                                .iter()
+                                .map(|(node, name)| EffectCommand::Requested {
+                                    node: node.clone(),
+                                    name: name.clone(),
+                                })
+                                .collect(),
+                            persistence: persistence_nodes_in_graph
+                                .iter()
+                                .map(|node| PersistenceCommand::SaveText {
+                                    node: node.clone(),
+                                    value: text.clone(),
+                                })
+                                .collect(),
+                        });
                     }
                 })
                 .probe_with(&mut probe);
@@ -393,6 +389,7 @@ impl CompiledGraphSession {
             monitor_node,
             render_node,
             persistence_nodes,
+            has_bound_sources: bound_source_ids.first().is_some(),
             next_sequence: 0,
         })
     }
@@ -451,6 +448,10 @@ impl CompiledGraphSession {
         !self.persistence_nodes.is_empty()
     }
 
+    pub fn has_bound_sources(&self) -> bool {
+        self.has_bound_sources
+    }
+
     pub fn submit_event(&mut self, event: GeneratedSourceEvent, epoch: u64) -> SubmittedEvent {
         self.sources
             .advance_to(BoonTime { epoch, phase: 0 }.encode());
@@ -481,15 +482,15 @@ impl CompiledGraphSession {
             self.worker.step();
             steps += 1;
         }
-        let mut outputs = self
-            .outputs
-            .lock()
-            .map_err(|_| "compiled runtime output lock poisoned".to_owned())?;
-        Ok(outputs.drain(..).last().unwrap_or_else(|| SmokeOutput {
+        let mut latest_output = None;
+        while let Ok(output) = self.outputs.try_recv() {
+            latest_output = Some(output);
+        }
+        Ok(latest_output.unwrap_or_else(|| SmokeOutput {
             monitor: vec![MonitorRecord::NodeValue {
                 epoch,
                 node: self.monitor_node.clone(),
-                owner: OwnerKey("Root".to_owned()),
+                owner: root_owner_key(),
                 value_preview: String::new(),
             }],
             render: vec![RenderCommand::PatchText {
@@ -1211,24 +1212,43 @@ fn runtime_event_matches_bound_source(event: &GeneratedSourceEvent, source_ids: 
         GeneratedSourceEvent::Static { source_id, .. } => {
             source_ids.iter().any(|bound| source_id.0 == *bound)
         }
-        GeneratedSourceEvent::Dynamic { family_id, .. } => {
-            source_ids.iter().any(|bound| family_id.0 == *bound)
+        GeneratedSourceEvent::Dynamic {
+            family_id,
+            owner_key,
+            generation,
+            ..
+        } => {
+            let identity = (family_id.0.as_str(), owner_key.0.as_str(), *generation);
+            source_ids.iter().any(|bound| identity.0 == bound.as_str()) && !identity.1.is_empty()
         }
     }
 }
 
+fn runtime_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
+    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__host_tick")
+}
+
 fn runtime_source_event_owner(event: &GeneratedSourceEvent) -> OwnerKey {
     match event {
-        GeneratedSourceEvent::Static { .. } => OwnerKey("Root".to_owned()),
+        GeneratedSourceEvent::Static { .. } => root_owner_key(),
         GeneratedSourceEvent::Dynamic { owner_key, .. } => owner_key.clone(),
     }
 }
 
 fn runtime_source_event_text(event: &GeneratedSourceEvent) -> String {
     match event {
-        GeneratedSourceEvent::Static { payload, .. }
-        | GeneratedSourceEvent::Dynamic { payload, .. } => runtime_payload_text(payload),
+        GeneratedSourceEvent::Static { payload, .. } => runtime_payload_text(payload),
+        GeneratedSourceEvent::Dynamic {
+            family_id: _,
+            owner_key: _,
+            generation: _,
+            payload,
+        } => runtime_payload_text(payload),
     }
+}
+
+fn root_owner_key() -> OwnerKey {
+    OwnerKey(String::from("Root"))
 }
 
 fn runtime_payload_text(payload: &GeneratedSourceEventPayload) -> String {

@@ -6,8 +6,7 @@ use boon_dd::{
     SourceId,
 };
 use differential_dataflow::input::InputSession;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
 #[allow(dead_code)]
@@ -31,7 +30,7 @@ fn generated_url_encode(value: &str) -> String {
 
 pub struct GeneratedSourceInputs {
     input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
-    output: Arc<Mutex<VecDeque<SmokeOutput>>>,
+    output: mpsc::Receiver<SmokeOutput>,
     next_sequence: u64,
 }
 
@@ -85,12 +84,8 @@ impl GeneratedSourceInputs {
         self.input.flush();
     }
 
-    pub fn take_outputs(&mut self) -> Vec<SmokeOutput> {
-        self.output
-            .lock()
-            .expect("generated output lock poisoned")
-            .drain(..)
-            .collect()
+    pub fn take_output(&mut self) -> Option<SmokeOutput> {
+        self.output.try_recv().ok()
     }
 }
 
@@ -106,7 +101,7 @@ impl GeneratedGraphHandles {
         event: GeneratedSourceEvent,
         epoch: u64,
         max_steps: usize,
-    ) -> Result<Vec<SmokeOutput>, String> {
+    ) -> Result<Option<SmokeOutput>, String> {
         self.sources.submit_event(event, epoch);
         self.sources.close_epoch(epoch);
         let target = completion_time(epoch) + 1;
@@ -120,7 +115,7 @@ impl GeneratedGraphHandles {
             worker.step();
             steps += 1;
         }
-        Ok(self.sources.take_outputs())
+        Ok(self.sources.take_output())
     }
 }
 
@@ -151,6 +146,10 @@ fn source_id_for_path(path: &str) -> String {
 
 fn generated_bound_source_ids() -> &'static [&'static str] {
     &["A", "B"]
+}
+
+pub fn has_bound_source_ids() -> bool {
+    generated_bound_source_ids().first().is_some()
 }
 
 #[allow(dead_code)]
@@ -279,11 +278,10 @@ fn generated_dynamic_source_id_is_bound(
     owner_key: &OwnerKey,
     generation: u32,
 ) -> bool {
-    let _owner_key_is_part_of_dd_identity = owner_key;
-    let _generation_is_part_of_dd_identity = generation;
+    let identity = (family_id.0.as_str(), owner_key.0.as_str(), generation);
     generated_bound_source_ids()
         .iter()
-        .any(|bound| family_id.0 == *bound)
+        .any(|bound| identity.0 == *bound && !identity.1.is_empty())
 }
 
 #[allow(dead_code)]
@@ -346,15 +344,22 @@ fn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
 pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHandles {
     let mut input = InputSession::<EncodedTime, (u64, GeneratedSourceEvent), Diff>::new();
     let mut probe = ProbeHandle::new();
-    let output = Arc::new(Mutex::new(VecDeque::<SmokeOutput>::new()));
-    let output_in_graph = Arc::clone(&output);
+    let (output_in_graph, output) = mpsc::channel::<SmokeOutput>();
     let monitor_node = NodeId("Value".to_owned());
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered_values = events
+        let render_events = if has_bound_source_ids() {
+            events
+                .clone()
+                .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
+        } else {
+            events
+                .clone()
+                .filter(|(_sequence, event)| generated_event_is_host_tick(event))
+        };
+        let rendered_values = render_events
             .clone()
-            .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
             .map(|(sequence, event)| ((), (sequence, generated_source_text(&event))))
             .reduce(|_, inputs, output| {
                 if let Some(((sequence, value), _diff)) =
@@ -366,39 +371,29 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
             })
             .map(|(_key, value)| value)
             .map(|text| ((), text));
-        let rendered_owners = if generated_bound_source_ids().is_empty() {
-            events
-                .clone()
-                .map(|(_sequence, event)| ((), generated_root_or_dynamic_source_owner(&event)))
-        } else {
-            events
-                .clone()
-                .filter(|(_sequence, event)| generated_event_matches_bound_source(event))
-                .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)))
-        };
+        let rendered_owners = render_events
+            .clone()
+            .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));
         let rendered = rendered_values
             .join(rendered_owners)
             .map(|(_key, (text, owner))| (owner, text));
         rendered
             .inspect(move |((owner, text), time, diff)| {
                 if *diff > 0 {
-                    output_in_graph
-                        .lock()
-                        .expect("generated output lock poisoned")
-                        .push_back(SmokeOutput {
-                            monitor: vec![MonitorRecord::NodeValue {
-                                epoch: BoonTime::decode(*time).epoch,
-                                node: monitor_node.clone(),
-                                owner: owner.clone(),
-                                value_preview: text.clone(),
-                            }],
-                            render: vec![RenderCommand::PatchText {
-                                node: render_node.clone(),
-                                text: text.clone(),
-                            }],
-                            effects: Vec::new(),
-                            persistence: Vec::new(),
-                        });
+                    let _ = output_in_graph.send(SmokeOutput {
+                        monitor: vec![MonitorRecord::NodeValue {
+                            epoch: BoonTime::decode(*time).epoch,
+                            node: monitor_node.clone(),
+                            owner: owner.clone(),
+                            value_preview: text.clone(),
+                        }],
+                        render: vec![RenderCommand::PatchText {
+                            node: render_node.clone(),
+                            text: text.clone(),
+                        }],
+                        effects: Vec::new(),
+                        persistence: Vec::new(),
+                    });
                 }
             })
             .probe_with(&mut probe);

@@ -8,15 +8,14 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("// Constructs a static Timely/Differential graph; hosts only inject sources and drain probes.\n");
     code.push_str("use differential_dataflow::input::InputSession;\n");
     code.push_str("use boon_dd::{BoonNumber, BoonTime, Diff, EncodedTime, GeneratedSourceEvent, GeneratedSourceEventPayload, MonitorRecord, NodeId, OwnerKey, RenderCommand, SmokeOutput, SourceAction, SourceFamilyId, SourceId};\n");
-    code.push_str("use std::collections::VecDeque;\n");
-    code.push_str("use std::sync::{Arc, Mutex};\n");
+    code.push_str("use std::sync::mpsc;\n");
     code.push_str("use timely::dataflow::operators::probe::Handle as ProbeHandle;\n\n");
     code.push_str(
         "#[allow(dead_code)]\nfn generated_url_encode(value: &str) -> String {\n    const HEX: &[u8; 16] = b\"0123456789ABCDEF\";\n    let mut encoded = String::new();\n    for byte in value.as_bytes() {\n        match *byte {\n            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => encoded.push(*byte as char),\n            byte => {\n                encoded.push('%');\n                encoded.push(HEX[(byte >> 4) as usize] as char);\n                encoded.push(HEX[(byte & 0x0f) as usize] as char);\n            }\n        }\n    }\n    encoded\n}\n\n",
     );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
-    code.push_str("    output: Arc<Mutex<VecDeque<SmokeOutput>>>,\n");
+    code.push_str("    output: mpsc::Receiver<SmokeOutput>,\n");
     code.push_str("    next_sequence: u64,\n");
     code.push_str("}\n\n");
     code.push_str("impl GeneratedSourceInputs {\n");
@@ -64,10 +63,8 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        self.input.advance_to(completion_time(epoch) + 1);\n");
     code.push_str("        self.input.flush();\n");
     code.push_str("    }\n\n");
-    code.push_str("    pub fn take_outputs(&mut self) -> Vec<SmokeOutput> {\n");
-    code.push_str(
-        "        self.output.lock().expect(\"generated output lock poisoned\").drain(..).collect()\n",
-    );
+    code.push_str("    pub fn take_output(&mut self) -> Option<SmokeOutput> {\n");
+    code.push_str("        self.output.try_recv().ok()\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
     code.push_str("pub struct GeneratedGraphHandles {\n");
@@ -81,7 +78,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        event: GeneratedSourceEvent,\n");
     code.push_str("        epoch: u64,\n");
     code.push_str("        max_steps: usize,\n");
-    code.push_str("    ) -> Result<Vec<SmokeOutput>, String> {\n");
+    code.push_str("    ) -> Result<Option<SmokeOutput>, String> {\n");
     code.push_str("        self.sources.submit_event(event, epoch);\n");
     code.push_str("        self.sources.close_epoch(epoch);\n");
     code.push_str("        let target = completion_time(epoch) + 1;\n");
@@ -93,7 +90,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("            worker.step();\n");
     code.push_str("            steps += 1;\n");
     code.push_str("        }\n");
-    code.push_str("        Ok(self.sources.take_outputs())\n");
+    code.push_str("        Ok(self.sources.take_output())\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
     code.push_str("pub fn graph_id() -> &'static str {\n");
@@ -132,6 +129,9 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
         code.push_str(&format!("        {:?},\n", source.source_id.0));
     }
     code.push_str("    ]\n");
+    code.push_str("}\n\n");
+    code.push_str("pub fn has_bound_source_ids() -> bool {\n");
+    code.push_str("    generated_bound_source_ids().first().is_some()\n");
     code.push_str("}\n\n");
     code.push_str(
         r#"#[allow(dead_code)]
@@ -238,9 +238,10 @@ fn generated_dynamic_source_id_is_bound(
     owner_key: &OwnerKey,
     generation: u32,
 ) -> bool {
-    let _owner_key_is_part_of_dd_identity = owner_key;
-    let _generation_is_part_of_dd_identity = generation;
-    generated_bound_source_ids().iter().any(|bound| family_id.0 == *bound)
+    let identity = (family_id.0.as_str(), owner_key.0.as_str(), generation);
+    generated_bound_source_ids()
+        .iter()
+        .any(|bound| identity.0 == *bound && !identity.1.is_empty())
 }
 
 #[allow(dead_code)]
@@ -290,8 +291,7 @@ fn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
     code.push_str(") -> GeneratedGraphHandles {\n");
     code.push_str("    let mut input = InputSession::<EncodedTime, (u64, GeneratedSourceEvent), Diff>::new();\n");
     code.push_str("    let mut probe = ProbeHandle::new();\n");
-    code.push_str("    let output = Arc::new(Mutex::new(VecDeque::<SmokeOutput>::new()));\n");
-    code.push_str("    let output_in_graph = Arc::clone(&output);\n");
+    code.push_str("    let (output_in_graph, output) = mpsc::channel::<SmokeOutput>();\n");
     code.push_str(&format!(
         "    let monitor_node = NodeId({:?}.to_owned());\n",
         graph.monitor_node.0
@@ -308,7 +308,7 @@ fn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
     code.push_str("        rendered\n");
     code.push_str("            .inspect(move |((owner, text), time, diff)| {\n");
     code.push_str("                if *diff > 0 {\n");
-    code.push_str("                    output_in_graph.lock().expect(\"generated output lock poisoned\").push_back(SmokeOutput {\n");
+    code.push_str("                    let _ = output_in_graph.send(SmokeOutput {\n");
     code.push_str("                        monitor: vec![MonitorRecord::NodeValue {\n");
     code.push_str("                            epoch: BoonTime::decode(*time).epoch,\n");
     code.push_str("                            node: monitor_node.clone(),\n");
@@ -382,7 +382,7 @@ fn render_collection_from_graph(graph: &boon_dd::DdRenderGraph) -> String {
     let value = value_collection_graph_code(graph, &graph.root, &BTreeMap::new());
     let text_values = value.into_text_collection();
     format!(
-        "        let rendered_values = {}.map(|text| ((), text));\n        let rendered_owners = if generated_bound_source_ids().is_empty() {{\n            events.clone().map(|(_sequence, event)| ((), generated_root_or_dynamic_source_owner(&event)))\n        }} else {{\n            events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| ((), generated_bound_source_owner(&event)))\n        }};\n        let rendered = rendered_values.join(rendered_owners).map(|(_key, (text, owner))| (owner, text));\n",
+        "        let render_events = if has_bound_source_ids() {{\n            events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event))\n        }} else {{\n            events.clone().filter(|(_sequence, event)| generated_event_is_host_tick(event))\n        }};\n        let rendered_values = {}.map(|text| ((), text));\n        let rendered_owners = render_events.clone().map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));\n        let rendered = rendered_values.join(rendered_owners).map(|(_key, (text, owner))| (owner, text));\n",
         text_values
     )
 }
@@ -518,8 +518,9 @@ fn value_collection_graph_code(
         boon_dd::DdRenderGraphOperation::Source | boon_dd::DdRenderGraphOperation::Path(_) => {
             RenderCollectionCode {
                 kind: RenderKind::Text,
-                code: "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| generated_source_text(&event))"
-                    .to_owned(),
+                code:
+                    "render_events.clone().map(|(_sequence, event)| generated_source_text(&event))"
+                        .to_owned(),
             }
         }
         boon_dd::DdRenderGraphOperation::Pipe { input, stage } => {
@@ -533,13 +534,13 @@ fn value_collection_graph_code(
                 .unwrap_or_else(|| unsupported_expr("empty THEN body"));
             RenderCollectionCode {
                 kind: value.kind,
-                code: format!("events.clone().map(|_| {})", value.code),
+                code: format!("render_events.clone().map(|_| {})", value.code),
             }
         }
         boon_dd::DdRenderGraphOperation::Hold { body, binder } => {
             let input = RenderCollectionCode {
                 kind: RenderKind::Number,
-                code: "events.clone().map(|_| 0_i64)".to_owned(),
+                code: "render_events.clone().map(|_| 0_i64)".to_owned(),
             };
             hold_collection_graph_code(graph, input, body, binder, env)
         }
@@ -547,7 +548,9 @@ fn value_collection_graph_code(
         boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
             let input = RenderCollectionCode {
                 kind: RenderKind::Text,
-                code: "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(_sequence, event)| generated_source_text(&event))".to_owned(),
+                code:
+                    "render_events.clone().map(|(_sequence, event)| generated_source_text(&event))"
+                        .to_owned(),
             };
             stage_match_graph_collection_code(graph, input, arms, env)
         }
@@ -555,7 +558,7 @@ fn value_collection_graph_code(
             let value = value_graph_code(graph, &node.node, env);
             RenderCollectionCode {
                 kind: value.kind,
-                code: format!("events.clone().map(|_| {})", value.code),
+                code: format!("render_events.clone().map(|_| {})", value.code),
             }
         }
         boon_dd::DdRenderGraphOperation::SourceAt { .. }
@@ -563,7 +566,7 @@ fn value_collection_graph_code(
             let value = value_graph_code(graph, &node.node, env);
             RenderCollectionCode {
                 kind: value.kind,
-                code: format!("events.clone().map(|_| {})", value.code),
+                code: format!("render_events.clone().map(|_| {})", value.code),
             }
         }
         boon_dd::DdRenderGraphOperation::Number(_)
@@ -581,7 +584,7 @@ fn value_collection_graph_code(
             let value = value_graph_code(graph, &node.node, env);
             RenderCollectionCode {
                 kind: value.kind,
-                code: format!("events.clone().map(|_| {})", value.code),
+                code: format!("render_events.clone().map(|_| {})", value.code),
             }
         }
     }
@@ -1919,7 +1922,7 @@ fn render_graph_node<'a>(
 fn latest_collection_code() -> RenderCollectionCode {
     RenderCollectionCode {
         kind: RenderKind::Text,
-        code: "events.clone().filter(|(_sequence, event)| generated_event_matches_bound_source(event)).map(|(sequence, event)| ((), (sequence, generated_source_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                let _ = sequence;\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value)".to_owned(),
+        code: "render_events.clone().map(|(sequence, event)| ((), (sequence, generated_source_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                let _ = sequence;\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value)".to_owned(),
     }
 }
 

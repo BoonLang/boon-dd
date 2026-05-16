@@ -62,7 +62,7 @@ mod tests {
                     boon_dd::ScenarioEvent::Command(_) => {}
                 }
             }
-            if !submitted {
+            if !submitted || !crate::graph::has_bound_source_ids() {
                 graph.sources.submit_host_tick(epoch);
             }
             graph.sources.close_epoch(epoch);
@@ -75,10 +75,11 @@ mod tests {
                 worker.step();
                 worker_steps += 1;
             }
-            let mut drained_outputs = graph.sources.take_outputs();
-            let output = drained_outputs
-                .pop()
-                .expect("generated graph emitted no scenario output");
+            let mut step_output = None;
+            while let Some(output) = graph.sources.take_output() {
+                step_output = Some(output);
+            }
+            let output = step_output.expect("generated graph emitted no scenario output");
             last_generated_persisted_text =
                 output
                     .persistence
