@@ -16,6 +16,9 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str(
         "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Text\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Text\"),\n        }\n    }\n\n    fn render_text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::render_text).collect::<Vec<_>>().join(\"\"),\n            GeneratedValue::Empty => String::new(),\n            GeneratedValue::Record(_) => String::new(),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| panic!(\"generated DD render failed to parse Text as Number: {error}\")),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Number\"),\n            GeneratedValue::Tag(_) => panic!(\"generated DD render tried to coerce Tag to Number\"),\n            GeneratedValue::List(_) => panic!(\"generated DD render tried to coerce List to Number\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Number\"),\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or_else(|| panic!(\"generated DD render missing record field {name}\")),\n            other => panic!(\"generated DD render tried to read field {name} from non-record value: {other:?}\"),\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Bool\"),\n        }\n    }\n}\n\n",
     );
+    code.push_str(
+        "#[allow(dead_code)]\nfn generated_url_encode(value: &str) -> String {\n    const HEX: &[u8; 16] = b\"0123456789ABCDEF\";\n    let mut encoded = String::new();\n    for byte in value.as_bytes() {\n        match *byte {\n            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => encoded.push(*byte as char),\n            byte => {\n                encoded.push('%');\n                encoded.push(HEX[(byte >> 4) as usize] as char);\n                encoded.push(HEX[(byte & 0x0f) as usize] as char);\n            }\n        }\n    }\n    encoded\n}\n\n",
+    );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
     code.push_str("    output: Arc<Mutex<Vec<SmokeOutput>>>,\n");
@@ -359,6 +362,7 @@ fn call_graph_collection_code(
         | "Text/substring"
         | "Text/trim"
         | "Text/uppercase"
+        | "Url/encode"
         | "List/append"
         | "List/any"
         | "List/map"
@@ -712,6 +716,13 @@ fn call_graph_value_code(
             let input =
                 input.unwrap_or_else(|| unsupported_value_code("Text/uppercase missing input"));
             format!("GeneratedValue::Text(({}).text().to_uppercase())", input)
+        }
+        "Url/encode" => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("Url/encode missing input"));
+            format!(
+                "GeneratedValue::Text(generated_url_encode(&({}).text()))",
+                input
+            )
         }
         "List/append" => {
             let input =
@@ -1210,14 +1221,17 @@ mod tests {
     fn text_helper_calls_lower_without_generated_fallback() {
         let plan = boon_compiler::compile_source(
             "text_helpers.bn",
-            "document: Document/new(root: Element/stripe(items: LIST { TEXT {  Alpha  } |> Text/trim() |> Text/substring(start: 0, length: 5) TEXT { Alpha } |> Text/starts_with(prefix: TEXT { A }) LIST { TEXT { A } TEXT { B } } |> Text/join_lines() TEXT { A } |> Text/repeat(count: 2) }))\n",
+            "document: Document/new(root: Element/stripe(items: LIST { TEXT {  Alpha  } |> Text/trim() |> Text/substring(start: 0, length: 5) TEXT { Alpha } |> Text/starts_with(prefix: TEXT { A }) LIST { TEXT { A } TEXT { B } } |> Text/join_lines() TEXT { A } |> Text/repeat(count: 2) TEXT { A B } |> Url/encode() }))\n",
         );
         let module = generated_graph_module(&plan);
         assert!(!module.contains("unsupported library call Text/"));
         assert!(!module.contains("unsupported collection library call Text/"));
+        assert!(!module.contains("unsupported library call Url/"));
+        assert!(!module.contains("unsupported collection library call Url/"));
         assert!(module.contains(".trim()"));
         assert!(module.contains(".starts_with"));
         assert!(module.contains(".repeat(count)"));
+        assert!(module.contains("generated_url_encode"));
     }
 
     #[test]

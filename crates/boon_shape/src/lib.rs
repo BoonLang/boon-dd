@@ -225,7 +225,7 @@ impl ShapeContext {
             callee if is_element_call(callee) => Shape::Element,
             "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/substring"
-            | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
+            | "Text/trim" | "Text/uppercase" | "Url/encode" => text_call_shape(callee),
             "List/range" => Shape::List(Box::new(Shape::Number)),
             "Math/min" | "Math/round" | "Math/sum" | "Temperature/c_to_f" => Shape::Number,
             "Bool/and" | "Bool/not" | "Bool/or" | "Bool/xor" => {
@@ -394,7 +394,9 @@ impl ShapeContext {
             "Scene/new" => Shape::Scene,
             "Text/empty" | "Text/find" | "Text/from_number" | "Text/join" | "Text/join_lines"
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/starts_with"
-            | "Text/substring" | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
+            | "Text/substring" | "Text/trim" | "Text/uppercase" | "Url/encode" => {
+                text_call_shape(callee)
+            }
             "Math/min"
             | "Math/round"
             | "Math/sum"
@@ -820,5 +822,15 @@ mod tests {
             )])))
         );
         assert_eq!(report.definitions.get("scene"), Some(&Shape::Scene));
+    }
+
+    #[test]
+    fn checks_url_encode_shape() {
+        let parsed =
+            boon_syntax::parse_source("url_helpers.bn", "encoded: TEXT { A B } |> Url/encode()\n");
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        assert_eq!(report.definitions.get("encoded"), Some(&Shape::Text));
     }
 }

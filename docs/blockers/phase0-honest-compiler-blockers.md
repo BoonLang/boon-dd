@@ -182,6 +182,9 @@ schema_errors: []
   `Text/to_number` remains blocked because upstream examples use a `NaN` branch,
   which needs an honest number/tag union shape instead of being collapsed to a
   plain number.
+- Shape checking and generated DD render code now cover the pure URL text
+  helper `Url/encode` with deterministic UTF-8 percent encoding. This does not
+  cover router/navigation effects.
 - Shape checking and generated DD render code now cover sibling-repo boolean
   combinators `Bool/and`, `Bool/or`, and `Bool/xor` with explicit tag output.
 - Shape checking and generated DD render code now cover a bounded subset of
