@@ -224,7 +224,9 @@ impl ShapeContext {
             | "Text/append" | "Text/length" | "Text/repeat" | "Text/space" | "Text/substring"
             | "Text/trim" | "Text/uppercase" => text_call_shape(callee),
             "Math/sum" | "Temperature/c_to_f" => Shape::Number,
-            "Bool/not" => Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]),
+            "Bool/and" | "Bool/not" | "Bool/or" | "Bool/xor" => {
+                Shape::TagSet(vec!["True".to_owned(), "False".to_owned()])
+            }
             "List/append" => {
                 let item_shape =
                     match named_arg(args, "item").or_else(|| first_positional_arg(args)) {
@@ -336,7 +338,10 @@ impl ShapeContext {
             | "Number/percent_of_range"
             | "Number/scale_percent" => Shape::Number,
             "Timer/interval" | "Window/animation_frame" => Shape::SourceMarker,
-            "Bool/not"
+            "Bool/and"
+            | "Bool/not"
+            | "Bool/or"
+            | "Bool/xor"
             | "Number/less_than"
             | "Number/greater_than"
             | "Geometry/intersects"
@@ -603,5 +608,20 @@ mod tests {
         );
         assert_eq!(report.definitions.get("lines"), Some(&Shape::Text));
         assert_eq!(report.definitions.get("repeated"), Some(&Shape::Text));
+    }
+
+    #[test]
+    fn checks_bool_combinator_shapes() {
+        let parsed = boon_syntax::parse_source(
+            "bool_helpers.bn",
+            "both: True |> Bool/and(that: False)\neither: False |> Bool/or(that: True)\nonly_one: True |> Bool/xor(that: False)\n",
+        );
+        let hir = boon_hir::lower(&parsed);
+        let report = check_module(&hir);
+        assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+        let bool_shape = Shape::TagSet(vec!["True".to_owned(), "False".to_owned()]);
+        assert_eq!(report.definitions.get("both"), Some(&bool_shape));
+        assert_eq!(report.definitions.get("either"), Some(&bool_shape));
+        assert_eq!(report.definitions.get("only_one"), Some(&bool_shape));
     }
 }

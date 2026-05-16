@@ -362,7 +362,10 @@ fn call_graph_collection_code(
         | "List/retain"
         | "List/count"
         | "Temperature/c_to_f"
+        | "Bool/and"
         | "Bool/not"
+        | "Bool/or"
+        | "Bool/xor"
         | "Number/abs"
         | "Number/neg_abs"
         | "Number/max"
@@ -767,6 +770,18 @@ fn call_graph_value_code(
                 input
             )
         }
+        "Bool/and" => bool_combinator_call(graph, input, args, env, "&&", "Bool/and"),
+        "Bool/or" => bool_combinator_call(graph, input, args, env, "||", "Bool/or"),
+        "Bool/xor" => {
+            let left = input.unwrap_or_else(|| unsupported_value_code("Bool/xor missing input"));
+            let right = named_graph_arg_code(graph, args, "that", env)
+                .or_else(|| first_graph_arg_code(graph, args, env))
+                .unwrap_or_else(|| unsupported_value_code("Bool/xor missing that"));
+            format!(
+                "GeneratedValue::Tag((if ({}).truthy() ^ ({}).truthy() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+                left, right
+            )
+        }
         "Number/abs" => {
             let value = number_arg_code(graph, input, args, env, "value");
             format!("GeneratedValue::Number(({}).number().abs())", value)
@@ -836,6 +851,24 @@ fn number_arg_code(
         .or_else(|| named_graph_arg_code(graph, args, name, env))
         .or_else(|| first_graph_arg_code(graph, args, env))
         .unwrap_or_else(|| unsupported_value_code(&format!("missing numeric argument {name}")))
+}
+
+fn bool_combinator_call(
+    graph: &boon_dd::DdRenderGraph,
+    input: Option<String>,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, String>,
+    op: &str,
+    callee: &str,
+) -> String {
+    let left = input.unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing input")));
+    let right = named_graph_arg_code(graph, args, "that", env)
+        .or_else(|| first_graph_arg_code(graph, args, env))
+        .unwrap_or_else(|| unsupported_value_code(&format!("{callee} missing that")));
+    format!(
+        "GeneratedValue::Tag((if ({}).truthy() {} ({}).truthy() {{ \"True\" }} else {{ \"False\" }}).to_owned())",
+        left, op, right
+    )
 }
 
 fn compare_number_call(
@@ -1038,5 +1071,19 @@ mod tests {
         assert!(module.contains(".trim()"));
         assert!(module.contains(".starts_with"));
         assert!(module.contains(".repeat(count)"));
+    }
+
+    #[test]
+    fn bool_combinators_lower_without_generated_fallback() {
+        let plan = boon_compiler::compile_source(
+            "bool_helpers.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { True |> Bool/and(that: False) False |> Bool/or(that: True) True |> Bool/xor(that: False) }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(!module.contains("unsupported library call Bool/"));
+        assert!(!module.contains("unsupported collection library call Bool/"));
+        assert!(module.contains(".truthy() &&"));
+        assert!(module.contains(".truthy() ||"));
+        assert!(module.contains(".truthy() ^"));
     }
 }
