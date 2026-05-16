@@ -78,6 +78,9 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
 - `target/boon-artifacts/generated-crates.json` reports verdict `pass`: 22
   generated crates checked. The generated crate tests now replay the full
   parsed scenario protocol rather than only the first scenario step.
+- `target/boon-artifacts/verify-playgrounds.json` is refreshed and reports 22
+  examples through each manual-test surface: terminal, native app-window/WGPU,
+  and Firefox/browser.
 - `target/boon-artifacts/no-shortcuts-report.json` reports verdict `pass`: 0
   forbidden shortcut hits and 0 shortcut symbols in execution paths.
 - The generated host dispatch path no longer uses source-text hash fixture
@@ -88,6 +91,11 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
   passthrough values, or `GeneratedValue::Empty`. Those cases now panic in the
   generated crate instead of pretending unsupported compiler output has valid
   Boon semantics.
+- Generated render execution no longer chooses between top-level scenario-shaped
+  render pipelines with classifier helpers such as `count_sum_initial`,
+  `then_body_value`, `has_latest`, or `first_match_arm`. Code generation now
+  emits a single recursive Timely/Differential render-expression collection
+  lowering path for the current accepted corpus.
 - `examples/counter_hold/scenario.toml` is now exercised as a multi-step
   command/source protocol, including `enable_persistence`, source action, and
   `reload`. `examples/counter_hold/expected.render.json` now records the final
@@ -126,10 +134,11 @@ Error: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report
 - `target/boon-artifacts/lowering-coverage-report.json` reports verdict `fail`.
   It now checks 22 examples with 0 unsupported semantic nodes, all required sink
   families seen, 0 missing sink kinds, and no legacy limited render operations.
-  The remaining blocker is stricter: code generation still builds the executable
-  Timely/DD render pipeline from the render-expression program rather than fully
-  constructing every render/effect/persistence behavior from the expanded DD
-  graph IR nodes.
+  The remaining blocker is stricter: even after replacing scenario-shaped render
+  pipeline classifiers with recursive DD render-expression lowering, code
+  generation still builds the executable Timely/DD render pipeline from the
+  render-expression program rather than fully constructing every
+  render/effect/persistence behavior from the expanded DD graph IR nodes.
 - `target/boon-artifacts/prompt-audit-report.json` reports verdict `fail`: 7
   audit JSON files found, 0 missing, 0 schema errors, 14 hash mismatches, and
   17 open critical findings. The audit outputs are stale against the current

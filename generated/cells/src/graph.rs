@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
 #[allow(dead_code)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 enum GeneratedValue {
     Empty,
     Text(String),
@@ -194,6 +194,73 @@ fn source_id_for_path(path: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
+fn generated_source_event_value(event: &GeneratedSourceEvent) -> GeneratedValue {
+    match event {
+        GeneratedSourceEvent::Static { payload, .. }
+        | GeneratedSourceEvent::Dynamic { payload, .. } => generated_payload_value(payload),
+    }
+}
+
+#[allow(dead_code)]
+fn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
+    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__host_tick")
+}
+
+#[allow(dead_code)]
+fn generated_payload_value(payload: &GeneratedSourceEventPayload) -> GeneratedValue {
+    match payload {
+        GeneratedSourceEventPayload::EmptyRecord => GeneratedValue::Empty,
+        GeneratedSourceEventPayload::Text(text) => GeneratedValue::Text(text.clone()),
+        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Int(number)) => {
+            GeneratedValue::Number(*number)
+        }
+        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Float(number)) => {
+            GeneratedValue::Text(number.to_string())
+        }
+        GeneratedSourceEventPayload::Tag { name, payload } => GeneratedValue::Tag(match payload {
+            Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
+            None => name.0.clone(),
+        }),
+        GeneratedSourceEventPayload::Record(record) => GeneratedValue::Record(
+            record
+                .iter()
+                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))
+                .collect(),
+        ),
+        GeneratedSourceEventPayload::List(values) => {
+            GeneratedValue::List(values.iter().map(boon_value_to_generated).collect())
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn boon_value_to_generated(value: &boon_dd::BoonValue) -> GeneratedValue {
+    match value {
+        boon_dd::BoonValue::EmptyRecord => GeneratedValue::Empty,
+        boon_dd::BoonValue::Record(record) => GeneratedValue::Record(
+            record
+                .iter()
+                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))
+                .collect(),
+        ),
+        boon_dd::BoonValue::List(values) => {
+            GeneratedValue::List(values.iter().map(boon_value_to_generated).collect())
+        }
+        boon_dd::BoonValue::Text(text) => GeneratedValue::Text(text.clone()),
+        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Int(number)) => {
+            GeneratedValue::Number(*number)
+        }
+        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Float(number)) => {
+            GeneratedValue::Text(number.to_string())
+        }
+        boon_dd::BoonValue::Tag { name, payload } => GeneratedValue::Tag(match payload {
+            Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
+            None => name.0.clone(),
+        }),
+    }
+}
+
 pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHandles {
     let mut input = InputSession::<EncodedTime, (u64, GeneratedSourceEvent), Diff>::new();
     let mut probe = ProbeHandle::new();
@@ -203,11 +270,11 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
     let render_node = NodeId("DocumentText".to_owned());
     worker.dataflow::<EncodedTime, _, _>(|scope| {
         let events = input.to_collection(scope);
-        let rendered = events
-            .map(|_| ())
-            .count()
-            .filter(|(_key, count)| *count > 0)
-            .map(|_| (GeneratedValue::Text("A1=1".to_owned())).text());
+        let rendered = (events
+            .clone()
+            .map(|_| GeneratedValue::Text("A1=1".to_owned())))
+        .map(|pipe_input| pipe_input)
+        .map(|value| value.text());
         rendered
             .inspect(move |(text, time, diff)| {
                 if *diff > 0 {

@@ -11,7 +11,7 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("use std::sync::{Arc, Mutex};\n");
     code.push_str("use timely::dataflow::operators::probe::Handle as ProbeHandle;\n\n");
     code.push_str(
-        "#[allow(dead_code)]\n#[derive(Clone, Debug)]\nenum GeneratedValue {\n    Empty,\n    Text(String),\n    Number(i64),\n    Tag(String),\n    List(Vec<GeneratedValue>),\n    Record(Vec<(String, GeneratedValue)>),\n}\n\n",
+        "#[allow(dead_code)]\n#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]\nenum GeneratedValue {\n    Empty,\n    Text(String),\n    Number(i64),\n    Tag(String),\n    List(Vec<GeneratedValue>),\n    Record(Vec<(String, GeneratedValue)>),\n}\n\n",
     );
     code.push_str(
         "#[allow(dead_code)]\nimpl GeneratedValue {\n    fn text(self) -> String {\n        match self {\n            GeneratedValue::Text(text) => text,\n            GeneratedValue::Number(number) => number.to_string(),\n            GeneratedValue::Tag(tag) => tag,\n            GeneratedValue::List(values) => values.into_iter().map(GeneratedValue::text).collect::<Vec<_>>().join(\",\"),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Text\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Text\"),\n        }\n    }\n\n    fn number(self) -> i64 {\n        match self {\n            GeneratedValue::Number(number) => number,\n            GeneratedValue::Text(text) => text.parse::<i64>().unwrap_or_else(|error| panic!(\"generated DD render failed to parse Text as Number: {error}\")),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Number\"),\n            GeneratedValue::Tag(_) => panic!(\"generated DD render tried to coerce Tag to Number\"),\n            GeneratedValue::List(_) => panic!(\"generated DD render tried to coerce List to Number\"),\n            GeneratedValue::Record(_) => panic!(\"generated DD render tried to coerce Record to Number\"),\n        }\n    }\n\n    fn field(self, name: &str) -> GeneratedValue {\n        match self {\n            GeneratedValue::Record(fields) => fields.into_iter().find(|(field, _)| field == name).map(|(_, value)| value).unwrap_or_else(|| panic!(\"generated DD render missing record field {name}\")),\n            other => panic!(\"generated DD render tried to read field {name} from non-record value: {other:?}\"),\n        }\n    }\n\n    fn truthy(self) -> bool {\n        match self {\n            GeneratedValue::Tag(tag) => tag == \"True\",\n            GeneratedValue::Text(text) => !text.is_empty(),\n            GeneratedValue::Number(number) => number != 0,\n            GeneratedValue::List(values) => !values.is_empty(),\n            GeneratedValue::Record(fields) => !fields.is_empty(),\n            GeneratedValue::Empty => panic!(\"generated DD render tried to coerce Empty to Bool\"),\n        }\n    }\n}\n\n",
@@ -126,6 +126,9 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str("        other => other.to_owned(),\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");
+    code.push_str(
+        "#[allow(dead_code)]\nfn generated_source_event_value(event: &GeneratedSourceEvent) -> GeneratedValue {\n    match event {\n        GeneratedSourceEvent::Static { payload, .. }\n        | GeneratedSourceEvent::Dynamic { payload, .. } => generated_payload_value(payload),\n    }\n}\n\n#[allow(dead_code)]\nfn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {\n    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == \"__host_tick\")\n}\n\n#[allow(dead_code)]\nfn generated_payload_value(payload: &GeneratedSourceEventPayload) -> GeneratedValue {\n    match payload {\n        GeneratedSourceEventPayload::EmptyRecord => GeneratedValue::Empty,\n        GeneratedSourceEventPayload::Text(text) => GeneratedValue::Text(text.clone()),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        GeneratedSourceEventPayload::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        GeneratedSourceEventPayload::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n        GeneratedSourceEventPayload::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        GeneratedSourceEventPayload::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n    }\n}\n\n#[allow(dead_code)]\nfn boon_value_to_generated(value: &boon_dd::BoonValue) -> GeneratedValue {\n    match value {\n        boon_dd::BoonValue::EmptyRecord => GeneratedValue::Empty,\n        boon_dd::BoonValue::Record(record) => GeneratedValue::Record(\n            record\n                .iter()\n                .map(|(name, value)| (name.clone(), boon_value_to_generated(value)))\n                .collect(),\n        ),\n        boon_dd::BoonValue::List(values) => GeneratedValue::List(\n            values.iter().map(boon_value_to_generated).collect(),\n        ),\n        boon_dd::BoonValue::Text(text) => GeneratedValue::Text(text.clone()),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Int(number)) => GeneratedValue::Number(*number),\n        boon_dd::BoonValue::Number(boon_dd::BoonNumber::Float(number)) => GeneratedValue::Text(number.to_string()),\n        boon_dd::BoonValue::Tag { name, payload } => GeneratedValue::Tag(match payload {\n            Some(payload) => format!(\"{}({})\", name.0, boon_dd::value_to_text(payload)),\n            None => name.0.clone(),\n        }),\n    }\n}\n\n",
+    );
     code.push_str("pub fn build_dataflow(\n");
     code.push_str("    worker: &mut timely::worker::Worker,\n");
     code.push_str(") -> GeneratedGraphHandles {\n");
@@ -226,153 +229,154 @@ fn render_collection_from_program(program: &boon_dd::DdRenderProgram) -> String 
 }
 
 fn render_collection_from_expr(expr: &boon_dd::DdRenderExpr) -> String {
-    if let Some(initial) = count_sum_initial(expr) {
-        return format!(
-            "        let rendered = events.map(|_| ()).count().map(|(_key, count)| ({} + count as i64).to_string());\n",
-            initial
-        );
-    }
-    if let Some(value) = then_body_value(expr) {
-        let value = value_expr_code(value, &BTreeMap::new());
-        return format!(
-            "        let rendered = events.map(|_| ({}).text());\n",
-            value
-        );
-    }
-    if has_latest(expr) {
-        return "        let rendered = events.map(|(sequence, event)| ((), (sequence, boon_dd::generated_source_event_text(&event)))).reduce(|_, inputs, output| {\n            if let Some(((_sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value);\n".to_owned();
-    }
-    if let Some((tag, value)) = first_match_arm(expr) {
-        let value = value_expr_code(value, &BTreeMap::new());
-        return format!(
-            "        let rendered = events.filter(|(_sequence, event)| boon_dd::generated_source_event_text(event) == {:?}).map(|_| ({}).text());\n",
-            tag, value
-        );
-    }
-    let value = value_expr_code(expr, &BTreeMap::new());
+    let value = value_collection_code(expr, &BTreeMap::new());
     format!(
-        "        let rendered = events.map(|_| ()).count().filter(|(_key, count)| *count > 0).map(|_| ({}).text());\n",
+        "        let rendered = {}.map(|value| value.text());\n",
         value
     )
 }
 
-fn count_sum_initial(expr: &boon_dd::DdRenderExpr) -> Option<i64> {
+fn value_collection_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>) -> String {
     match expr {
-        boon_dd::DdRenderExpr::Pipe { input, stage } if call_callee(stage, "Math/sum") => Some(0),
-        boon_dd::DdRenderExpr::Pipe { input, stage }
-            if matches!(stage.as_ref(), boon_dd::DdRenderExpr::Hold { .. }) =>
-        {
-            Some(number_literal(input).unwrap_or(0))
+        boon_dd::DdRenderExpr::Source | boon_dd::DdRenderExpr::Path(_) => {
+            "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(_sequence, event)| generated_source_event_value(&event))"
+                .to_owned()
         }
         boon_dd::DdRenderExpr::Pipe { input, stage } => {
-            count_sum_initial(stage).or_else(|| count_sum_initial(input))
+            let input = value_collection_code(input, env);
+            stage_collection_code(stage, &input, env)
         }
-        _ => None,
-    }
-}
-
-fn then_body_value(expr: &boon_dd::DdRenderExpr) -> Option<&boon_dd::DdRenderExpr> {
-    match expr {
-        boon_dd::DdRenderExpr::Then { body } => body.last(),
-        boon_dd::DdRenderExpr::Pipe { stage, .. } => then_body_value(stage),
-        _ => None,
-    }
-}
-
-fn has_latest(expr: &boon_dd::DdRenderExpr) -> bool {
-    walk_render_expr(expr, &mut |value| {
-        matches!(value, boon_dd::DdRenderExpr::Latest(_))
-    })
-}
-
-fn first_match_arm(expr: &boon_dd::DdRenderExpr) -> Option<(&str, &boon_dd::DdRenderExpr)> {
-    match expr {
-        boon_dd::DdRenderExpr::Match { arms, .. } => arms
-            .iter()
-            .find(|arm| arm.pattern != "__")
-            .map(|arm| (arm.pattern.as_str(), &arm.value)),
-        boon_dd::DdRenderExpr::Record(fields)
-        | boon_dd::DdRenderExpr::Constructor { fields, .. } => fields
-            .iter()
-            .find_map(|field| first_match_arm(&field.value)),
-        boon_dd::DdRenderExpr::List(values)
-        | boon_dd::DdRenderExpr::Block(values)
-        | boon_dd::DdRenderExpr::Latest(values)
-        | boon_dd::DdRenderExpr::Then { body: values }
-        | boon_dd::DdRenderExpr::Hold { body: values, .. } => {
-            values.iter().find_map(first_match_arm)
+        boon_dd::DdRenderExpr::Then { body } => {
+            let value = body
+                .last()
+                .map(|value| value_expr_code(value, env))
+                .unwrap_or_else(|| unsupported_value_code("empty THEN body"));
+            format!("events.clone().map(|_| {value})")
         }
-        boon_dd::DdRenderExpr::Call { args, .. } => args.iter().find_map(|arg| match arg {
-            boon_dd::DdRenderArg::Positional(value) | boon_dd::DdRenderArg::Named { value, .. } => {
-                first_match_arm(value)
-            }
-        }),
-        boon_dd::DdRenderExpr::Pipe { input, stage }
-        | boon_dd::DdRenderExpr::BinaryAdd {
-            left: input,
-            right: stage,
-        } => first_match_arm(input).or_else(|| first_match_arm(stage)),
-        boon_dd::DdRenderExpr::Missing
-        | boon_dd::DdRenderExpr::Path(_)
-        | boon_dd::DdRenderExpr::Number(_)
-        | boon_dd::DdRenderExpr::Source
-        | boon_dd::DdRenderExpr::Skip
+        boon_dd::DdRenderExpr::Hold { body, binder } => {
+            hold_collection_code("events.clone().map(|_| GeneratedValue::Number(0))", body, binder, env)
+        }
+        boon_dd::DdRenderExpr::Latest(_values) => latest_collection_code(),
+        boon_dd::DdRenderExpr::Match { arms, .. } => {
+            stage_match_collection_code(
+                "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(_sequence, event)| generated_source_event_value(&event))",
+                arms,
+                env,
+            )
+        }
+        boon_dd::DdRenderExpr::Missing | boon_dd::DdRenderExpr::Skip => {
+            let value = value_expr_code(expr, env);
+            format!("events.clone().map(|_| {value})")
+        }
+        boon_dd::DdRenderExpr::Number(_)
         | boon_dd::DdRenderExpr::Tag(_)
-        | boon_dd::DdRenderExpr::Text(_) => None,
+        | boon_dd::DdRenderExpr::Text(_)
+        | boon_dd::DdRenderExpr::Record(_)
+        | boon_dd::DdRenderExpr::List(_)
+        | boon_dd::DdRenderExpr::Block(_)
+        | boon_dd::DdRenderExpr::Call { .. }
+        | boon_dd::DdRenderExpr::Constructor { .. }
+        | boon_dd::DdRenderExpr::BinaryAdd { .. } => {
+            let value = value_expr_code(expr, env);
+            format!("events.clone().map(|_| {value})")
+        }
     }
 }
 
-fn call_callee(expr: &boon_dd::DdRenderExpr, expected: &str) -> bool {
-    matches!(expr, boon_dd::DdRenderExpr::Call { callee, .. } if callee == expected)
-}
-
-fn number_literal(expr: &boon_dd::DdRenderExpr) -> Option<i64> {
-    match expr {
-        boon_dd::DdRenderExpr::Number(number) => number.parse().ok(),
-        _ => None,
+fn stage_collection_code(
+    stage: &boon_dd::DdRenderExpr,
+    input: &str,
+    env: &BTreeMap<String, String>,
+) -> String {
+    match stage {
+        boon_dd::DdRenderExpr::Call { callee, args } => {
+            call_collection_code(callee, input, args, env)
+        }
+        boon_dd::DdRenderExpr::Then { body } => {
+            let value = body
+                .last()
+                .map(|value| value_expr_code(value, env))
+                .unwrap_or_else(|| unsupported_value_code("empty THEN body"));
+            format!("({input}).map(|_| {value})")
+        }
+        boon_dd::DdRenderExpr::Hold { body, binder } => {
+            hold_collection_code(input, body, binder, env)
+        }
+        boon_dd::DdRenderExpr::Latest(_values) => latest_collection_code(),
+        boon_dd::DdRenderExpr::Match { arms, .. } => stage_match_collection_code(input, arms, env),
+        _ => {
+            let value = value_expr_code(stage, env);
+            format!("({input}).map(|_| {value})")
+        }
     }
 }
 
-fn walk_render_expr<F>(expr: &boon_dd::DdRenderExpr, predicate: &mut F) -> bool
-where
-    F: FnMut(&boon_dd::DdRenderExpr) -> bool,
-{
-    if predicate(expr) {
-        return true;
+fn call_collection_code(
+    callee: &str,
+    input: &str,
+    args: &[boon_dd::DdRenderArg],
+    env: &BTreeMap<String, String>,
+) -> String {
+    match callee {
+        "Math/sum" => {
+            format!(
+                "({input}).map(|_| ()).count().map(|(_key, count)| GeneratedValue::Number(count as i64))"
+            )
+        }
+        "Timer/interval" | "Window/animation_frame" => input.to_owned(),
+        "Document/new" | "Scene/new" | "Text/from_number" | "Text/append" | "Text/join"
+        | "Text/uppercase" | "List/append" | "List/map" | "List/retain" | "List/count"
+        | "Temperature/c_to_f" | "Bool/not" => {
+            let mut nested_env = env.clone();
+            nested_env.insert("pipe_input".to_owned(), "pipe_input".to_owned());
+            let value = call_value_code(callee, Some("pipe_input".to_owned()), args, &nested_env);
+            format!("({input}).map(|pipe_input| {value})")
+        }
+        _ => {
+            let value =
+                unsupported_value_code(&format!("unsupported collection library call {callee}"));
+            format!("({input}).map(|_| {value})")
+        }
     }
-    match expr {
-        boon_dd::DdRenderExpr::Record(fields)
-        | boon_dd::DdRenderExpr::Constructor { fields, .. } => fields
-            .iter()
-            .any(|field| walk_render_expr(&field.value, predicate)),
-        boon_dd::DdRenderExpr::List(values)
-        | boon_dd::DdRenderExpr::Block(values)
-        | boon_dd::DdRenderExpr::Latest(values)
-        | boon_dd::DdRenderExpr::Then { body: values }
-        | boon_dd::DdRenderExpr::Hold { body: values, .. } => values
-            .iter()
-            .any(|value| walk_render_expr(value, predicate)),
-        boon_dd::DdRenderExpr::Call { args, .. } => args.iter().any(|arg| match arg {
-            boon_dd::DdRenderArg::Positional(value) | boon_dd::DdRenderArg::Named { value, .. } => {
-                walk_render_expr(value, predicate)
-            }
-        }),
-        boon_dd::DdRenderExpr::Pipe { input, stage }
-        | boon_dd::DdRenderExpr::BinaryAdd {
-            left: input,
-            right: stage,
-        } => walk_render_expr(input, predicate) || walk_render_expr(stage, predicate),
-        boon_dd::DdRenderExpr::Match { arms, .. } => arms
-            .iter()
-            .any(|arm| walk_render_expr(&arm.value, predicate)),
-        boon_dd::DdRenderExpr::Missing
-        | boon_dd::DdRenderExpr::Path(_)
-        | boon_dd::DdRenderExpr::Number(_)
-        | boon_dd::DdRenderExpr::Source
-        | boon_dd::DdRenderExpr::Skip
-        | boon_dd::DdRenderExpr::Tag(_)
-        | boon_dd::DdRenderExpr::Text(_) => false,
-    }
+}
+
+fn hold_collection_code(
+    input: &str,
+    body: &[boon_dd::DdRenderExpr],
+    binder: &str,
+    env: &BTreeMap<String, String>,
+) -> String {
+    let next = body
+        .last()
+        .map(|value| {
+            let mut nested_env = env.clone();
+            nested_env.insert(
+                binder.to_owned(),
+                "GeneratedValue::Number(count as i64 - 1)".to_owned(),
+            );
+            value_expr_code(value, &nested_env)
+        })
+        .unwrap_or_else(|| "GeneratedValue::Number(count as i64)".to_owned());
+    format!("({input}).map(|_| ()).count().map(move |(_key, count)| {next})")
+}
+
+fn latest_collection_code() -> String {
+    "events.clone().filter(|(_sequence, event)| !generated_event_is_host_tick(event)).map(|(sequence, event)| ((), (sequence, generated_source_event_value(&event)))).reduce(|_, inputs, output| {\n            if let Some(((sequence, value), _diff)) = inputs.iter().max_by_key(|((sequence, _), _)| *sequence) {\n                let _ = sequence;\n                output.push((value.clone(), 1));\n            }\n        }).map(|(_key, value)| value)".to_owned()
+}
+
+fn stage_match_collection_code(
+    input: &str,
+    arms: &[boon_dd::DdRenderMatchArm],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let Some(arm) = arms.iter().find(|arm| arm.pattern != "__") else {
+        return format!("({input}).filter(|_| false)");
+    };
+    let value = value_expr_code(&arm.value, env);
+    format!(
+        "({input}).filter(|value| value.clone().text() == {}).map(|_| {value})",
+        quote(&arm.pattern)
+    )
 }
 
 fn value_expr_code(expr: &boon_dd::DdRenderExpr, env: &BTreeMap<String, String>) -> String {
