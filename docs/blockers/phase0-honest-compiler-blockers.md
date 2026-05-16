@@ -186,6 +186,11 @@ schema_errors: []
   structured generated outputs across terminal, Firefox/WASM, and native proof
   artifacts. Cross-host parity reports 22 native structured outputs and no
   terminal/browser or terminal/native mismatches.
+- The deterministic `scenario-protocol` gate now compares each example's final
+  generated `SmokeOutput` against `examples/<example>/expected.render.json` in
+  addition to preserving ordered source/command events and per-step expected
+  text. The refreshed report shows 0 scenario failures, 2 commands preserved,
+  and 0 structured final-output mismatches.
 
 ## Current Blockers
 

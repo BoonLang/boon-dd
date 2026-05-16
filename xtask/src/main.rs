@@ -2285,6 +2285,15 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
         match fs::read_to_string(root.join(&example.scenario)) {
             Ok(text) => match boon_runtime_host::parse_scenario_result(&text) {
                 Ok(scenario) => {
+                    let expected_output = fs::read_to_string(root.join(&example.expected_render))
+                        .with_context(|| {
+                            format!("missing expected render {}", example.expected_render)
+                        })
+                        .and_then(|text| {
+                            serde_json::from_str::<boon_dd::SmokeOutput>(&text).with_context(|| {
+                                format!("invalid expected render {}", example.expected_render)
+                            })
+                        });
                     let commands = scenario
                         .steps
                         .iter()
@@ -2337,6 +2346,8 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                         "matches_expected": matches_expected,
                                         "render_command_count": step.output.render.len(),
                                         "monitor_record_count": step.output.monitor.len(),
+                                        "effect_command_count": step.output.effects.len(),
+                                        "persistence_command_count": step.output.persistence.len(),
                                     })
                                 })
                                 .collect::<Vec<_>>()
@@ -2348,11 +2359,44 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                             }));
                             Vec::new()
                         });
+                    let structured_final = execution
+                        .as_ref()
+                        .and_then(|(_name, steps)| steps.last())
+                        .map(|step| &step.output);
+                    let structured_final_matches_expected = match (
+                        expected_output.as_ref(),
+                        structured_final,
+                    ) {
+                        (Ok(expected), Some(actual)) => {
+                            let matches = actual == expected;
+                            if !matches {
+                                failures.push(serde_json::json!({
+                                        "example": example.id,
+                                        "expected_render": example.expected_render,
+                                        "expected_output": expected,
+                                        "actual_output": actual,
+                                        "error": "generated final SmokeOutput does not match expected render artifact",
+                                    }));
+                            }
+                            Some(matches)
+                        }
+                        (Err(error), _) => {
+                            failures.push(serde_json::json!({
+                                "example": example.id,
+                                "expected_render": example.expected_render,
+                                "error": format!("{error:#}"),
+                            }));
+                            None
+                        }
+                        (Ok(_), None) => None,
+                    };
                     cases.push(serde_json::json!({
                         "example": example.id,
                         "steps": scenario.steps.len(),
                         "actions": scenario.steps.iter().map(|step| step.actions.len()).sum::<usize>(),
                         "commands": commands,
+                        "expected_render": example.expected_render,
+                        "structured_final_matches_expected": structured_final_matches_expected,
                         "generated_execution_steps": execution_steps,
                     }));
                 }
