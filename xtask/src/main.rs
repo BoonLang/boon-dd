@@ -1136,27 +1136,86 @@ fn required_examples_from_disk() -> Result<Vec<String>> {
 
 fn verify_honest_compiler(_args: &[String]) -> Result<serde_json::Value> {
     let shortcuts = scan_honest_shortcuts()?;
+    let deterministic =
+        match verify_honesty_deterministic(&["--format".to_owned(), "json".to_owned()]) {
+            Ok(report) => report,
+            Err(error) => serde_json::json!({
+                "verdict": "fail",
+                "error": format!("{error:#}"),
+                "artifact": "target/boon-artifacts/honesty-deterministic-report.json",
+            }),
+        };
+    let prompt_pack = if deterministic["verdict"].as_str() == Some("pass") {
+        match write_honest_compiler_prompts(&["--format".to_owned(), "json".to_owned()]) {
+            Ok(report) => report,
+            Err(error) => serde_json::json!({
+                "verdict": "fail",
+                "error": format!("{error:#}"),
+                "artifact": "target/boon-artifacts/honest-compiler-prompt-pack.json",
+            }),
+        }
+    } else {
+        serde_json::json!({
+            "verdict": "skipped",
+            "reason": "deterministic honesty failed",
+        })
+    };
+    let prompt_audit = if deterministic["verdict"].as_str() == Some("pass")
+        && prompt_pack["verdict"].as_str() == Some("pass")
+    {
+        match verify_prompt_audit(&["--format".to_owned(), "json".to_owned()]) {
+            Ok(report) => report,
+            Err(error) => serde_json::json!({
+                "verdict": "fail",
+                "error": format!("{error:#}"),
+                "artifact": "target/boon-artifacts/prompt-audit-report.json",
+            }),
+        }
+    } else {
+        serde_json::json!({
+            "verdict": "skipped",
+            "reason": "deterministic honesty or prompt pack failed",
+        })
+    };
+
+    let mut blockers = Vec::new();
+    if shortcuts["hit_count"].as_u64().unwrap_or(0) != 0 {
+        blockers.push("shortcut symbols remain in compiler/runtime/codegen execution paths");
+    }
+    if deterministic["verdict"].as_str() != Some("pass") {
+        blockers.push("deterministic honesty verification is not passing");
+    }
+    if prompt_pack["verdict"].as_str() != Some("pass") {
+        blockers.push("honest compiler prompt pack could not be refreshed");
+    }
+    if prompt_audit["verdict"].as_str() != Some("pass") {
+        blockers.push("prompt-audit verification is not passing");
+    }
+    let verdict = if blockers.is_empty() { "pass" } else { "fail" };
     let details = serde_json::json!({
-        "verdict": "fail",
-        "phase": "phase0",
+        "verdict": verdict,
+        "phase": if verdict == "pass" { "complete" } else { "blocked" },
         "repo_state": repo_state()?,
         "plan": HONEST_COMPILER_PLAN,
-        "blockers": [
-            "parser AST exists for the current corpus and compiler compatibility graph construction consumes it",
-            "HIR and shape checking have initial AST-derived reports, but resolver/type coverage is incomplete",
-            "compiler now consumes AST/HIR and emits reportable semantic IR/DD graph IR, but lowering coverage is incomplete",
-            "generated code and backend smoke paths execute generated Timely/DD crates from render-expression IR, but complete render/effect/persistence protocols are not lowered yet",
-            "scenario parser models command actions, but runtime command/effect execution is incomplete",
-            "full deterministic and prompt-audit verification are not implemented yet"
-        ],
+        "blockers": blockers,
         "shortcut_scan": shortcuts,
-        "required_next_command": "cargo xtask verify-no-shortcuts --format json",
+        "deterministic_honesty": deterministic,
+        "prompt_pack": prompt_pack,
+        "prompt_audit": prompt_audit,
+        "required_next_command": if verdict == "pass" {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!("cargo xtask verify all --format json")
+        },
     });
     let artifact = write_artifact("honest-compiler-report.json", &details)?;
-    bail!(
-        "honest compiler is not implemented yet; see {}",
-        artifact.display()
-    )
+    if verdict != "pass" {
+        bail!(
+            "honest compiler is not implemented yet; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
 }
 
 fn verify_no_shortcuts(_args: &[String]) -> Result<serde_json::Value> {
