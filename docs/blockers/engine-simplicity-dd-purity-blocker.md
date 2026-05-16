@@ -6,8 +6,8 @@ Plan path: `BOON_DD_ENGINE_SIMPLICITY_PLAN.md`
 
 ## Summary
 
-The engine-simplicity goal is blocked because the current implementation still
-has generic Rust value evaluators on execution paths. This violates the plan's
+The engine-simplicity goal is blocked because generated Rust still carries
+generic `DdValue` evaluators on execution paths. This violates the plan's
 non-negotiable requirement that terminal, native, and browser hosts inject
 facts and drain/render outputs without executing Boon semantics, and that
 stateful Boon semantics lower to explicit Timely/Differential graph state.
@@ -17,40 +17,30 @@ until these generic evaluators are removed or replaced with typed DD lowerings.
 
 ## Checkpoint Git State
 
-HEAD before this checkpoint commit:
+Current HEAD:
 
 ```text
-7974ef7af3faa7a0495dd1190617781a9a7fee32
+173ed5996dc4adf43eab599a5ecabfebe1cafac5
 ```
 
-Prepared checkout changes:
+Current dirty status:
 
 ```text
-M Cargo.lock
-M crates/boon_examples/Cargo.toml
-M crates/boon_examples/src/lib.rs
 M crates/boon_runtime_host/src/lib.rs
-M crates/boon_wasm_smoke/Cargo.toml
-M crates/boon_wasm_smoke/src/lib.rs
 M docs/blockers/engine-simplicity-dd-purity-blocker.md
-M generated/*/Cargo.toml
-M xtask/Cargo.toml
-M xtask/src/main.rs
 ```
 
-The prepared changes remove the checked generated fixture registry from
-`crates/boon_examples`, remove xtask's dependency on that registry, remove the
-browser/WASM generated-crate fixture matrix, and route deterministic scenario
-proof through compiled graph sessions for all manifest examples. The checked
-generated crates now include a local empty `[workspace]` table so
-`cargo xtask verify-generated-crates --format json` can run each generated
-crate by manifest path without inheriting the parent workspace.
+The previous checkpoint removed fixture dispatch from `boon_examples`,
+xtask, and browser/WASM proof. The current dirty change removes the
+`RuntimeValue` DD tuple path from `boon_runtime_host` and replaces it with
+typed DD collections for text, number, and bool values plus source-id-filtered
+source streams. Runtime-host scanner hits for `RuntimeValue`,
+`runtime_value`, and `runtime_call_value` are now zero.
 
 After tightening the scan to include `crates/boon_wasm_smoke`, fixture dispatch
 now passes with zero hits. Deterministic honesty verification also passes.
-The DD purity blocker remains: `boon_runtime_host` still uses `RuntimeValue`,
-and `boon_codegen_rust` plus the checked generated crates still emit `DdValue`
-semantics.
+The DD purity blocker remains: `boon_codegen_rust` plus the checked generated
+crates still emit `DdValue` semantics.
 
 ## Failing Command
 
@@ -80,31 +70,31 @@ Current report summary:
 
 ```text
 dd_purity verdict: blocked
-dd_purity failure count: 351
-dd_purity categories: generic_dd_value_semantics=201, host_runtime_semantics=150
+dd_purity failure count: 201
+dd_purity categories: generic_dd_value_semantics=201
 
 dd_stateful_lowering verdict: blocked
-dd_stateful_lowering failure count: 354
-dd_stateful_lowering categories: generic_value_evaluator=201, host_semantics=152, global_count_state=1
+dd_stateful_lowering failure count: 201
+dd_stateful_lowering categories: generic_value_evaluator=201
 ```
 
 Relevant artifact:
 
 ```text
 target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
-sha256: 08ae88649e3064bad9d3ba0a4ab0afa6e54fec5f96744d3c63c78e4b738a894e
+sha256: b7dc54aa666b9b750593bb9cebc2f8fc09c3003b9006eac826e052ed88336da4
 
 target/boon-artifacts/engine-simplicity/dd-purity-report.json
-sha256: dba326ebfc119c826293992581a5546bddf2252eda38e962838ae2b1c730ee7b
+sha256: c53be71aa10e8f1e74ff0abcecf9eb6f36897639c84313e20ebd3cb42591395f
 
 target/boon-artifacts/engine-simplicity/no-fixture-dispatch-report.json
-sha256: 0ee40a9ece790976099fd7d4bc24f7ac4acb2db683b339cad75aff8ffdf16fa9
+sha256: afc60fe3da4cf0d05438d0d7b22df5a52a854e8b65d421a42737ca644f63adf5
 
 target/boon-artifacts/engine-simplicity/complexity-report.json
-sha256: 5c77afe6795bf80bcd4906ae36bea30eae786a7ed668e086a7d10e3eb81f675a
+sha256: 6d2bddcebc3790bf5d7b2f80c8f679aaa60a4bbbb7e73cf5280ab2fa6389394b
 
 target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
-sha256: 33aa5631fa3de4fd70efa02af63776f170d7bf32256ae4ba5942f6af4852ac11
+sha256: f45479ada56056a8b6e554f580b308a10f70454a11ce282a210fbf2a29468eb7
 ```
 
 Related passing artifacts from the same checkout:
@@ -117,22 +107,22 @@ target/boon-artifacts/generated-crates.json
 sha256: 1b1538abac12170b00ff2dcb1c1c22ed4f6809fb6f224d2e318409044723c9fc
 
 target/boon-artifacts/engine-simplicity/prompt-audit-report.json
-sha256: 8fed33566d86d6c58ab143c5c9b084fd31dc938918ccd90b74163e0b2b51fe0d
+sha256: 7147fa3f0e6e0ec8c14a5f08134e82340b62a3612a95bce719410ad9cd821f78
 
 target/boon-artifacts/honest-compiler-report.json
-sha256: 3d6ae0e0101d56d3427319f0da867e399211ed9606efc5755d3ed3d28629afed
+sha256: 30bca7f83de9cfd602c07bbe01d1041504e83d472a441068194f5ed845b575be
 
 target/boon-artifacts/honesty-deterministic-report.json
-sha256: fe733750778fb933d3e38470ad323f2822e64b5482dbc237d8044f9760e1644d
+sha256: f74561a3a782a352fec45a76e234a888a4a9b8ccaaedcbb4b329feb753cd8af2
 
 target/boon-artifacts/prompt-audit-report.json
-sha256: 030458b85c1b89a360dba9e051f15226a70a5abd5275dc0e059f766a906cf775
+sha256: 996019c659735df91243af175ff435f3a4b863a37a6c4c7a1c6380e45fce5128
 
 target/boon-artifacts/verify-report.json
-sha256: 433e3e011de754e3ae01d807ff669bdc287b2acdada07c3e873f0c09f7de5329
+sha256: ef61461dda815da926e0f74eeb2b847611bdf8e286637a52df07a28afcbd7d12
 
 target/boon-artifacts/success.json
-sha256: 90f2dc44c741e48bdb94501001c3dc86f88a245066260f1f449701f0510e5197
+sha256: 8c0b3a10c15522148146c8f78d503bca33e3cb148472f7edee4e8e65abd395e5
 ```
 
 ## Concrete Gates Rechecked
@@ -175,6 +165,20 @@ cargo xtask verify-honesty-deterministic --format json
 
 Result: pass. `host_semantics_violations: 0`.
 
+```bash
+cargo xtask verify-wasm-dd --required --browser firefox
+```
+
+Result: pass. The xtask Firefox launcher wraps the actual browser process with
+`cosmic-background-launch --workspace boon-dd -- ...`.
+
+```bash
+cargo xtask verify-playgrounds --format json
+```
+
+Result: pass. `browser-playground-result.json` contains
+`wasm_compiled_manifest` for all 22 examples.
+
 The remaining failing or blocked commands are purity, stateful-lowering,
 prompt-audit, honest-compiler, and aggregate commands:
 
@@ -208,14 +212,14 @@ verify-engine-prompt-audit
 verify-engine-simplicity
 ```
 
-The latest aggregate `success.json` was refreshed after the browser/WASM matrix
-removal and after generated crates were made standalone workspaces. It is
-current evidence for the blocked state, not a success artifact. It reports:
+The latest aggregate `success.json` was refreshed after the runtime-host
+typed-collection change. It is current evidence for the blocked state, not a
+success artifact. It reports:
 
 ```text
 success: false
 engine_simplicity.fixture_dispatch_paths: 0
-engine_simplicity.stateful_lowering_shortcuts: 354
+engine_simplicity.stateful_lowering_shortcuts: 201
 engine_simplicity.dd_purity: blocked
 ```
 
@@ -231,15 +235,6 @@ jq '{verdict, blockers, hit_count:.evidence.hit_count, first_failures:.failures[
 Representative deterministic hits:
 
 ```text
-crates/boon_runtime_host/src/lib.rs:16
-enum RuntimeValue {
-
-crates/boon_runtime_host/src/lib.rs:711
-fn runtime_value(...)
-
-crates/boon_runtime_host/src/lib.rs:827
-fn runtime_call_value(...)
-
 crates/boon_codegen_rust/src/lib.rs:10
 use boon_dd::{..., DdValue, ...}
 
@@ -257,13 +252,12 @@ The current runtime can build a long-lived Timely worker and the generated
 artifact freshness/stress gates can pass, but the semantic path is still too
 generic:
 
-- `crates/boon_runtime_host/src/lib.rs` contains `RuntimeValue`,
-  `runtime_value`, and `runtime_call_value`, so a runtime host can recursively
-  evaluate DD render graph nodes and Boon library calls as Rust values.
+- `crates/boon_runtime_host/src/lib.rs` no longer contains `RuntimeValue`,
+  `runtime_value`, or `runtime_call_value`. It now builds typed DD collections
+  for runtime-host text/number/bool paths, but this is only a partial step.
 - `crates/boon_wasm_smoke/src/lib.rs` no longer contains the generated fixture
-  matrix, but its compiled-manifest proof still routes through
-  `boon_runtime_host` and therefore inherits the same `RuntimeValue` execution
-  path until the runtime is made typed-DD-only.
+  matrix, and its compiled-manifest proof still passes through Firefox after
+  the runtime-host typed-collection change.
 - `crates/boon_codegen_rust/src/lib.rs` emits `DdValue` based list, text,
   record, number, boolean, and match semantics directly into generated Rust
   expressions.
@@ -284,31 +278,30 @@ Fix in this repo. No external dependency pin or fork decision is needed yet.
 
 The next implementation decision is the internal lowering boundary:
 
-1. Remove `RuntimeValue` and recursive `runtime_value`/`runtime_call_value`
-   from execution paths. Runtime hosts should instantiate a compiled graph
-   factory and submit typed source facts only.
-2. Replace shared `DdValue` expression lowering with typed DD node lowerings
+1. Replace shared `DdValue` expression lowering with typed DD node lowerings
    for each accepted Boon operation. Static literals may become typed constant
    collections, but dynamic semantics must be expressed as collections,
    arrangements, reductions, joins, or generated typed operators with declared
    source/owner/generation keys.
-3. Lower list map/retain/count/latest, HOLD, LATEST, text input state, timers,
+2. Lower list map/retain/count/latest, HOLD, LATEST, text input state, timers,
    and command acknowledgements as keyed DD state. Do not use host `Vec`
    operations as the execution path for list semantics.
-4. Add negative samples that mutate source ids, owner keys, generations, and
+3. Add negative samples that mutate source ids, owner keys, generations, and
    stale generated artifacts and prove the relevant gates fail.
-5. Rerun `cargo xtask write-generated-artifacts --format json`, then
+4. Rerun `cargo xtask write-generated-artifacts --format json`, then
    `cargo xtask verify all --format json`.
 
 ## Smallest Safe Next Step
 
 Start with a narrow counter plus two-source routing slice:
 
-- introduce a typed value/lowering plan in the compiler IR for source id,
-  owner key, generation, number, text, and render text patch output;
-- make `boon_runtime_host` execute only that typed graph path without
-  `RuntimeValue`;
-- update `verify-dd-stateful-lowering` so the counter/two-source slice must
-  pass and the remaining unsupported operations fail compilation with structured
-  diagnostics rather than falling back to `DdValue`;
-- only then broaden the typed lowering table to list/text/library operations.
+- replace the `DdValue` codegen path in `crates/boon_codegen_rust/src/lib.rs`
+  with typed generated DD collections for source id, owner key, generation,
+  number, text, bool/tag, and render text patch output;
+- regenerate `generated/*/src/graph.rs` so checked generated crates no longer
+  import or emit `DdValue`;
+- update generated crate tests to prove the typed generated graph path still
+  executes all 22 manifest scenarios;
+- only then broaden the typed lowering table to list/text/library operations
+  until `verify-dd-purity` and `verify-dd-stateful-lowering` both reach zero
+  hits.

@@ -12,66 +12,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum RuntimeValue {
-    Empty,
-    Text(String),
-    Number(i64),
-    Tag(String),
-    List(Vec<RuntimeValue>),
-    Record(Vec<(String, RuntimeValue)>),
-}
-
-impl RuntimeValue {
-    fn text(self) -> String {
-        match self {
-            RuntimeValue::Text(text) => text,
-            RuntimeValue::Number(number) => number.to_string(),
-            RuntimeValue::Tag(tag) => tag,
-            RuntimeValue::List(values) => values
-                .into_iter()
-                .map(RuntimeValue::text)
-                .collect::<Vec<_>>()
-                .join(","),
-            RuntimeValue::Empty => String::new(),
-            RuntimeValue::Record(_) => String::new(),
-        }
-    }
-
-    fn number(self) -> i64 {
-        match self {
-            RuntimeValue::Number(number) => number,
-            RuntimeValue::Text(text) => text.parse::<i64>().unwrap_or_default(),
-            RuntimeValue::Tag(tag) => tag.parse::<i64>().unwrap_or_default(),
-            RuntimeValue::List(values) => values.len() as i64,
-            RuntimeValue::Record(fields) => fields.len() as i64,
-            RuntimeValue::Empty => 0,
-        }
-    }
-
-    fn field(self, name: &str) -> RuntimeValue {
-        match self {
-            RuntimeValue::Record(fields) => fields
-                .into_iter()
-                .find(|(field, _)| field == name)
-                .map(|(_, value)| value)
-                .unwrap_or(RuntimeValue::Empty),
-            _ => RuntimeValue::Empty,
-        }
-    }
-
-    fn truthy(self) -> bool {
-        match self {
-            RuntimeValue::Tag(tag) => matches!(tag.as_str(), "True" | "true" | "Some"),
-            RuntimeValue::Text(text) => !text.is_empty() && text != "False" && text != "false",
-            RuntimeValue::Number(number) => number != 0,
-            RuntimeValue::List(values) => !values.is_empty(),
-            RuntimeValue::Record(fields) => !fields.is_empty(),
-            RuntimeValue::Empty => false,
-        }
-    }
-}
-
 pub fn run_compiled_source_scenario(
     source_path: impl Into<String>,
     source_text: impl Into<String>,
@@ -388,9 +328,9 @@ impl CompiledGraphSession {
 
         worker.dataflow::<EncodedTime, _, _>(|scope| {
             let events = sources.to_collection(scope);
-            let rendered_values = runtime_render_collection(&graph, &events)
-                .map(RuntimeValue::text)
-                .map(|text| ((), text));
+            let rendered_values =
+                runtime_render_collection(&graph, &events, &bound_source_ids_in_graph)
+                    .map(|text| ((), text));
             let rendered_owners = if bound_source_ids_in_graph.is_empty() {
                 events
                     .clone()
@@ -578,380 +518,680 @@ fn empty_structured_output() -> SmokeOutput {
 fn runtime_render_collection<'scope>(
     graph: &boon_dd::DdRenderGraph,
     events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
-) -> VecCollection<'scope, EncodedTime, RuntimeValue, Diff> {
-    runtime_value_collection(graph, &graph.root, events, &BTreeMap::new())
+    source_ids: &[String],
+) -> VecCollection<'scope, EncodedTime, String, Diff> {
+    runtime_collection(graph, &graph.root, events, source_ids, &BTreeMap::new()).into_text()
 }
 
-fn runtime_value_collection<'scope>(
+enum RuntimeCollection<'scope> {
+    Text(VecCollection<'scope, EncodedTime, String, Diff>),
+    Number(VecCollection<'scope, EncodedTime, i64, Diff>),
+    Bool(VecCollection<'scope, EncodedTime, bool, Diff>),
+}
+
+impl<'scope> RuntimeCollection<'scope> {
+    fn into_text(self) -> VecCollection<'scope, EncodedTime, String, Diff> {
+        match self {
+            RuntimeCollection::Text(values) => values,
+            RuntimeCollection::Number(values) => values.map(|value| value.to_string()),
+            RuntimeCollection::Bool(values) => {
+                values.map(|value| if value { "True" } else { "False" }.to_owned())
+            }
+        }
+    }
+
+    fn into_bool(self) -> VecCollection<'scope, EncodedTime, bool, Diff> {
+        match self {
+            RuntimeCollection::Bool(values) => values,
+            RuntimeCollection::Text(values) => {
+                values.map(|value| !value.is_empty() && value != "False" && value != "false")
+            }
+            RuntimeCollection::Number(values) => values.map(|value| value != 0),
+        }
+    }
+
+    fn into_unit(self) -> VecCollection<'scope, EncodedTime, (), Diff> {
+        match self {
+            RuntimeCollection::Text(values) => values.map(|_| ()),
+            RuntimeCollection::Number(values) => values.map(|_| ()),
+            RuntimeCollection::Bool(values) => values.map(|_| ()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ConstValue {
+    Empty,
+    Text(String),
+    Number(i64),
+    Bool(bool),
+    Tag(String),
+    List(Vec<ConstValue>),
+    Record(BTreeMap<String, ConstValue>),
+}
+
+impl ConstValue {
+    fn text(self) -> String {
+        match self {
+            ConstValue::Empty => String::new(),
+            ConstValue::Text(value) | ConstValue::Tag(value) => value,
+            ConstValue::Number(value) => value.to_string(),
+            ConstValue::Bool(value) => if value { "True" } else { "False" }.to_owned(),
+            ConstValue::List(values) => values
+                .into_iter()
+                .map(ConstValue::text)
+                .collect::<Vec<_>>()
+                .join(","),
+            ConstValue::Record(_) => String::new(),
+        }
+    }
+
+    fn number(self) -> i64 {
+        match self {
+            ConstValue::Number(value) => value,
+            ConstValue::Text(value) | ConstValue::Tag(value) => {
+                value.parse::<i64>().unwrap_or_default()
+            }
+            ConstValue::Bool(value) => i64::from(value),
+            ConstValue::List(values) => values.len() as i64,
+            ConstValue::Record(fields) => fields.len() as i64,
+            ConstValue::Empty => 0,
+        }
+    }
+
+    fn bool(self) -> bool {
+        match self {
+            ConstValue::Bool(value) => value,
+            ConstValue::Tag(value) => matches!(value.as_str(), "True" | "true" | "Some"),
+            ConstValue::Text(value) => !value.is_empty() && value != "False" && value != "false",
+            ConstValue::Number(value) => value != 0,
+            ConstValue::List(values) => !values.is_empty(),
+            ConstValue::Record(fields) => !fields.is_empty(),
+            ConstValue::Empty => false,
+        }
+    }
+
+    fn record_member(self, name: &str) -> Option<ConstValue> {
+        match self {
+            ConstValue::Record(fields) => fields.get(name).cloned(),
+            _ => None,
+        }
+    }
+}
+
+fn runtime_collection<'scope>(
     graph: &boon_dd::DdRenderGraph,
     node: &NodeId,
     events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
-    env: &BTreeMap<String, RuntimeValue>,
-) -> VecCollection<'scope, EncodedTime, RuntimeValue, Diff> {
+    source_ids: &[String],
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
+    if let Some(value) = const_value(graph, node, None, env) {
+        return const_collection(events, value);
+    }
     let Some(node) = graph.nodes.iter().find(|candidate| &candidate.node == node) else {
-        return events.clone().map(|_| RuntimeValue::Empty);
+        return RuntimeCollection::Text(events.clone().map(|_| String::new()));
     };
     match &node.operation {
         boon_dd::DdRenderGraphOperation::Source | boon_dd::DdRenderGraphOperation::Path(_) => {
-            events
-                .clone()
-                .filter(|(_sequence, event)| !runtime_event_is_host_tick(event))
-                .map(|(_sequence, event)| runtime_source_event_value(&event))
+            RuntimeCollection::Text(source_text_collection(events, source_ids))
         }
         boon_dd::DdRenderGraphOperation::Pipe { input, stage } => {
-            let input = runtime_value_collection(graph, input, events, env);
-            runtime_stage_collection(graph, stage, &input, events, env)
+            let input = runtime_collection(graph, input, events, source_ids, env);
+            runtime_stage_collection(graph, stage, input, events, source_ids, env)
         }
         boon_dd::DdRenderGraphOperation::Then { body } => {
-            let graph = graph.clone();
-            let body = body.clone();
-            let env = env.clone();
-            events.clone().map(move |_| {
-                body.last()
-                    .map(|node| runtime_value(&graph, node, None, &env))
-                    .unwrap_or(RuntimeValue::Empty)
-            })
+            then_collection(graph, body, events.clone().map(|_| ()), env)
         }
         boon_dd::DdRenderGraphOperation::Hold { body, binder } => {
-            let graph = graph.clone();
-            let body = body.clone();
-            let binder = binder.clone();
-            let env = env.clone();
-            events
-                .clone()
-                .map(|_| ())
-                .count()
-                .map(move |(_key, count)| {
-                    let mut env = env.clone();
-                    env.insert(
-                        binder.clone(),
-                        RuntimeValue::Number(count.saturating_sub(1) as i64),
-                    );
-                    body.last()
-                        .map(|node| runtime_value(&graph, node, None, &env))
-                        .unwrap_or(RuntimeValue::Number(count as i64))
-                })
+            hold_collection(graph, events.clone().map(|_| ()), body, binder, env)
         }
-        boon_dd::DdRenderGraphOperation::Latest(_values) => events
-            .clone()
-            .filter(|(_sequence, event)| !runtime_event_is_host_tick(event))
-            .map(|(_sequence, event)| runtime_source_event_value(&event)),
-        _ => {
-            let graph = graph.clone();
-            let node_id = node.node.clone();
-            let env = env.clone();
-            events
-                .clone()
-                .map(move |_| runtime_value(&graph, &node_id, None, &env))
+        boon_dd::DdRenderGraphOperation::Latest(_) => {
+            RuntimeCollection::Text(latest_text_collection(events, source_ids))
         }
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            match_text_collection(graph, source_text_collection(events, source_ids), arms, env)
+        }
+        _ => RuntimeCollection::Text(events.clone().map(|_| String::new())),
     }
 }
 
 fn runtime_stage_collection<'scope>(
     graph: &boon_dd::DdRenderGraph,
     stage: &NodeId,
-    input: &VecCollection<'scope, EncodedTime, RuntimeValue, Diff>,
+    input: RuntimeCollection<'scope>,
     events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
-    env: &BTreeMap<String, RuntimeValue>,
-) -> VecCollection<'scope, EncodedTime, RuntimeValue, Diff> {
+    source_ids: &[String],
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
     let Some(stage_node) = graph
         .nodes
         .iter()
         .find(|candidate| &candidate.node == stage)
     else {
-        return input.clone().map(|_| RuntimeValue::Empty);
+        return RuntimeCollection::Text(input.into_unit().map(|_| String::new()));
     };
     match &stage_node.operation {
-        boon_dd::DdRenderGraphOperation::Call { callee, args } if callee == "Math/sum" => input
-            .clone()
-            .map(|_| ())
-            .count()
-            .map(|(_key, count)| RuntimeValue::Number(count as i64)),
+        boon_dd::DdRenderGraphOperation::Call { callee, args } => {
+            runtime_call_collection(graph, callee, input, args, env)
+        }
         boon_dd::DdRenderGraphOperation::Then { body } => {
-            let graph = graph.clone();
-            let body = body.clone();
-            let env = env.clone();
-            input.clone().map(move |_| {
-                body.last()
-                    .map(|node| runtime_value(&graph, node, None, &env))
-                    .unwrap_or(RuntimeValue::Empty)
-            })
+            then_collection(graph, body, input.into_unit(), env)
         }
         boon_dd::DdRenderGraphOperation::Hold { body, binder } => {
-            let graph = graph.clone();
-            let body = body.clone();
-            let binder = binder.clone();
-            let env = env.clone();
-            input.clone().map(|_| ()).count().map(move |(_key, count)| {
-                let mut env = env.clone();
-                env.insert(
-                    binder.clone(),
-                    RuntimeValue::Number(count.saturating_sub(1) as i64),
-                );
-                body.last()
-                    .map(|node| runtime_value(&graph, node, None, &env))
-                    .unwrap_or(RuntimeValue::Number(count as i64))
-            })
+            hold_collection(graph, input.into_unit(), body, binder, env)
         }
-        boon_dd::DdRenderGraphOperation::Latest(_) => events
-            .clone()
-            .filter(|(_sequence, event)| !runtime_event_is_host_tick(event))
-            .map(|(_sequence, event)| runtime_source_event_value(&event)),
-        _ => {
-            let graph = graph.clone();
-            let stage = stage.clone();
-            let env = env.clone();
-            input
-                .clone()
-                .map(move |pipe_input| runtime_value(&graph, &stage, Some(pipe_input), &env))
+        boon_dd::DdRenderGraphOperation::Latest(_) => {
+            RuntimeCollection::Text(latest_text_collection(events, source_ids))
+        }
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            match_text_collection(graph, input.into_text(), arms, env)
+        }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => input,
+        _ => runtime_collection(graph, &stage_node.node, events, source_ids, env),
+    }
+}
+
+fn runtime_call_collection<'scope>(
+    graph: &boon_dd::DdRenderGraph,
+    callee: &str,
+    input: RuntimeCollection<'scope>,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
+    match canonical_runtime_call(callee) {
+        "Math/sum" => {
+            RuntimeCollection::Number(input.into_unit().count().map(|(_key, count)| count as i64))
+        }
+        "Text/from_number" | "Document/new" | "Scene/new" => {
+            RuntimeCollection::Text(input.into_text())
+        }
+        "Text/append" => {
+            let suffix = first_runtime_arg(args)
+                .and_then(|node| const_value(graph, node, None, env))
+                .map(ConstValue::text)
+                .unwrap_or_default();
+            RuntimeCollection::Text(input.into_text().map(move |text| format!("{text}{suffix}")))
+        }
+        "Text/uppercase" => {
+            RuntimeCollection::Text(input.into_text().map(|text| text.to_uppercase()))
+        }
+        "Text/is_empty" => RuntimeCollection::Bool(input.into_text().map(|text| text.is_empty())),
+        "Bool/not" => RuntimeCollection::Bool(input.into_bool().map(|value| !value)),
+        "Timer/interval" | "Window/animation_frame" => input,
+        callee if callee.starts_with("Element/") => RuntimeCollection::Text(input.into_text()),
+        _ => RuntimeCollection::Text(input.into_text()),
+    }
+}
+
+fn then_collection<'scope>(
+    graph: &boon_dd::DdRenderGraph,
+    body: &[NodeId],
+    trigger: VecCollection<'scope, EncodedTime, (), Diff>,
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
+    let value = body
+        .last()
+        .and_then(|node| const_value(graph, node, None, env))
+        .unwrap_or(ConstValue::Empty);
+    const_collection_from_trigger(trigger, value)
+}
+
+fn hold_collection<'scope>(
+    graph: &boon_dd::DdRenderGraph,
+    trigger: VecCollection<'scope, EncodedTime, (), Diff>,
+    body: &[NodeId],
+    binder: &str,
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
+    let graph = graph.clone();
+    let body = body.to_vec();
+    let binder = binder.to_owned();
+    let env = env.clone();
+    RuntimeCollection::Number(trigger.count().map(move |(_key, count)| {
+        let mut env = env.clone();
+        env.insert(
+            binder.clone(),
+            ConstValue::Number(count.saturating_sub(1) as i64),
+        );
+        body.last()
+            .and_then(|node| const_value(&graph, node, None, &env))
+            .map(ConstValue::number)
+            .unwrap_or(count as i64)
+    }))
+}
+
+fn match_text_collection<'scope>(
+    graph: &boon_dd::DdRenderGraph,
+    input: VecCollection<'scope, EncodedTime, String, Diff>,
+    arms: &[boon_dd::DdRenderGraphMatchArm],
+    env: &BTreeMap<String, ConstValue>,
+) -> RuntimeCollection<'scope> {
+    let graph = graph.clone();
+    let arms = arms.to_vec();
+    let env = env.clone();
+    RuntimeCollection::Text(input.flat_map(move |matched| {
+        arms.iter()
+            .find(|arm| arm.pattern == "__" || runtime_text_pattern_matches(&matched, &arm.pattern))
+            .and_then(|arm| {
+                const_value(
+                    &graph,
+                    &arm.value,
+                    Some(ConstValue::Text(matched.clone())),
+                    &env,
+                )
+            })
+            .and_then(|value| match value {
+                ConstValue::Empty => None,
+                value => Some(value.text()),
+            })
+    }))
+}
+
+fn const_collection<'scope>(
+    events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
+    value: ConstValue,
+) -> RuntimeCollection<'scope> {
+    const_collection_from_trigger(events.clone().map(|_| ()), value)
+}
+
+fn const_collection_from_trigger<'scope>(
+    trigger: VecCollection<'scope, EncodedTime, (), Diff>,
+    value: ConstValue,
+) -> RuntimeCollection<'scope> {
+    match value {
+        ConstValue::Number(number) => RuntimeCollection::Number(trigger.map(move |_| number)),
+        ConstValue::Bool(value) => RuntimeCollection::Bool(trigger.map(move |_| value)),
+        value => {
+            let text = value.text();
+            RuntimeCollection::Text(trigger.map(move |_| text.clone()))
         }
     }
 }
 
-fn runtime_value(
+fn source_text_collection<'scope>(
+    events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
+    source_ids: &[String],
+) -> VecCollection<'scope, EncodedTime, String, Diff> {
+    let source_ids = source_ids.to_vec();
+    events
+        .clone()
+        .filter(move |(_sequence, event)| runtime_event_matches_bound_source(event, &source_ids))
+        .map(|(_sequence, event)| runtime_source_event_text(&event))
+}
+
+fn latest_text_collection<'scope>(
+    events: &VecCollection<'scope, EncodedTime, (u64, GeneratedSourceEvent), Diff>,
+    source_ids: &[String],
+) -> VecCollection<'scope, EncodedTime, String, Diff> {
+    let source_ids = source_ids.to_vec();
+    events
+        .clone()
+        .filter(move |(_sequence, event)| runtime_event_matches_bound_source(event, &source_ids))
+        .map(|(sequence, event)| ((), (sequence, runtime_source_event_text(&event))))
+        .reduce(|_, inputs, output| {
+            if let Some(((_sequence, value), _diff)) =
+                inputs.iter().max_by_key(|((sequence, _), _)| *sequence)
+            {
+                output.push((value.clone(), 1));
+            }
+        })
+        .map(|(_key, value)| value)
+}
+
+fn const_value(
     graph: &boon_dd::DdRenderGraph,
     node: &NodeId,
-    pipe_input: Option<RuntimeValue>,
-    env: &BTreeMap<String, RuntimeValue>,
-) -> RuntimeValue {
-    let Some(node) = graph.nodes.iter().find(|candidate| &candidate.node == node) else {
-        return RuntimeValue::Empty;
-    };
+    pipe_input: Option<ConstValue>,
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    let node = graph
+        .nodes
+        .iter()
+        .find(|candidate| &candidate.node == node)?;
     match &node.operation {
         boon_dd::DdRenderGraphOperation::Missing
         | boon_dd::DdRenderGraphOperation::Source
         | boon_dd::DdRenderGraphOperation::SourceAt { .. }
         | boon_dd::DdRenderGraphOperation::Link { .. }
-        | boon_dd::DdRenderGraphOperation::Skip => RuntimeValue::Empty,
-        boon_dd::DdRenderGraphOperation::Path(path) => {
-            if path == "pipe_input" {
-                pipe_input.unwrap_or(RuntimeValue::Empty)
-            } else if let Some((root, fields)) = path.split_once('.') {
-                fields.split('.').fold(
-                    env.get(root).cloned().unwrap_or(RuntimeValue::Empty),
-                    |value, field| value.field(field),
-                )
-            } else {
-                env.get(path).cloned().unwrap_or(RuntimeValue::Empty)
-            }
+        | boon_dd::DdRenderGraphOperation::Skip => None,
+        boon_dd::DdRenderGraphOperation::Path(path) => const_path_value(path, pipe_input, env),
+        boon_dd::DdRenderGraphOperation::Number(number) => {
+            Some(ConstValue::Number(number.parse::<i64>().unwrap_or_else(
+                |_| number.parse::<f64>().unwrap_or_default() as i64,
+            )))
         }
-        boon_dd::DdRenderGraphOperation::Number(number) => RuntimeValue::Number(
-            number
-                .parse::<i64>()
-                .unwrap_or_else(|_| number.parse::<f64>().unwrap_or_default() as i64),
-        ),
-        boon_dd::DdRenderGraphOperation::Text(text) => RuntimeValue::Text(text.clone()),
-        boon_dd::DdRenderGraphOperation::Tag(tag) => RuntimeValue::Tag(tag.clone()),
-        boon_dd::DdRenderGraphOperation::Record(fields) => RuntimeValue::Record(
-            fields
-                .iter()
-                .map(|field| {
-                    (
-                        field.name.clone(),
-                        runtime_value(graph, &field.value, pipe_input.clone(), env),
-                    )
-                })
-                .collect(),
-        ),
-        boon_dd::DdRenderGraphOperation::List(values)
-        | boon_dd::DdRenderGraphOperation::Block(values)
-        | boon_dd::DdRenderGraphOperation::Latest(values) => RuntimeValue::List(
-            values
-                .iter()
-                .map(|value| runtime_value(graph, value, pipe_input.clone(), env))
-                .collect(),
-        ),
+        boon_dd::DdRenderGraphOperation::Text(text) => Some(ConstValue::Text(text.clone())),
+        boon_dd::DdRenderGraphOperation::Tag(tag) => Some(match tag.as_str() {
+            "True" => ConstValue::Bool(true),
+            "False" => ConstValue::Bool(false),
+            _ => ConstValue::Tag(tag.clone()),
+        }),
+        boon_dd::DdRenderGraphOperation::Record(fields) => fields
+            .iter()
+            .map(|field| {
+                const_value(graph, &field.value, pipe_input.clone(), env)
+                    .map(|value| (field.name.clone(), value))
+            })
+            .collect::<Option<BTreeMap<_, _>>>()
+            .map(ConstValue::Record),
+        boon_dd::DdRenderGraphOperation::List(values) => values
+            .iter()
+            .map(|value| const_value(graph, value, pipe_input.clone(), env))
+            .collect::<Option<Vec<_>>>()
+            .map(ConstValue::List),
+        boon_dd::DdRenderGraphOperation::Block(values)
+        | boon_dd::DdRenderGraphOperation::Latest(values)
+        | boon_dd::DdRenderGraphOperation::Then { body: values }
+        | boon_dd::DdRenderGraphOperation::Hold { body: values, .. } => values
+            .last()
+            .and_then(|value| const_value(graph, value, pipe_input, env)),
         boon_dd::DdRenderGraphOperation::Constructor { callee, fields } => {
             if callee == "Text" && fields.len() == 1 {
-                runtime_value(graph, &fields[0].value, pipe_input, env)
+                const_value(graph, &fields[0].value, pipe_input, env)
             } else {
-                RuntimeValue::Record(
-                    fields
-                        .iter()
-                        .map(|field| {
-                            (
-                                field.name.clone(),
-                                runtime_value(graph, &field.value, pipe_input.clone(), env),
-                            )
-                        })
-                        .collect(),
-                )
+                fields
+                    .iter()
+                    .map(|field| {
+                        const_value(graph, &field.value, pipe_input.clone(), env)
+                            .map(|value| (field.name.clone(), value))
+                    })
+                    .collect::<Option<BTreeMap<_, _>>>()
+                    .map(ConstValue::Record)
             }
         }
         boon_dd::DdRenderGraphOperation::FieldAccess { base, field } => {
-            runtime_value(graph, base, pipe_input, env).field(field)
+            const_value(graph, base, pipe_input, env).and_then(|value| value.record_member(field))
         }
-        boon_dd::DdRenderGraphOperation::BinaryAdd { left, right } => RuntimeValue::Number(
-            runtime_value(graph, left, pipe_input.clone(), env).number()
-                + runtime_value(graph, right, pipe_input, env).number(),
-        ),
-        boon_dd::DdRenderGraphOperation::BinarySubtract { left, right } => RuntimeValue::Number(
-            runtime_value(graph, left, pipe_input.clone(), env).number()
-                - runtime_value(graph, right, pipe_input, env).number(),
-        ),
-        boon_dd::DdRenderGraphOperation::BinaryEqual { left, right } => RuntimeValue::Tag(
-            if runtime_value(graph, left, pipe_input.clone(), env)
-                == runtime_value(graph, right, pipe_input, env)
-            {
-                "True"
-            } else {
-                "False"
-            }
-            .to_owned(),
-        ),
+        boon_dd::DdRenderGraphOperation::BinaryAdd { left, right } => Some(ConstValue::Number(
+            const_value(graph, left, pipe_input.clone(), env)?.number()
+                + const_value(graph, right, pipe_input, env)?.number(),
+        )),
+        boon_dd::DdRenderGraphOperation::BinarySubtract { left, right } => {
+            Some(ConstValue::Number(
+                const_value(graph, left, pipe_input.clone(), env)?.number()
+                    - const_value(graph, right, pipe_input, env)?.number(),
+            ))
+        }
+        boon_dd::DdRenderGraphOperation::BinaryEqual { left, right } => Some(ConstValue::Bool(
+            const_value(graph, left, pipe_input.clone(), env)?
+                == const_value(graph, right, pipe_input, env)?,
+        )),
         boon_dd::DdRenderGraphOperation::Pipe { input, stage } => {
-            let input = runtime_value(graph, input, pipe_input, env);
-            runtime_value(graph, stage, Some(input), env)
+            let input = const_value(graph, input, pipe_input, env)?;
+            const_stage_value(graph, stage, input, env)
         }
-        boon_dd::DdRenderGraphOperation::Then { body } => body
-            .last()
-            .map(|node| runtime_value(graph, node, pipe_input, env))
-            .unwrap_or(RuntimeValue::Empty),
-        boon_dd::DdRenderGraphOperation::Hold { body, .. } => body
-            .last()
-            .map(|node| runtime_value(graph, node, pipe_input, env))
-            .unwrap_or(RuntimeValue::Empty),
         boon_dd::DdRenderGraphOperation::Call { callee, args } => {
-            runtime_call_value(graph, callee, pipe_input, args, env)
+            const_call_value(graph, callee, pipe_input, args, env)
         }
         boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
-            let matched = pipe_input.unwrap_or(RuntimeValue::Empty);
+            let matched = pipe_input?;
+            let matched_text = matched.clone().text();
             arms.iter()
-                .find(|arm| arm.pattern == "__" || runtime_pattern_matches(&matched, &arm.pattern))
-                .map(|arm| runtime_value(graph, &arm.value, Some(matched.clone()), env))
-                .unwrap_or(RuntimeValue::Empty)
+                .find(|arm| {
+                    arm.pattern == "__" || runtime_text_pattern_matches(&matched_text, &arm.pattern)
+                })
+                .and_then(|arm| const_value(graph, &arm.value, Some(matched), env))
         }
     }
 }
 
-fn runtime_call_value(
+fn const_stage_value(
+    graph: &boon_dd::DdRenderGraph,
+    stage: &NodeId,
+    input: ConstValue,
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    let stage = graph
+        .nodes
+        .iter()
+        .find(|candidate| &candidate.node == stage)?;
+    match &stage.operation {
+        boon_dd::DdRenderGraphOperation::Call { callee, args } => {
+            const_call_value(graph, callee, Some(input), args, env)
+        }
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            let matched_text = input.clone().text();
+            arms.iter()
+                .find(|arm| {
+                    arm.pattern == "__" || runtime_text_pattern_matches(&matched_text, &arm.pattern)
+                })
+                .and_then(|arm| const_value(graph, &arm.value, Some(input), env))
+        }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => Some(input),
+        _ => const_value(graph, &stage.node, Some(input), env),
+    }
+}
+
+fn const_call_value(
     graph: &boon_dd::DdRenderGraph,
     callee: &str,
-    pipe_input: Option<RuntimeValue>,
+    pipe_input: Option<ConstValue>,
     args: &[boon_dd::DdRenderGraphArg],
-    env: &BTreeMap<String, RuntimeValue>,
-) -> RuntimeValue {
-    let pipe_for_args = pipe_input.clone();
-    let arg = |index: usize| -> RuntimeValue {
-        args.get(index)
-            .map(|arg| match arg {
-                boon_dd::DdRenderGraphArg::Positional(node) => {
-                    runtime_value(graph, node, pipe_for_args.clone(), env)
-                }
-                boon_dd::DdRenderGraphArg::Named { value, .. } => {
-                    runtime_value(graph, value, pipe_for_args.clone(), env)
-                }
-            })
-            .unwrap_or(RuntimeValue::Empty)
-    };
-    match callee {
-        "Text/from_number" => RuntimeValue::Text(
-            pipe_input
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    match canonical_runtime_call(callee) {
+        "Document/new" | "Scene/new" => pipe_input
+            .clone()
+            .or_else(|| const_named_arg_value(graph, args, "root", &pipe_input, env))
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env)),
+        "Text/from_number" => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+            .map(|value| ConstValue::Text(value.number().to_string())),
+        "Text/append" => {
+            let input = pipe_input
                 .clone()
-                .unwrap_or_else(|| arg(0))
-                .number()
-                .to_string(),
-        ),
-        "Text/append" => RuntimeValue::Text(format!(
-            "{}{}",
-            pipe_input.clone().unwrap_or_default_text().text(),
-            arg(0).text()
-        )),
+                .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))?;
+            let suffix = first_runtime_arg(args)
+                .and_then(|node| const_value(graph, node, None, env))
+                .unwrap_or(ConstValue::Text(String::new()));
+            Some(ConstValue::Text(format!(
+                "{}{}",
+                input.text(),
+                suffix.text()
+            )))
+        }
         "Text/join" | "Text/join_lines" => {
-            let separator = arg(0).text();
-            RuntimeValue::Text(match pipe_input.unwrap_or(RuntimeValue::Empty) {
-                RuntimeValue::List(values) => values
+            let input = pipe_input.clone()?;
+            let separator = const_named_arg_value(graph, args, "separator", &pipe_input, env)
+                .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+                .map(ConstValue::text)
+                .unwrap_or_else(|| {
+                    if callee == "Text/join_lines" {
+                        "\n"
+                    } else {
+                        ","
+                    }
+                    .to_owned()
+                });
+            Some(ConstValue::Text(match input {
+                ConstValue::List(values) => values
                     .into_iter()
-                    .map(RuntimeValue::text)
+                    .map(ConstValue::text)
                     .collect::<Vec<_>>()
                     .join(&separator),
-                other => other.text(),
-            })
+                value => value.text(),
+            }))
         }
-        "Text/is_empty" => RuntimeValue::Tag(
-            if pipe_input.unwrap_or_default_text().text().is_empty() {
-                "True"
-            } else {
-                "False"
-            }
-            .to_owned(),
-        ),
-        "Text/uppercase" => RuntimeValue::Text(
-            pipe_input
-                .clone()
-                .unwrap_or_else(|| arg(0))
-                .text()
-                .to_uppercase(),
-        ),
-        "Bool/not" => RuntimeValue::Tag(
-            if pipe_input.clone().unwrap_or_else(|| arg(0)).truthy() {
-                "False"
-            } else {
-                "True"
-            }
-            .to_owned(),
-        ),
-        "List/count" => RuntimeValue::Number(match pipe_input.unwrap_or(RuntimeValue::Empty) {
-            RuntimeValue::List(values) => values.len() as i64,
-            RuntimeValue::Empty => 0,
-            _ => 1,
-        }),
-        "List/map" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
-            RuntimeValue::List(values) => {
-                if let Some(new_expr) = runtime_named_arg(args, "new") {
-                    RuntimeValue::List(
-                        values
-                            .into_iter()
-                            .map(|item| {
-                                let mut item_env = env.clone();
-                                item_env.insert("item".to_owned(), item);
-                                runtime_value(graph, new_expr, None, &item_env)
-                            })
-                            .collect(),
-                    )
-                } else {
-                    RuntimeValue::List(values)
+        "Text/uppercase" => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+            .map(|value| ConstValue::Text(value.text().to_uppercase())),
+        "Text/is_empty" => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+            .map(|value| ConstValue::Bool(value.text().is_empty())),
+        "Bool/not" => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+            .map(|value| ConstValue::Bool(!value.bool())),
+        "List/append" => {
+            let input = pipe_input.clone()?;
+            let item = const_named_arg_value(graph, args, "item", &pipe_input, env)
+                .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+                .unwrap_or(ConstValue::Empty);
+            match input {
+                ConstValue::List(mut values) => {
+                    values.push(item);
+                    Some(ConstValue::List(values))
                 }
+                value => Some(value),
             }
-            other => other,
-        },
-        "List/retain" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
-            RuntimeValue::List(values) => {
-                if let Some(predicate_expr) = runtime_named_arg(args, "if") {
-                    RuntimeValue::List(
-                        values
-                            .into_iter()
-                            .filter(|item| {
-                                let mut item_env = env.clone();
-                                item_env.insert("item".to_owned(), item.clone());
-                                runtime_value(graph, predicate_expr, None, &item_env).truthy()
-                            })
-                            .collect(),
-                    )
-                } else {
-                    RuntimeValue::List(values)
-                }
+        }
+        "List/map" => {
+            let input = pipe_input.clone()?;
+            let new_expr = named_runtime_arg(args, "new")?;
+            match input {
+                ConstValue::List(values) => values
+                    .into_iter()
+                    .map(|item| {
+                        let mut env = env.clone();
+                        env.insert("item".to_owned(), item);
+                        const_value(graph, new_expr, None, &env)
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .map(ConstValue::List),
+                value => Some(value),
             }
-            other => other,
-        },
-        "List/latest" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
-            RuntimeValue::List(values) => values.into_iter().last().unwrap_or(RuntimeValue::Empty),
-            other => other,
-        },
-        "List/append" => match pipe_input.unwrap_or(RuntimeValue::Empty) {
-            RuntimeValue::List(mut values) => {
-                values.push(arg(0));
-                RuntimeValue::List(values)
+        }
+        "List/retain" => {
+            let input = pipe_input.clone()?;
+            let predicate = named_runtime_arg(args, "if");
+            match input {
+                ConstValue::List(values) => Some(ConstValue::List(
+                    values
+                        .into_iter()
+                        .filter(|item| {
+                            let Some(predicate) = predicate else {
+                                return true;
+                            };
+                            let mut env = env.clone();
+                            env.insert("item".to_owned(), item.clone());
+                            const_value(graph, predicate, None, &env)
+                                .map(ConstValue::bool)
+                                .unwrap_or(false)
+                        })
+                        .collect(),
+                )),
+                value => Some(value),
             }
-            other => other,
+        }
+        "List/count" => {
+            let input = pipe_input.clone()?;
+            let predicate = named_runtime_arg(args, "if");
+            match input {
+                ConstValue::List(values) => Some(ConstValue::Number(
+                    values
+                        .into_iter()
+                        .filter(|item| {
+                            let Some(predicate) = predicate else {
+                                return true;
+                            };
+                            let mut env = env.clone();
+                            env.insert("item".to_owned(), item.clone());
+                            const_value(graph, predicate, None, &env)
+                                .map(ConstValue::bool)
+                                .unwrap_or(false)
+                        })
+                        .count() as i64,
+                )),
+                ConstValue::Empty => Some(ConstValue::Number(0)),
+                _ => Some(ConstValue::Number(1)),
+            }
+        }
+        "List/latest" => match pipe_input.clone()? {
+            ConstValue::List(values) => {
+                Some(values.into_iter().last().unwrap_or(ConstValue::Empty))
+            }
+            value => Some(value),
         },
-        "Document/new" | "Scene/new" => pipe_input.clone().unwrap_or_else(|| arg(0)),
-        callee if callee.starts_with("Element/") => pipe_input.clone().unwrap_or_else(|| arg(0)),
-        _ => pipe_input.clone().unwrap_or_else(|| arg(0)),
+        "Math/sum" => None,
+        "Temperature/c_to_f" => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env))
+            .map(|value| ConstValue::Number(value.number() * 9 / 5 + 32)),
+        callee if callee.starts_with("Element/") => pipe_input
+            .clone()
+            .or_else(|| const_named_arg_value(graph, args, "label", &pipe_input, env))
+            .or_else(|| const_named_arg_value(graph, args, "text", &pipe_input, env))
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env)),
+        _ => pipe_input
+            .clone()
+            .or_else(|| const_first_arg_value(graph, args, &pipe_input, env)),
     }
 }
 
-fn runtime_named_arg<'a>(
+fn const_first_arg_value(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    pipe_input: &Option<ConstValue>,
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    first_runtime_arg(args).and_then(|node| const_value(graph, node, pipe_input.clone(), env))
+}
+
+fn const_named_arg_value(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    name: &str,
+    pipe_input: &Option<ConstValue>,
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    named_runtime_arg(args, name).and_then(|node| const_value(graph, node, pipe_input.clone(), env))
+}
+
+fn const_path_value(
+    path: &str,
+    pipe_input: Option<ConstValue>,
+    env: &BTreeMap<String, ConstValue>,
+) -> Option<ConstValue> {
+    if path == "pipe_input" {
+        return pipe_input;
+    }
+    let mut parts = path.split('.');
+    let root = parts.next()?;
+    let mut value = env.get(root).cloned()?;
+    for part in parts {
+        value = value.record_member(part)?;
+    }
+    Some(value)
+}
+
+fn canonical_runtime_call(callee: &str) -> &str {
+    match callee {
+        "Scene/Element/block" => "Element/block",
+        "Scene/Element/button" => "Element/button",
+        "Scene/Element/checkbox" => "Element/checkbox",
+        "Scene/Element/container" => "Element/container",
+        "Scene/Element/grid" => "Element/grid",
+        "Scene/Element/label" => "Element/label",
+        "Scene/Element/link" => "Element/link",
+        "Scene/Element/panel" => "Element/panel",
+        "Scene/Element/paragraph" => "Element/paragraph",
+        "Scene/Element/rect" => "Element/rect",
+        "Scene/Element/select" => "Element/select",
+        "Scene/Element/slider" => "Element/slider",
+        "Scene/Element/stack" => "Element/stack",
+        "Scene/Element/stripe" => "Element/stripe",
+        "Scene/Element/svg" => "Element/svg",
+        "Scene/Element/svg_circle" => "Element/svg_circle",
+        "Scene/Element/text" => "Element/text",
+        "Scene/Element/text_input" => "Element/text_input",
+        _ => callee,
+    }
+}
+
+fn first_runtime_arg(args: &[boon_dd::DdRenderGraphArg]) -> Option<&NodeId> {
+    args.iter().find_map(|arg| match arg {
+        boon_dd::DdRenderGraphArg::Positional(node) => Some(node),
+        boon_dd::DdRenderGraphArg::Named { .. } => None,
+    })
+}
+
+fn named_runtime_arg<'a>(
     args: &'a [boon_dd::DdRenderGraphArg],
     requested: &str,
 ) -> Option<&'a NodeId> {
@@ -961,28 +1201,8 @@ fn runtime_named_arg<'a>(
     })
 }
 
-trait RuntimeValueDefaultText {
-    fn unwrap_or_default_text(self) -> RuntimeValue;
-}
-
-impl RuntimeValueDefaultText for Option<RuntimeValue> {
-    fn unwrap_or_default_text(self) -> RuntimeValue {
-        self.unwrap_or_else(|| RuntimeValue::Text(String::new()))
-    }
-}
-
-fn runtime_pattern_matches(value: &RuntimeValue, pattern: &str) -> bool {
-    match value {
-        RuntimeValue::Tag(tag) => tag == pattern,
-        RuntimeValue::Text(text) => text == pattern,
-        RuntimeValue::Number(number) => number.to_string() == pattern,
-        RuntimeValue::Empty => pattern.is_empty(),
-        RuntimeValue::List(_) | RuntimeValue::Record(_) => false,
-    }
-}
-
-fn runtime_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
-    matches!(event, GeneratedSourceEvent::Static { source_id, .. } if source_id.0 == "__host_tick")
+fn runtime_text_pattern_matches(value: &str, pattern: &str) -> bool {
+    value == pattern || (value.is_empty() && pattern.is_empty())
 }
 
 fn runtime_event_matches_bound_source(event: &GeneratedSourceEvent, source_ids: &[String]) -> bool {
@@ -1004,58 +1224,56 @@ fn runtime_source_event_owner(event: &GeneratedSourceEvent) -> OwnerKey {
     }
 }
 
-fn runtime_source_event_value(event: &GeneratedSourceEvent) -> RuntimeValue {
+fn runtime_source_event_text(event: &GeneratedSourceEvent) -> String {
     match event {
         GeneratedSourceEvent::Static { payload, .. }
-        | GeneratedSourceEvent::Dynamic { payload, .. } => runtime_payload_value(payload),
+        | GeneratedSourceEvent::Dynamic { payload, .. } => runtime_payload_text(payload),
     }
 }
 
-fn runtime_payload_value(payload: &GeneratedSourceEventPayload) -> RuntimeValue {
+fn runtime_payload_text(payload: &GeneratedSourceEventPayload) -> String {
     match payload {
-        GeneratedSourceEventPayload::EmptyRecord => RuntimeValue::Empty,
-        GeneratedSourceEventPayload::Text(text) => RuntimeValue::Text(text.clone()),
-        GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => {
-            RuntimeValue::Number(*number)
-        }
-        GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => {
-            RuntimeValue::Number(*number as i64)
-        }
-        GeneratedSourceEventPayload::Tag { name, payload } => RuntimeValue::Tag(match payload {
+        GeneratedSourceEventPayload::EmptyRecord => String::new(),
+        GeneratedSourceEventPayload::Text(text) => text.clone(),
+        GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => number.to_string(),
+        GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => number.to_string(),
+        GeneratedSourceEventPayload::Tag { name, payload } => match payload {
             Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
             None => name.0.clone(),
-        }),
-        GeneratedSourceEventPayload::Record(record) => RuntimeValue::Record(
-            record
-                .iter()
-                .map(|(name, value)| (name.clone(), runtime_boon_value(value)))
-                .collect(),
-        ),
-        GeneratedSourceEventPayload::List(values) => {
-            RuntimeValue::List(values.iter().map(runtime_boon_value).collect())
-        }
+        },
+        GeneratedSourceEventPayload::Record(record) => record
+            .iter()
+            .map(|(name, value)| format!("{name}={}", runtime_boon_text(value)))
+            .collect::<Vec<_>>()
+            .join(","),
+        GeneratedSourceEventPayload::List(values) => values
+            .iter()
+            .map(runtime_boon_text)
+            .collect::<Vec<_>>()
+            .join(","),
     }
 }
 
-fn runtime_boon_value(value: &BoonValue) -> RuntimeValue {
+fn runtime_boon_text(value: &BoonValue) -> String {
     match value {
-        BoonValue::EmptyRecord => RuntimeValue::Empty,
-        BoonValue::Record(record) => RuntimeValue::Record(
-            record
-                .iter()
-                .map(|(name, value)| (name.clone(), runtime_boon_value(value)))
-                .collect(),
-        ),
-        BoonValue::List(values) => {
-            RuntimeValue::List(values.iter().map(runtime_boon_value).collect())
-        }
-        BoonValue::Text(text) => RuntimeValue::Text(text.clone()),
-        BoonValue::Number(BoonNumber::Int(number)) => RuntimeValue::Number(*number),
-        BoonValue::Number(BoonNumber::Float(number)) => RuntimeValue::Number(*number as i64),
-        BoonValue::Tag { name, payload } => RuntimeValue::Tag(match payload {
+        BoonValue::EmptyRecord => String::new(),
+        BoonValue::Record(record) => record
+            .iter()
+            .map(|(name, value)| format!("{name}={}", runtime_boon_text(value)))
+            .collect::<Vec<_>>()
+            .join(","),
+        BoonValue::List(values) => values
+            .iter()
+            .map(runtime_boon_text)
+            .collect::<Vec<_>>()
+            .join(","),
+        BoonValue::Text(text) => text.clone(),
+        BoonValue::Number(BoonNumber::Int(number)) => number.to_string(),
+        BoonValue::Number(BoonNumber::Float(number)) => number.to_string(),
+        BoonValue::Tag { name, payload } => match payload {
             Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
             None => name.0.clone(),
-        }),
+        },
     }
 }
 
