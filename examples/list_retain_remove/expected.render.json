@@ -4,7 +4,7 @@
       "NodeValue": {
         "epoch": 1,
         "node": "DocumentOutput",
-        "owner": "Root",
+        "owner": "item-1",
         "value_preview": "removed"
       }
     }

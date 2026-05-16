@@ -11,9 +11,9 @@ pub mod values;
 mod tests {
     #[test]
     fn generated_graph_matches_checked_scenario_output() {
-        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"Root\",\n        \"value_preview\": \"removed\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"removed\"\n      }\n    }\n  ],\n  \"effects\": [],\n  \"persistence\": []\n}")
+        let expected: boon_dd::SmokeOutput = serde_json::from_str("{\n  \"monitor\": [\n    {\n      \"NodeValue\": {\n        \"epoch\": 1,\n        \"node\": \"DocumentOutput\",\n        \"owner\": \"item-1\",\n        \"value_preview\": \"removed\"\n      }\n    }\n  ],\n  \"render\": [\n    {\n      \"PatchText\": {\n        \"node\": \"DocumentText\",\n        \"text\": \"removed\"\n      }\n    }\n  ],\n  \"effects\": [],\n  \"persistence\": []\n}")
             .expect("checked expected render JSON should deserialize");
-        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str("[{\"description\":\"remove retained row\",\"events\":[{\"Source\":{\"source\":\"item.remove_button.event.press\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}}],\"actions\":[{\"source\":\"item.remove_button.event.press\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}],\"commands\":[],\"expect_text\":\"removed\",\"expect_monitor_changed\":[\"DocumentOutput\",\"DocumentText\"]}]")
+        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str("[{\"description\":\"remove retained row\",\"events\":[{\"Source\":{\"source\":\"item.sources.remove_button.event.press\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}}],\"actions\":[{\"source\":\"item.sources.remove_button.event.press\",\"owner\":\"item-1\",\"generation\":0,\"value\":\"EmptyRecord\"}],\"commands\":[],\"expect_text\":\"removed\",\"expect_monitor_changed\":[\"DocumentOutput\",\"DocumentText\"]}]")
             .expect("checked scenario steps should deserialize");
         let allocator = || {
             timely::communication::Allocator::Thread(

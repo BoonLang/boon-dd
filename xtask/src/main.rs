@@ -1932,6 +1932,21 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
             "runtime selects generated behavior through fixture index",
         ),
         (
+            concat!("run", "_generated_scenario_at"),
+            "checked_index_dispatch",
+            "runtime or verification selects generated behavior through fixture index",
+        ),
+        (
+            concat!("run", "_generated_scenario_steps_at"),
+            "checked_index_dispatch",
+            "runtime or verification selects generated behavior through fixture index",
+        ),
+        (
+            concat!("run", "_embedded_matrix"),
+            "checked_registry",
+            "generated example matrix is driven by checked generated fixture registry",
+        ),
+        (
             concat!("GENERATED", "_CORPUS"),
             "checked_registry",
             "example registry participates in runtime execution",
@@ -1949,12 +1964,20 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
             "crates/boon_backend_ratatui",
             "crates/boon_backend_wgpu",
             "crates/boon_runtime_host",
+            "crates/boon_examples",
+            "xtask/src",
         ],
         &patterns,
     )?;
     let failures = hits.clone();
+    let blocker_reports = active_engine_blocker_reports()?;
     let blockers = if failures.is_empty() {
         Vec::new()
+    } else if !blocker_reports.is_empty() {
+        vec![
+            "fixture dispatch is blocked by a checked-in engine-simplicity blocker report"
+                .to_owned(),
+        ]
     } else {
         vec![
             "runtime execution still contains checked-example or fixture-index dispatch paths"
@@ -1964,12 +1987,19 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
     engine_report(
         "no-fixture-dispatch-report.json",
         "cargo xtask verify-no-fixture-dispatch --format json",
-        if failures.is_empty() { "pass" } else { "fail" },
+        if failures.is_empty() {
+            "pass"
+        } else if !blocker_reports.is_empty() {
+            "blocked"
+        } else {
+            "fail"
+        },
         failures,
         blockers,
         serde_json::json!({
             "hit_count": hits.len(),
             "hits": hits,
+            "blocker_reports": blocker_reports,
         }),
     )
 }
@@ -3556,6 +3586,11 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
         "compile_and_run_scenario",
         "run_dd_graph_template",
         "execute_scenario",
+        "GENERATED_CORPUS",
+        "run_generated_steps_at",
+        "run_generated_scenario_at",
+        "run_generated_scenario_steps_at",
+        "run_embedded_matrix",
     ];
     let mut hits = Vec::new();
     for rel in [
