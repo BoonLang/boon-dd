@@ -2809,6 +2809,7 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         ("generated_runtime", "generated-crates.json"),
         ("generated_freshness", "generated-freshness-report.json"),
         ("no_shortcuts", "no-shortcuts-report.json"),
+        ("host_parity", "cross-host-parity-report.json"),
     ]
     .into_iter()
     .map(|(coverage, artifact)| {
@@ -2847,6 +2848,30 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let passing_coverage = coverage_reports
+        .iter()
+        .filter(|report| {
+            !report["missing"].as_bool().unwrap_or(false)
+                && matches!(report["verdict"].as_str(), Some("pass" | "passed"))
+        })
+        .filter_map(|report| report["coverage"].as_str().map(str::to_owned))
+        .collect::<std::collections::BTreeSet<_>>();
+    let feature_missing_required_coverage = parsed_manifest
+        .features
+        .iter()
+        .flat_map(|feature| {
+            feature
+                .required_coverage
+                .iter()
+                .filter(|coverage| !passing_coverage.contains(*coverage))
+                .map(|coverage| {
+                    serde_json::json!({
+                        "feature": feature.id,
+                        "coverage": coverage,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
     let mut blockers = Vec::new();
     if parsed_manifest.language.status != "accepted"
         || !incomplete_features.is_empty()
@@ -2857,11 +2882,15 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
     if !coverage_report_failures.is_empty() {
         blockers.push("one or more required coverage reports are missing or failing");
     }
+    if !feature_missing_required_coverage.is_empty() {
+        blockers.push("one or more accepted features are missing required passing coverage");
+    }
     if structural_errors {
         blockers.push("language manifest has structural coverage errors");
     }
+    let verdict = if blockers.is_empty() { "pass" } else { "fail" };
     let details = serde_json::json!({
-        "verdict": "fail",
+        "verdict": verdict,
         "manifest": LANGUAGE_MANIFEST,
         "manifest_exists": manifest.exists(),
         "accepted_language_version": parsed_manifest.language.accepted_language_version,
@@ -2889,13 +2918,17 @@ fn verify_language_corpus(_args: &[String]) -> Result<serde_json::Value> {
         "structural_errors": structural_errors,
         "coverage_reports": coverage_reports,
         "coverage_report_failures": coverage_report_failures,
+        "feature_missing_required_coverage": feature_missing_required_coverage,
         "blockers": blockers,
     });
     let artifact = write_artifact("language-corpus-report.json", &details)?;
-    bail!(
-        "language corpus coverage is not complete; see {}",
-        artifact.display()
-    )
+    if details["verdict"] != "pass" {
+        bail!(
+            "language corpus coverage is not complete; see {}",
+            artifact.display()
+        );
+    }
+    Ok(details)
 }
 
 fn verify_negative_corpus(_args: &[String]) -> Result<serde_json::Value> {
