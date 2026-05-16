@@ -112,6 +112,17 @@ fn generated_url_encode(value: &str) -> String {
     encoded
 }
 
+#[allow(dead_code)]
+fn generated_pattern_matches(value: &GeneratedValue, pattern: &str) -> bool {
+    match value {
+        GeneratedValue::Tag(tag) => tag == pattern,
+        GeneratedValue::Text(text) => text == pattern,
+        GeneratedValue::Number(number) => number.to_string() == pattern,
+        GeneratedValue::Empty => pattern.is_empty(),
+        GeneratedValue::List(_) | GeneratedValue::Record(_) => false,
+    }
+}
+
 pub struct GeneratedSourceInputs {
     input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
     output: Arc<Mutex<Vec<SmokeOutput>>>,

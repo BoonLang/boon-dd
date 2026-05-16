@@ -19,6 +19,9 @@ pub fn generated_graph_module(plan: &boon_compiler::CompilePlan) -> String {
     code.push_str(
         "#[allow(dead_code)]\nfn generated_url_encode(value: &str) -> String {\n    const HEX: &[u8; 16] = b\"0123456789ABCDEF\";\n    let mut encoded = String::new();\n    for byte in value.as_bytes() {\n        match *byte {\n            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => encoded.push(*byte as char),\n            byte => {\n                encoded.push('%');\n                encoded.push(HEX[(byte >> 4) as usize] as char);\n                encoded.push(HEX[(byte & 0x0f) as usize] as char);\n            }\n        }\n    }\n    encoded\n}\n\n",
     );
+    code.push_str(
+        "#[allow(dead_code)]\nfn generated_pattern_matches(value: &GeneratedValue, pattern: &str) -> bool {\n    match value {\n        GeneratedValue::Tag(tag) => tag == pattern,\n        GeneratedValue::Text(text) => text == pattern,\n        GeneratedValue::Number(number) => number.to_string() == pattern,\n        GeneratedValue::Empty => pattern.is_empty(),\n        GeneratedValue::List(_) | GeneratedValue::Record(_) => false,\n    }\n}\n\n",
+    );
     code.push_str("pub struct GeneratedSourceInputs {\n");
     code.push_str("    input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,\n");
     code.push_str("    output: Arc<Mutex<Vec<SmokeOutput>>>,\n");
@@ -461,14 +464,140 @@ fn stage_match_graph_collection_code(
     arms: &[boon_dd::DdRenderGraphMatchArm],
     env: &BTreeMap<String, String>,
 ) -> String {
-    let Some(arm) = arms.iter().find(|arm| arm.pattern != "__") else {
-        return format!("({input}).filter(|_| false)");
-    };
-    let value = value_graph_code(graph, &arm.value, env);
     format!(
-        "({input}).filter(|value| value.clone().text() == {}).map(|_| {value})",
-        quote(&arm.pattern)
+        "({input}).flat_map(|matched_value| {})",
+        match_collection_values_code(graph, "matched_value.clone()".to_owned(), arms, env)
     )
+}
+
+fn match_value_code(
+    graph: &boon_dd::DdRenderGraph,
+    matched: String,
+    arms: &[boon_dd::DdRenderGraphMatchArm],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let mut code = format!("{{ let matched_value = {matched}; ");
+    let mut saw_default = false;
+    let mut has_condition = false;
+    for arm in arms {
+        if arm.pattern == "__" {
+            saw_default = true;
+            if has_condition {
+                code.push_str("else ");
+            }
+            code.push_str("{ ");
+            code.push_str(&value_graph_code(graph, &arm.value, env));
+            code.push_str(" } ");
+            continue;
+        }
+        let mut arm_env = env.clone();
+        if match_pattern_binds(&arm.pattern) {
+            arm_env.insert(arm.pattern.clone(), "matched_value.clone()".to_owned());
+            if has_condition {
+                code.push_str("else ");
+            }
+            code.push_str("{ ");
+            code.push_str(&value_graph_code(graph, &arm.value, &arm_env));
+            code.push_str(" } ");
+            saw_default = true;
+            break;
+        }
+        if has_condition {
+            code.push_str("else ");
+        }
+        has_condition = true;
+        code.push_str(&format!(
+            "if generated_pattern_matches(&matched_value, {}) {{ ",
+            quote(&arm.pattern)
+        ));
+        code.push_str(&value_graph_code(graph, &arm.value, &arm_env));
+        code.push_str(" } ");
+    }
+    if !saw_default {
+        if has_condition {
+            code.push_str("else ");
+        }
+        code.push_str("{ ");
+        code.push_str(&unsupported_value_code("render match had no matching arm"));
+        code.push_str(" } ");
+    }
+    code.push('}');
+    code
+}
+
+fn match_collection_values_code(
+    graph: &boon_dd::DdRenderGraph,
+    matched: String,
+    arms: &[boon_dd::DdRenderGraphMatchArm],
+    env: &BTreeMap<String, String>,
+) -> String {
+    let mut code = format!("{{ let matched_value = {matched}; ");
+    let mut saw_default = false;
+    let mut has_condition = false;
+    for arm in arms {
+        if arm.pattern == "__" {
+            saw_default = true;
+            if has_condition {
+                code.push_str("else ");
+            }
+            code.push_str("{ ");
+            code.push_str(&collection_values_graph_code(graph, &arm.value, env));
+            code.push_str(" } ");
+            continue;
+        }
+        let mut arm_env = env.clone();
+        if match_pattern_binds(&arm.pattern) {
+            arm_env.insert(arm.pattern.clone(), "matched_value.clone()".to_owned());
+            if has_condition {
+                code.push_str("else ");
+            }
+            code.push_str("{ ");
+            code.push_str(&collection_values_graph_code(graph, &arm.value, &arm_env));
+            code.push_str(" } ");
+            saw_default = true;
+            break;
+        }
+        if has_condition {
+            code.push_str("else ");
+        }
+        has_condition = true;
+        code.push_str(&format!(
+            "if generated_pattern_matches(&matched_value, {}) {{ ",
+            quote(&arm.pattern)
+        ));
+        code.push_str(&collection_values_graph_code(graph, &arm.value, &arm_env));
+        code.push_str(" } ");
+    }
+    if !saw_default {
+        if has_condition {
+            code.push_str("else ");
+        }
+        code.push_str("{ Vec::<GeneratedValue>::new() } ");
+    }
+    code.push('}');
+    code
+}
+
+fn collection_values_graph_code(
+    graph: &boon_dd::DdRenderGraph,
+    node: &boon_dd::NodeId,
+    env: &BTreeMap<String, String>,
+) -> String {
+    let node = render_graph_node(graph, node);
+    match &node.operation {
+        boon_dd::DdRenderGraphOperation::Missing | boon_dd::DdRenderGraphOperation::Skip => {
+            "Vec::<GeneratedValue>::new()".to_owned()
+        }
+        _ => format!("vec![{}]", value_graph_code(graph, &node.node, env)),
+    }
+}
+
+fn match_pattern_binds(pattern: &str) -> bool {
+    pattern != "__"
+        && pattern
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_lowercase() || first == '_')
 }
 
 fn value_graph_code(
@@ -565,11 +694,10 @@ fn value_graph_code(
             value_graph_code(graph, left, env),
             value_graph_code(graph, right, env)
         ),
-        boon_dd::DdRenderGraphOperation::Match { arms, .. } => arms
-            .iter()
-            .find(|arm| arm.pattern != "__")
-            .map(|arm| value_graph_code(graph, &arm.value, env))
-            .unwrap_or_else(|| unsupported_value_code("render match has no non-default arm")),
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            let matched = unsupported_value_code("standalone render match missing piped input");
+            match_value_code(graph, matched, arms, env)
+        }
     }
 }
 
@@ -583,6 +711,10 @@ fn stage_graph_value_code(
     match &stage.operation {
         boon_dd::DdRenderGraphOperation::Call { callee, args } => {
             call_graph_value_code(graph, callee, input, args, env)
+        }
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            let input = input.unwrap_or_else(|| unsupported_value_code("match missing input"));
+            match_value_code(graph, input, arms, env)
         }
         boon_dd::DdRenderGraphOperation::SourceAt { .. }
         | boon_dd::DdRenderGraphOperation::Link { .. } => {
@@ -1281,6 +1413,30 @@ mod tests {
         assert!(module.contains(".truthy() &&"));
         assert!(module.contains(".truthy() ||"));
         assert!(module.contains(".truthy() ^"));
+    }
+
+    #[test]
+    fn piped_matches_lower_against_matched_value() {
+        let plan = boon_compiler::compile_source(
+            "match_helpers.bn",
+            "document: Document/new(root: Element/stripe(items: LIST { True |> WHEN { True => TEXT { yes } False => TEXT { no } } TEXT { A } |> WHEN { value => value } }))\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(module.contains("generated_pattern_matches(&matched_value, \"True\")"));
+        assert!(module.contains("matched_value.clone()"));
+        assert!(module.contains("GeneratedValue::Text(\"yes\".to_owned())"));
+    }
+
+    #[test]
+    fn collection_matches_lower_skip_as_empty_output() {
+        let plan = boon_compiler::compile_source(
+            "when_helpers.bn",
+            "accepted: sources.key_down.key |> WHEN { Enter => TEXT { accepted } __ => SKIP }\ndocument: accepted |> Document/new()\n",
+        );
+        let module = generated_graph_module(&plan);
+        assert!(module.contains(".flat_map(|matched_value|"));
+        assert!(module.contains("generated_pattern_matches(&matched_value, \"Enter\")"));
+        assert!(module.contains("Vec::<GeneratedValue>::new()"));
     }
 
     #[test]

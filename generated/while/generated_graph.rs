@@ -112,6 +112,17 @@ fn generated_url_encode(value: &str) -> String {
     encoded
 }
 
+#[allow(dead_code)]
+fn generated_pattern_matches(value: &GeneratedValue, pattern: &str) -> bool {
+    match value {
+        GeneratedValue::Tag(tag) => tag == pattern,
+        GeneratedValue::Text(text) => text == pattern,
+        GeneratedValue::Number(number) => number.to_string() == pattern,
+        GeneratedValue::Empty => pattern.is_empty(),
+        GeneratedValue::List(_) | GeneratedValue::Record(_) => false,
+    }
+}
+
 pub struct GeneratedSourceInputs {
     input: InputSession<EncodedTime, (u64, GeneratedSourceEvent), Diff>,
     output: Arc<Mutex<Vec<SmokeOutput>>>,
@@ -310,8 +321,16 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
             .clone()
             .filter(|(_sequence, event)| !generated_event_is_host_tick(event))
             .map(|(_sequence, event)| generated_source_event_value(&event)))
-        .filter(|value| value.clone().text() == "Active")
-        .map(|_| GeneratedValue::Text("visible".to_owned()))
+        .flat_map(|matched_value| {
+            let matched_value = matched_value.clone();
+            if generated_pattern_matches(&matched_value, "Active") {
+                vec![GeneratedValue::Text("visible".to_owned())]
+            } else if generated_pattern_matches(&matched_value, "Completed") {
+                Vec::<GeneratedValue>::new()
+            } else {
+                Vec::<GeneratedValue>::new()
+            }
+        })
         .map(|value| value.text());
         rendered
             .inspect(move |(text, time, diff)| {

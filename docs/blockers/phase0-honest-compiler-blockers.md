@@ -179,6 +179,12 @@ schema_errors: []
   postfix field access on call results such as `Theme/material(of: Danger).color`
   and `Assets/icon().checkbox_completed`. `Assets/icon` has a deterministic
   generated record for the currently observed checkbox icon fields.
+- Generated DD render code now evaluates piped `WHEN`/`WHILE` matches against
+  the actual matched generated value and supports lowercase binder arms such as
+  `value => value`. This removes a render shortcut where value-context matches
+  previously selected the first non-default arm without testing the input. In
+  collection context, `SKIP` arms now emit zero generated values instead of
+  reaching a generated panic.
 - Shape checking and generated DD render code now also cover common sibling-repo
   text helper calls with direct generated DD expressions: `Text/find`,
   `Text/is_empty`, `Text/is_not_empty`, `Text/join_lines`, `Text/length`,
