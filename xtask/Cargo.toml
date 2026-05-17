@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+boon_backend_ply = { path = "../crates/boon_backend_ply" }
 boon_codegen_rust = { path = "../crates/boon_codegen_rust" }
 boon_compiler = { path = "../crates/boon_compiler" }
 boon_dd = { path = "../crates/boon_dd" }
@@ -14,7 +15,29 @@ boon_hir = { path = "../crates/boon_hir" }
 boon_runtime_host = { path = "../crates/boon_runtime_host" }
 boon_shape = { path = "../crates/boon_shape" }
 boon_syntax = { path = "../crates/boon_syntax" }
-naga.workspace = true
+generated_cells = { path = "../generated/cells" }
+generated_counter = { path = "../generated/counter" }
+generated_counter_hold = { path = "../generated/counter_hold" }
+generated_crud = { path = "../generated/crud" }
+generated_flight_booker = { path = "../generated/flight_booker" }
+generated_interval = { path = "../generated/interval" }
+generated_interval_hold = { path = "../generated/interval_hold" }
+generated_latest = { path = "../generated/latest" }
+generated_list_map_block = { path = "../generated/list_map_block" }
+generated_list_map_external_dep = { path = "../generated/list_map_external_dep" }
+generated_list_object_state = { path = "../generated/list_object_state" }
+generated_list_retain_count = { path = "../generated/list_retain_count" }
+generated_list_retain_reactive = { path = "../generated/list_retain_reactive" }
+generated_list_retain_remove = { path = "../generated/list_retain_remove" }
+generated_pong = { path = "../generated/pong" }
+generated_shopping_list = { path = "../generated/shopping_list" }
+generated_temperature_converter = { path = "../generated/temperature_converter" }
+generated_then = { path = "../generated/then" }
+generated_todo_mvc = { path = "../generated/todo_mvc" }
+generated_todo_mvc_physical = { path = "../generated/todo_mvc_physical" }
+generated_when = { path = "../generated/when" }
+generated_while = { path = "../generated/while" }
 serde.workspace = true
 serde_json.workspace = true
+timely.workspace = true
 toml.workspace = true

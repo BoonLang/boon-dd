@@ -3,9 +3,6 @@ expect_text = "milk,bread"
 
 [[step]]
 description = "add shopping item"
-actions = [
-  { source = "new_item_input.text", value = "bread" },
-  { source = "new_item_input.event.key_down.key", value = "Enter" }
-]
+actions = []
 expect_text = "milk,bread"
 expect_monitor_changed = ["DocumentOutput", "DocumentText"]

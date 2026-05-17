@@ -1,5 +1,5 @@
 {
-  "backend": "wgpu-command-schema",
+  "backend": "ply-native-render-command-schema",
   "render": [
     {
       "PatchText": {

@@ -224,6 +224,13 @@ pub enum GeneratedSourceEvent {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GeneratedEventIdentity {
+    pub family_id: SourceFamilyId,
+    pub owner_key: OwnerKey,
+    pub generation: u32,
+}
+
 impl Eq for GeneratedSourceEvent {}
 
 impl PartialOrd for GeneratedSourceEvent {

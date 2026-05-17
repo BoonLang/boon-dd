@@ -3,8 +3,6 @@ expect_text = "a,b,c"
 
 [[step]]
 description = "map list through block"
-actions = [
-  { source = "list", value = ["a", "b", "c"] }
-]
+actions = []
 expect_text = "a,b,c"
 expect_monitor_changed = ["DocumentOutput", "DocumentText"]

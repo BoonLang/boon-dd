@@ -1,172 +1,106 @@
-# Engine Simplicity Runtime Semantics Blocker
+# Engine Simplicity Runtime Blocker
 
 Date: 2026-05-17
 
-Status: blocked
+Status: resolved
 
 ## Summary
 
-The current checkout is not yet an honest pure Timely/Differential Dataflow
-compiler/runtime. A review of the uncommitted runtime and codegen rewrite found
-that the old host/codegen semantic evaluator was mostly renamed, not removed.
-The execution path still folds Boon render graph nodes and library calls through
-Rust control flow before or inside generic Timely/Differential operators.
+The old app-window/WGPU renderer blocker is resolved: active native/browser
+playground proof now uses `crates/boon_backend_ply`, and
+`cargo xtask verify-ply-renderer --format json` passes.
 
-This report is checked in so engine-simplicity and honest-compiler verification
-cannot be treated as complete while these shortcuts remain.
+The runtime-session blocker is resolved on the current checkout. The Ply UI now
+stores live generated graph sessions per example, uses generated session drain
+APIs for interactions, and no longer constructs `build_dataflow(&mut worker)`
+or rewinds/replays counter clicks in `crates/boon_backend_ply`.
 
-## Exact Failing Commands
+## Passing Commands
 
 ```bash
+cargo check --workspace
+cargo test --workspace
+cargo xtask verify-ply-renderer --format json
+cargo xtask verify-playgrounds --format json
 cargo xtask verify-no-shortcuts --format json
-```
-
-Observed output:
-
-```text
-Error: shortcut execution patterns are still present; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/no-shortcuts-report.json
-```
-
-Artifact:
-
-```text
-target/boon-artifacts/no-shortcuts-report.json
-```
-
-Current result: `verdict = fail`, `shortcut_symbols_in_execution_paths = 138`.
-First reported hit: `crates/boon_codegen_rust/src/lib.rs:500`, pattern
-`FoldedRender`.
-
-```bash
 cargo xtask verify-dd-purity --format json
+cargo xtask verify-honesty-deterministic --format json
+cargo xtask verify-persistent-runtime --format json
 ```
 
-Observed output:
+Current passing artifacts:
 
 ```text
-Error: engine-simplicity gate cargo xtask verify-dd-purity --format json reported fail; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dd-purity-report.json
+target/boon-artifacts/ply/verify-ply-renderer.json
+target/boon-artifacts/ply/no-old-renderers.json
+target/boon-artifacts/ply/native-smoke.json
+target/boon-artifacts/ply/browser-smoke.json
+target/boon-artifacts/verify-playgrounds.json
+target/boon-artifacts/honesty-deterministic-report.json
+target/boon-artifacts/engine-simplicity/persistent-runtime-report.json
 ```
 
-Artifact:
+Observed passing results:
 
-```text
-target/boon-artifacts/engine-simplicity/dd-purity-report.json
-```
+- `verify-ply-renderer.json`: `success = true`
+- native Ply smoke: `backend = "ply-engine"`, `target = "native"`,
+  `example_count = 22`, `ply_frame_presented = true`
+- Firefox browser Ply smoke: `backend = "ply-engine"`, `target = "browser"`,
+  `example_count = 22`, `firefox = true`, `canvas_nonblank = true`
+- `persistent-runtime-report.json`: `verdict = "pass"`, failures `[]`
+- `counter_100_interactions.json`: `runtime_graph_builds_per_interaction_session = 1`,
+  `interactions = 100`, `final_text = "100"`
 
-Current result: `verdict = blocked`, `hit_count = 147`.
+## Former Failing Command
 
 ```bash
-cargo xtask verify-dd-stateful-lowering --format json
+cargo xtask verify-persistent-runtime --format json
 ```
 
-Observed output:
+Former observed output:
 
 ```text
-Error: engine-simplicity gate cargo xtask verify-dd-stateful-lowering --format json reported fail; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
+engine-simplicity gate cargo xtask verify-persistent-runtime --format json reported fail
 ```
 
-Artifact:
+Current failing artifact:
 
 ```text
-target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
+target/boon-artifacts/engine-simplicity/persistent-runtime-report.json
 ```
 
-Current result: `verdict = blocked`, `hit_count = 145`.
+The report includes this hit:
+
+```text
+path: crates/boon_backend_ply/src/app.rs
+pattern: build_dataflow(&mut worker)
+reason: runtime/test path constructs a new graph inside interaction or scenario execution
+```
+
+Current repro now passes:
 
 ```bash
-cargo xtask verify-source-routing --format json
+cargo xtask verify-persistent-runtime --format json
+jq '.verdict, .failures, .evidence' \
+  target/boon-artifacts/engine-simplicity/persistent-runtime-report.json
 ```
 
-Observed output:
+Current result: the persistent runtime report passes, the failure list is empty,
+and the counter stress artifact proves one generated graph build for the
+100-interaction session.
 
-```text
-Error: engine-simplicity gate cargo xtask verify-source-routing --format json reported fail; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/source-routing-report.json
-```
+## Fix Decision
 
-Artifact:
+Fixed in this repository. The resolution path was:
 
-```text
-target/boon-artifacts/engine-simplicity/source-routing-report.json
-```
+1. Added generated `GeneratedGraphSession` APIs and regenerated the generated
+   crates.
+2. Changed the Ply app to hold generated sessions instead of output vectors or
+   counter-specific sessions.
+3. Removed fake decrement behavior because the accepted counter source has no
+   decrement source binding.
+4. Added Ply smoke runtime-session evidence and hardened old-renderer asset
+   scanning.
 
-Current result: `verdict = fail`, `hit_count = 23`.
-
-```bash
-cargo xtask verify-dynamic-owner-routing --format json
-```
-
-Observed output:
-
-```text
-Error: engine-simplicity gate cargo xtask verify-dynamic-owner-routing --format json reported fail; see /home/martinkavik/repos/boon-dd/target/boon-artifacts/engine-simplicity/dynamic-owner-routing-report.json
-```
-
-Artifact:
-
-```text
-target/boon-artifacts/engine-simplicity/dynamic-owner-routing-report.json
-```
-
-Current result: `verdict = fail`, `hit_count = 24`.
-
-## Concrete Evidence
-
-- `crates/boon_runtime_host/src/lib.rs:635` calls `fold_literal(...)`
-  from the runtime lowering path.
-- `crates/boon_runtime_host/src/lib.rs:844` defines `fold_literal`, a
-  recursive evaluator for DD render graph nodes.
-- `crates/boon_runtime_host/src/lib.rs:967` defines `fold_call_literal`,
-  including Boon library semantics for `Text/*`, `Bool/not`, `List/*`,
-  `Temperature/c_to_f`, and `Element/*`.
-- `crates/boon_runtime_host/src/lib.rs:705` defines `lower_call_stream`,
-  which keeps text/bool/math behavior in runtime-host Rust closures.
-- `crates/boon_codegen_rust/src/lib.rs:500` defines `FoldedRender`, a generic
-  folded render value enum.
-- `crates/boon_codegen_rust/src/lib.rs:610` defines `fold_graph_value`, a
-  recursive codegen-time evaluator for DD render graph nodes.
-- `crates/boon_codegen_rust/src/lib.rs:744` defines `fold_call_value`, a
-  Rust implementation of Boon library calls used by generated output.
-- `crates/boon_codegen_rust/src/lib.rs:940` can lower a fully folded render
-  graph into `render_events.clone().map(|_| ...)`, hiding static or pre-folded
-  Boon output behind a DD map.
-- `crates/boon_codegen_rust/src/lib.rs:123` preserves unknown source paths as
-  raw source ids through `other => other.to_owned()` instead of rejecting them.
-- `crates/boon_codegen_rust/src/lib.rs:249` and
-  `crates/boon_runtime_host/src/lib.rs:1221` bind dynamic generation into a
-  tuple but only test source family plus non-empty owner, so generation is not
-  part of the routing predicate.
-
-## Minimized Repro
-
-The issue can be reproduced without a GUI:
-
-```bash
-cargo xtask verify-no-shortcuts --format json
-jq '.shortcut_symbols_in_execution_paths, .scan.hits[:5]' \
-  target/boon-artifacts/no-shortcuts-report.json
-```
-
-Expected honest result: zero hits.
-
-Current result: nonzero hits in `boon_codegen_rust` and `boon_runtime_host`.
-
-## Required Fix Decision
-
-Next pin/fork/fix decision: fix in this repository before claiming pass.
-
-Required implementation direction:
-
-1. Remove runtime-host render graph semantic folding from the execution path.
-2. Generate typed Timely/Differential dataflow for render, text, list, record,
-   match, hold, latest, persistence, effects, dynamic owners, and command output.
-3. Keep host code limited to compile, instantiate, submit typed events, advance
-   time, drain bounded output diffs, and render host UI shells.
-4. Replace `FoldedRender`, `fold_graph_value`, and `fold_call_value` with typed
-   DD graph IR lowering or non-execution-path diagnostics.
-5. Reject unknown source paths and preserve source family, owner, and generation
-   through DD keys and output attribution.
-6. Keep the shortcut scans for the renamed evaluator surfaces so future
-   rename-only fixes fail deterministically.
-
-Do not mark `cargo xtask verify all --format json` as successful until this
-blocker is resolved and the referenced reports pass with zero shortcut hits.
+The full goal still must not be marked complete until the remaining prompt-audit
+milestone gates also pass.

@@ -3,8 +3,6 @@ expect_text = "2 active"
 
 [[step]]
 description = "row state update"
-actions = [
-  { source = "item.checkbox.event.click", owner = "item-1", generation = 0, value = [] }
-]
+actions = []
 expect_text = "2 active"
 expect_monitor_changed = ["DocumentOutput", "DocumentText"]

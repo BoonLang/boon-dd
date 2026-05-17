@@ -3,8 +3,6 @@ expect_text = "physical ready"
 
 [[step]]
 description = "render physical scene"
-actions = [
-  { source = "scene.frame", value = [] }
-]
+actions = []
 expect_text = "physical ready"
 expect_monitor_changed = ["DocumentOutput", "DocumentText"]

@@ -13,49 +13,6 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-struct TerminalFixture {
-    name: &'static str,
-    source_path: &'static str,
-    source: &'static str,
-    scenario: &'static str,
-}
-
-macro_rules! terminal_fixture {
-    ($name:literal) => {
-        TerminalFixture {
-            name: $name,
-            source_path: concat!("examples/", $name, "/source.bn"),
-            source: include_str!(concat!("../../../../examples/", $name, "/source.bn")),
-            scenario: include_str!(concat!("../../../../examples/", $name, "/scenario.toml")),
-        }
-    };
-}
-
-const TERMINAL_FIXTURES: &[TerminalFixture] = &[
-    terminal_fixture!("counter"),
-    terminal_fixture!("counter_hold"),
-    terminal_fixture!("interval"),
-    terminal_fixture!("interval_hold"),
-    terminal_fixture!("latest"),
-    terminal_fixture!("when"),
-    terminal_fixture!("while"),
-    terminal_fixture!("then"),
-    terminal_fixture!("list_map_block"),
-    terminal_fixture!("list_map_external_dep"),
-    terminal_fixture!("list_object_state"),
-    terminal_fixture!("list_retain_count"),
-    terminal_fixture!("list_retain_reactive"),
-    terminal_fixture!("list_retain_remove"),
-    terminal_fixture!("shopping_list"),
-    terminal_fixture!("todo_mvc"),
-    terminal_fixture!("crud"),
-    terminal_fixture!("flight_booker"),
-    terminal_fixture!("temperature_converter"),
-    terminal_fixture!("pong"),
-    terminal_fixture!("cells"),
-    terminal_fixture!("todo_mvc_physical"),
-];
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
@@ -140,18 +97,10 @@ fn run_interactive() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn terminal_examples() -> Result<Vec<(String, boon_dd::SmokeOutput)>, Box<dyn std::error::Error>> {
-    TERMINAL_FIXTURES
-        .iter()
-        .map(|fixture| {
-            let output = boon_runtime_host::run_dd_graph_scenario(
-                fixture.source_path,
-                fixture.source,
-                fixture.scenario,
-            )
-            .map_err(|error| format!("failed to run compiled fixture {}: {error}", fixture.name))?;
-            Ok((fixture.name.to_owned(), output))
-        })
-        .collect()
+    Ok(boon_wasm_smoke::run_generated_manifest()
+        .into_iter()
+        .map(|(name, output)| (name.to_owned(), output))
+        .collect())
 }
 
 fn render_playground(

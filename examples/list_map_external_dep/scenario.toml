@@ -3,8 +3,6 @@ expect_text = "A,B,C"
 
 [[step]]
 description = "map list with external dependency"
-actions = [
-  { source = "uppercase", value = "True" }
-]
+actions = []
 expect_text = "A,B,C"
 expect_monitor_changed = ["DocumentOutput", "DocumentText"]

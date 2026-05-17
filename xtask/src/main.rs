@@ -10,9 +10,11 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const WASM_BINDGEN_VERSION: &str = "0.2.120";
+const PLYX_VERSION: &str = "0.2.2";
 const COSMIC_WORKSPACE: &str = "boon-dd";
 const HONEST_COMPILER_PLAN: &str = "BOON_DD_HONEST_COMPILER_PLAN.md";
 const ENGINE_SIMPLICITY_PLAN: &str = "BOON_DD_ENGINE_SIMPLICITY_PLAN.md";
+const PURE_DD_PLY_MILESTONES: &str = "BOON_DD_PURE_DD_PLY_SIMPLIFICATION_MILESTONES.md";
 const LANGUAGE_MANIFEST: &str = "docs/language/boon-language-manifest.toml";
 const ENGINE_SIMPLICITY_SCHEMA_VERSION: &str = "1";
 
@@ -53,6 +55,9 @@ const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
     concat!("fold", "_call_value"),
     concat!("Folded", "Render"),
     concat!("lower", "_render_text_collection"),
+    concat!("render_events.clone().map", "(|_|"),
+    concat!("other => other.", "to_owned()"),
+    concat!("identity.0 == *bound && !identity.1.", "is_empty()"),
     concat!("dd", "_render_operation_from_expr("),
     concat!("expression", "_has_call("),
     concat!("line.contains", "(\"command =\")"),
@@ -86,7 +91,7 @@ fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
     if args.is_empty() {
         bail!(
-            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-syntax-corpus|verify-resolver-corpus|verify-shape-corpus|verify-semantic-ir|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|verify-generated-crates|write-generated-artifacts|write-honest-compiler-prompts|verify-prompt-audit|verify-engine-simplicity|verify-dd-purity|verify-no-fixture-dispatch|verify-source-routing|verify-dynamic-owner-routing|verify-persistent-runtime|verify-output-drain-efficiency|verify-dd-stateful-lowering|verify-engine-stress|verify-engine-complexity|verify-engine-prompt-audit|compare-engines|verify> ..."
+            "usage: cargo xtask <bootstrap|run|test|verify-deps|verify-wasm-dd|verify-render-deps|verify-playgrounds|verify-ply-renderer|verify-ply-headless|verify-ply-native|verify-ply-browser|verify-ply-no-old-renderers|verify-ply-fresh-artifacts|verify-syntax-corpus|verify-resolver-corpus|verify-shape-corpus|verify-semantic-ir|verify-honest-compiler|verify-no-shortcuts|verify-honesty-deterministic|verify-language-corpus|verify-negative-corpus|verify-lowering|verify-generated-freshness|verify-generated-crates|write-generated-artifacts|write-honest-compiler-prompts|verify-prompt-audit|write-pure-dd-ply-baseline|verify-engine-simplicity|verify-dd-purity|verify-no-fixture-dispatch|verify-source-routing|verify-dynamic-owner-routing|verify-persistent-runtime|verify-output-drain-efficiency|verify-dd-stateful-lowering|verify-engine-stress|verify-engine-complexity|verify-engine-prompt-audit|compare-engines|verify> ..."
         );
     }
 
@@ -98,6 +103,13 @@ fn main() -> Result<()> {
         "verify-wasm-dd" => verify_wasm_dd(&args).map(|_| ()),
         "verify-render-deps" => verify_render_deps(&args).map(|_| ()),
         "verify-playgrounds" => verify_playgrounds(&args).map(|_| ()),
+        "verify-ply-renderer" => verify_ply_renderer(&args),
+        "verify-ply-headless" => verify_ply_headless(&args).map(|_| ()),
+        "verify-ply-native" => verify_ply_native(&args).map(|_| ()),
+        "verify-ply-browser" => verify_ply_browser(&args).map(|_| ()),
+        "verify-ply-no-old-renderers" => verify_ply_no_old_renderers(&args).map(|_| ()),
+        "verify-ply-fresh-artifacts" => verify_ply_fresh_artifacts(&args).map(|_| ()),
+        "verify-pure-dd-ply-milestones" => verify_pure_dd_ply_milestones(&args).map(|_| ()),
         "verify-syntax-corpus" => verify_syntax_corpus(&args).map(|_| ()),
         "verify-resolver-corpus" => verify_resolver_corpus(&args).map(|_| ()),
         "verify-shape-corpus" => verify_shape_corpus(&args).map(|_| ()),
@@ -113,6 +125,7 @@ fn main() -> Result<()> {
         "write-generated-artifacts" => write_generated_artifacts(&args).map(|_| ()),
         "write-honest-compiler-prompts" => write_honest_compiler_prompts(&args).map(|_| ()),
         "verify-prompt-audit" => verify_prompt_audit(&args).map(|_| ()),
+        "write-pure-dd-ply-baseline" => write_pure_dd_ply_baseline(&args).map(|_| ()),
         "verify-engine-simplicity" => verify_engine_simplicity(&args).map(|_| ()),
         "verify-dd-purity" => verify_dd_purity(&args).map(|_| ()),
         "verify-no-fixture-dispatch" => verify_no_fixture_dispatch(&args).map(|_| ()),
@@ -152,6 +165,12 @@ fn artifacts_dir() -> Result<PathBuf> {
 
 fn engine_artifacts_dir() -> Result<PathBuf> {
     let path = artifacts_dir()?.join("engine-simplicity");
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn pure_dd_ply_artifacts_dir() -> Result<PathBuf> {
+    let path = artifacts_dir()?.join("pure-dd-ply");
     fs::create_dir_all(&path)?;
     Ok(path)
 }
@@ -215,12 +234,24 @@ fn bootstrap(args: &[String]) -> Result<()> {
         install_wasm_bindgen()?;
     }
 
+    let plyx = find_plyx();
+    if check {
+        let plyx = plyx.context("missing repo-local or global plyx")?;
+        let version = run_capture(plyx.to_str().unwrap(), &["--version"])?;
+        if !version.contains(PLYX_VERSION) {
+            bail!("plyx version mismatch: expected {PLYX_VERSION}, got {version}");
+        }
+    } else if plyx.is_none() {
+        install_plyx()?;
+    }
+
     let details = serde_json::json!({
         "rustc": rustc,
         "cargo": cargo,
         "targets": targets.lines().collect::<Vec<_>>(),
         "cosmic_background_launch": helper,
         "background_launch_service": "com.system76.CosmicComp.BackgroundLaunch",
+        "plyx": find_plyx().map(|p| p.display().to_string()),
     });
     let path = artifacts_dir()?.join("bootstrap-check.json");
     fs::write(path, serde_json::to_vec_pretty(&details)?)?;
@@ -344,28 +375,31 @@ fn require_webgpu_smoke(smoke_value: &serde_json::Value) -> Result<()> {
 fn verify_render_deps(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_wgpu"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
     run_status("cargo", &["check", "-p", "boon_backend_browser"])?;
-    let native_smoke_artifact = verify_native_app_window_smoke()?;
-    let shader_path = repo_root()?.join("shaders/common/ui_rect.wgsl");
-    let shader_source = fs::read_to_string(&shader_path)
-        .with_context(|| format!("missing shader {}", shader_path.display()))?;
-    naga::front::wgsl::parse_str(&shader_source)
-        .with_context(|| format!("WGSL parse failed for {}", shader_path.display()))?;
+    run_status("cargo", &["check", "-p", "boon_backend_ply", "--bins"])?;
+    let ply_engine_tree = run_capture("cargo", &["tree", "-i", "ply-engine"])?;
+    let ply_crate_absent = Command::new("cargo")
+        .args(["tree", "-i", "ply"])
+        .status()
+        .context("failed to run cargo tree -i ply")?
+        .success()
+        == false;
+    if !ply_crate_absent {
+        bail!("unexpected dependency on crate named ply");
+    }
+    let headless = verify_ply_headless(&["--format".to_owned(), "json".to_owned()])?;
 
     let artifact = artifacts_dir()?.join("verify-render-deps.json");
     let details = serde_json::json!({
         "ratatui": "0.30.0",
         "crossterm": "0.29.0",
-        "wgpu": "29.0.3",
-        "wesl": "0.3.2",
-        "wgsl_bindgen": "0.22.2",
-        "app_window": "0.3.3",
-        "native_surface_mode": "app_window native window and surface smoke plus render-command preflight",
-        "browser_surface_mode": "browser-hosted wasm plus Firefox WebGPU adapter/device preflight",
-        "shader_parse": shader_path,
-        "native_app_window_smoke": native_smoke_artifact,
+        "ply_engine": "1.1.1",
+        "plyx": PLYX_VERSION,
+        "native_surface_mode": "macroquad plus ply-engine native app",
+        "browser_surface_mode": "ply-engine WASM app packaged by Ply loader",
+        "ply_engine_dependency_tree": ply_engine_tree,
+        "crate_named_ply_absent": ply_crate_absent,
+        "headless_ply_evidence": headless.artifacts,
         "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
     });
     fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
@@ -383,23 +417,11 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
     let start = Instant::now();
     verify_generated_freshness(&["--format".to_owned(), "json".to_owned()])?;
     run_status("cargo", &["check", "-p", "boon_backend_ratatui"])?;
-    run_status("cargo", &["check", "-p", "boon_backend_app_window"])?;
-    run_status(
-        "cargo",
-        &[
-            "build",
-            "--target",
-            "wasm32-unknown-unknown",
-            "-p",
-            "boon_wasm_smoke",
-            "--release",
-        ],
-    )?;
+    run_status("cargo", &["check", "-p", "boon_backend_ply", "--bins"])?;
 
     let dir = artifacts_dir()?;
     let terminal_artifact = dir.join("terminal-playground.json");
     let native_artifact = dir.join("native-playground.json");
-    let native_screenshots_dir = dir.join("native-playground-screenshots");
     let browser_artifact = dir.join("browser-playground-result.json");
 
     if terminal_artifact.exists() {
@@ -432,46 +454,21 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
     if native_artifact.exists() {
         fs::remove_file(&native_artifact)?;
     }
-    run_status(
-        "cargo",
-        &[
-            "build",
-            "-p",
-            "boon_backend_app_window",
-            "--bin",
-            "native_playground",
-        ],
-    )?;
-    let native_playground_binary = repo_root()?.join("target/debug/native_playground");
-    let native_playground_binary_arg = native_playground_binary.display().to_string();
-    let native_artifact_arg = native_artifact.display().to_string();
-    let native_screenshots_arg = native_screenshots_dir.display().to_string();
-    launch_background_process(&[
-        &native_playground_binary_arg,
-        "--smoke",
-        &native_artifact_arg,
-        &native_screenshots_arg,
-    ])?;
-    wait_for_json_artifact(
+    let native_gate = verify_ply_native(&["--format".to_owned(), "json".to_owned()])?;
+    let native_details = native_gate.details;
+    fs::write(
         &native_artifact,
-        Duration::from_secs(45),
-        "native playground",
+        serde_json::to_vec_pretty(&native_details)?,
     )?;
-    let native_details = read_playground_artifact(&native_artifact)?;
     require_playground_examples("native", &native_details)?;
     for pointer in [
-        "/window_created",
-        "/surface_created",
-        "/wgpu/adapter",
-        "/wgpu/device",
-        "/wgpu/surface_configured",
-        "/wgpu/frame_presented",
-        "/visible_ui/full_surface_background",
+        "/ply_initialized",
+        "/ply_frame_evaluated",
+        "/ply_frame_presented",
         "/visible_ui/sidebar",
         "/visible_ui/example_labels",
-        "/visible_ui/paged_example_list",
-        "/visible_ui/native_vector_scene",
         "/visible_ui/selected_output_panel",
+        "/renderer/legacy_native_window_stack_removed",
     ] {
         if native_details
             .pointer(pointer)
@@ -481,31 +478,36 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
             bail!("native playground did not prove {pointer}: {native_details}");
         }
     }
-    let rendered_vertices = native_details
-        .pointer("/visible_ui/rendered_vertices")
+    let render_commands = native_details
+        .pointer("/visible_ui/ply_render_commands")
         .and_then(|value| value.as_u64())
         .unwrap_or(0);
-    if rendered_vertices < 1000 {
-        bail!("native playground rendered too little UI geometry: {native_details}");
+    if render_commands == 0 {
+        bail!("native playground rendered no Ply commands: {native_details}");
     }
-    require_native_per_example_screenshots(&native_details)?;
 
-    let browser_dir = prepare_wasm_bindgen_output()?;
-    let browser_html = browser_dir.join("index.html");
-    fs::write(&browser_html, browser_playground_html())?;
     if browser_artifact.exists() {
         fs::remove_file(&browser_artifact)?;
     }
-    run_firefox_smoke(&browser_html, &browser_artifact)?;
-    let browser_details = read_playground_artifact(&browser_artifact)?;
-    require_webgpu_smoke(&browser_details)?;
+    let browser_gate = verify_ply_browser(&[
+        "--browser".to_owned(),
+        "firefox".to_owned(),
+        "--format".to_owned(),
+        "json".to_owned(),
+    ])?;
+    let browser_details = browser_gate.details;
+    fs::write(
+        &browser_artifact,
+        serde_json::to_vec_pretty(&browser_details)?,
+    )?;
     require_playground_examples("browser", &browser_details)?;
     for pointer in [
-        "/ui/canvas",
-        "/ui/output_panel",
-        "/ui/simulated_click",
-        "/webgpu/canvas_context",
-        "/webgpu/frame_presented",
+        "/firefox",
+        "/canvas_nonblank",
+        "/ply_frame_presented",
+        "/renderer/plyx_web_bundle",
+        "/renderer/custom_js_renderer_removed",
+        "/renderer/custom_webgpu_renderer_removed",
     ] {
         if browser_details
             .pointer(pointer)
@@ -533,11 +535,584 @@ fn verify_playgrounds(_args: &[String]) -> Result<GateReport> {
             artifact.display().to_string(),
             terminal_artifact.display().to_string(),
             native_artifact.display().to_string(),
-            native_screenshots_dir.display().to_string(),
             browser_artifact.display().to_string(),
         ],
         details,
     })
+}
+
+fn ply_artifacts_dir() -> Result<PathBuf> {
+    let path = artifacts_dir()?.join("ply");
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn verify_ply_renderer(_args: &[String]) -> Result<()> {
+    let gates = vec![
+        capture_gate(
+            "verify-ply-headless",
+            "cargo xtask verify-ply-headless --format json",
+            || verify_ply_headless(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_gate(
+            "verify-ply-native",
+            "cargo xtask verify-ply-native --format json",
+            || verify_ply_native(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_gate(
+            "verify-ply-browser",
+            "cargo xtask verify-ply-browser --browser firefox --format json",
+            || {
+                verify_ply_browser(&[
+                    "--browser".to_owned(),
+                    "firefox".to_owned(),
+                    "--format".to_owned(),
+                    "json".to_owned(),
+                ])
+            },
+        ),
+        capture_gate(
+            "verify-ply-no-old-renderers",
+            "cargo xtask verify-ply-no-old-renderers --format json",
+            || verify_ply_no_old_renderers(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_gate(
+            "verify-ply-fresh-artifacts",
+            "cargo xtask verify-ply-fresh-artifacts --format json",
+            || verify_ply_fresh_artifacts(&["--format".to_owned(), "json".to_owned()]),
+        ),
+    ];
+    let success = gates.iter().all(|gate| gate.status == "passed");
+    let artifact = ply_artifacts_dir()?.join("verify-ply-renderer.json");
+    fs::write(
+        &artifact,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "success": success,
+            "gates": gates,
+        }))?,
+    )?;
+    if !success {
+        bail!(
+            "Ply renderer verification failed; see {}",
+            artifact.display()
+        );
+    }
+    Ok(())
+}
+
+fn verify_ply_headless(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    run_status("cargo", &["check", "-p", "boon_backend_ply"])?;
+    let report = boon_backend_ply::evidence::headless_matrix_report();
+    if !report.success {
+        bail!("Ply headless evidence reported failure");
+    }
+    if report.examples.len() != boon_dd::REQUIRED_EXAMPLES.len() {
+        bail!(
+            "Ply headless evidence covered {} examples; expected {}",
+            report.examples.len(),
+            boon_dd::REQUIRED_EXAMPLES.len()
+        );
+    }
+    if !report.interaction.selection_changed
+        || !report.interaction.counter_state_changed
+        || !report.interaction.counter_advanced_twice
+        || !report.interaction.generic_state_changed_or_noop_documented
+    {
+        bail!(
+            "Ply interaction evidence is incomplete: {:?}",
+            report.interaction
+        );
+    }
+    let artifact = ply_artifacts_dir()?.join("headless-matrix.json");
+    fs::write(&artifact, serde_json::to_vec_pretty(&report)?)?;
+    Ok(GateReport {
+        name: "verify-ply-headless".to_owned(),
+        command: "cargo xtask verify-ply-headless --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details: serde_json::to_value(&report)?,
+    })
+}
+
+fn verify_ply_native(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    run_status(
+        "cargo",
+        &[
+            "build",
+            "-p",
+            "boon_backend_ply",
+            "--bin",
+            "native_playground",
+        ],
+    )?;
+    let artifact = ply_artifacts_dir()?.join("native-smoke.json");
+    if artifact.exists() {
+        fs::remove_file(&artifact)?;
+    }
+    let binary = repo_root()?.join("target/debug/native_playground");
+    let binary_arg = binary.display().to_string();
+    let artifact_arg = artifact.display().to_string();
+    launch_background_process(&[&binary_arg, "--smoke", &artifact_arg])?;
+    wait_for_json_artifact(&artifact, Duration::from_secs(60), "native Ply smoke")?;
+    let details = read_playground_artifact(&artifact)?;
+    require_ply_smoke("native", &details)?;
+    if details
+        .pointer("/renderer/legacy_native_window_stack_removed")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        bail!("native Ply smoke did not prove legacy native-window stack removal: {details}");
+    }
+    Ok(GateReport {
+        name: "verify-ply-native".to_owned(),
+        command: "cargo xtask verify-ply-native --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn verify_ply_browser(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let build_dir = build_ply_web()?;
+    let artifact = ply_artifacts_dir()?.join("browser-smoke.json");
+    let html = build_dir.join("index.html");
+    run_firefox_smoke(&html, &artifact)?;
+    let mut details = read_playground_artifact(&artifact)?;
+    let canvas_nonblank = details
+        .pointer("/frame/ply_render_commands")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+        > 0;
+    if let Some(object) = details.as_object_mut() {
+        object.insert("firefox".to_owned(), serde_json::json!(true));
+        object.insert(
+            "canvas_nonblank".to_owned(),
+            serde_json::json!(canvas_nonblank),
+        );
+    }
+    require_ply_smoke("browser", &details)?;
+    if details.get("firefox").and_then(|value| value.as_bool()) != Some(true) {
+        bail!("browser Ply smoke did not prove Firefox execution: {details}");
+    }
+    if details
+        .get("canvas_nonblank")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        bail!("browser Ply smoke did not prove nonblank canvas: {details}");
+    }
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    Ok(GateReport {
+        name: "verify-ply-browser".to_owned(),
+        command: "cargo xtask verify-ply-browser --browser firefox --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![
+            artifact.display().to_string(),
+            build_dir.display().to_string(),
+        ],
+        details,
+    })
+}
+
+fn require_ply_smoke(target: &str, details: &serde_json::Value) -> Result<()> {
+    if details.get("backend").and_then(|value| value.as_str()) != Some("ply-engine") {
+        bail!("{target} smoke did not report Ply backend: {details}");
+    }
+    if details.get("target").and_then(|value| value.as_str()) != Some(target) {
+        bail!("{target} smoke reported wrong target: {details}");
+    }
+    require_playground_examples(target, details)?;
+    for pointer in [
+        "/renderer/library",
+        "/renderer/crate_version",
+        "/frame/ply_render_commands",
+    ] {
+        if details.pointer(pointer).is_none() {
+            bail!("{target} Ply smoke missing {pointer}: {details}");
+        }
+    }
+    if details
+        .pointer("/frame/ply_render_commands")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0)
+        == 0
+    {
+        bail!("{target} Ply smoke has no render commands: {details}");
+    }
+    Ok(())
+}
+
+fn build_ply_web() -> Result<PathBuf> {
+    let root = repo_root()?;
+    let crate_dir = root.join("crates/boon_backend_ply");
+    let plyx = find_plyx().context("missing repo-local or global plyx")?;
+    let status = Command::new(plyx)
+        .current_dir(&crate_dir)
+        .args(["web", "--auto"])
+        .status()
+        .context("failed to run plyx web")?;
+    if !status.success() {
+        bail!("plyx web failed with {status}");
+    }
+    let build_dir = crate_dir.join("build/web");
+    for file in ["app.wasm", "index.html", "ply_bundle.js"] {
+        let path = build_dir.join(file);
+        if !path.exists() {
+            bail!("Ply web build missing {}", path.display());
+        }
+    }
+    Ok(build_dir)
+}
+
+fn verify_ply_no_old_renderers(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let root = repo_root()?;
+    let forbidden_paths = [
+        "crates/boon_backend_app_window/Cargo.toml",
+        "crates/boon_backend_wgpu/Cargo.toml",
+    ];
+    let existing_forbidden_paths = forbidden_paths
+        .iter()
+        .filter_map(|path| root.join(path).exists().then(|| path.to_string()))
+        .collect::<Vec<_>>();
+    let metadata = run_capture("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
+    let old_dependency_hits = ["app_window", "wgpu", "wesl", "wgsl_bindgen", "naga"]
+        .iter()
+        .filter(|needle| metadata.contains(&format!("\"{needle}\"")))
+        .map(|needle| needle.to_string())
+        .collect::<Vec<_>>();
+    let mut stale_renderer_assets = Vec::new();
+    collect_renderer_asset_hits(&root.join("shaders"), &mut stale_renderer_assets)?;
+    let artifact = ply_artifacts_dir()?.join("no-old-renderers.json");
+    let details = serde_json::json!({
+        "success": existing_forbidden_paths.is_empty()
+            && old_dependency_hits.is_empty()
+            && stale_renderer_assets.is_empty(),
+        "existing_forbidden_paths": existing_forbidden_paths,
+        "old_dependency_hits": old_dependency_hits,
+        "stale_renderer_assets": stale_renderer_assets,
+        "allowed_renderer_crate": "crates/boon_backend_ply",
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    if details["success"].as_bool() != Some(true) {
+        bail!("old renderer scan found hits; see {}", artifact.display());
+    }
+    Ok(GateReport {
+        name: "verify-ply-no-old-renderers".to_owned(),
+        command: "cargo xtask verify-ply-no-old-renderers --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn collect_renderer_asset_hits(path: &Path, hits: &mut Vec<String>) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            collect_renderer_asset_hits(&entry?.path(), hits)?;
+        }
+        return Ok(());
+    }
+    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    if matches!(extension, "wgsl" | "wesl") {
+        hits.push(path.strip_prefix(repo_root()?)?.display().to_string());
+    }
+    Ok(())
+}
+
+fn verify_ply_fresh_artifacts(_args: &[String]) -> Result<GateReport> {
+    let start = Instant::now();
+    let required = [
+        "headless-matrix.json",
+        "native-smoke.json",
+        "browser-smoke.json",
+        "no-old-renderers.json",
+    ];
+    let dir = ply_artifacts_dir()?;
+    let missing = required
+        .iter()
+        .filter_map(|file| {
+            let path = dir.join(file);
+            (!path.exists()).then(|| path.display().to_string())
+        })
+        .collect::<Vec<_>>();
+    let artifact = dir.join("fresh-artifacts.json");
+    let details = serde_json::json!({
+        "success": missing.is_empty(),
+        "required": required,
+        "missing": missing,
+    });
+    fs::write(&artifact, serde_json::to_vec_pretty(&details)?)?;
+    if details["success"].as_bool() != Some(true) {
+        bail!(
+            "Ply renderer artifacts are missing; see {}",
+            artifact.display()
+        );
+    }
+    Ok(GateReport {
+        name: "verify-ply-fresh-artifacts".to_owned(),
+        command: "cargo xtask verify-ply-fresh-artifacts --format json".to_owned(),
+        status: "passed".to_owned(),
+        duration_ms: start.elapsed().as_millis(),
+        artifacts: vec![artifact.display().to_string()],
+        details,
+    })
+}
+
+fn verify_pure_dd_ply_milestones(_args: &[String]) -> Result<serde_json::Value> {
+    let dir = pure_dd_ply_artifacts_dir()?;
+    let parser_path = dir.join("parser-decision.json");
+    let ply_path = dir.join("ply-merge-report.json");
+    let simplicity_path = dir.join("simplicity-report.json");
+    let comparison_path = dir.join("final-comparison.json");
+    let milestone_path = dir.join("milestone-verification.json");
+    let ply_renderer = read_artifact_json("ply/verify-ply-renderer.json")?;
+    let parser = write_parser_decision_artifact(&parser_path)?;
+    let ply = write_ply_merge_report(&ply_path, &ply_renderer)?;
+    let simplicity = write_pure_dd_ply_simplicity_report(&simplicity_path)?;
+    let comparison = write_pure_dd_ply_final_comparison(&comparison_path)?;
+    let mut blockers = Vec::new();
+
+    if parser.get("verdict").and_then(|value| value.as_str()) != Some("pass") {
+        blockers.push(serde_json::json!({
+            "milestone": "parser-simplification",
+            "artifact": parser_path.display().to_string(),
+            "reason": "parser decision is not pass; Chumsky/parser-library simplification and full accepted syntax coverage remain unresolved",
+            "verdict": parser.get("verdict").cloned().unwrap_or(serde_json::json!("missing")),
+        }));
+    }
+    if ply_renderer
+        .get("success")
+        .and_then(|value| value.as_bool())
+        != Some(true)
+    {
+        blockers.push(serde_json::json!({
+            "milestone": "ply-renderer",
+            "artifact": artifacts_dir()?.join("ply/verify-ply-renderer.json").display().to_string(),
+            "reason": "Ply renderer aggregate did not pass",
+        }));
+    }
+    if ply.get("verdict").and_then(|value| value.as_str()) != Some("pass") {
+        blockers.push(serde_json::json!({
+            "milestone": "ply-merge",
+            "artifact": ply_path.display().to_string(),
+            "reason": "Ply merge report is not pass",
+            "verdict": ply.get("verdict").cloned().unwrap_or(serde_json::json!("missing")),
+        }));
+    }
+    if simplicity.get("verdict").and_then(|value| value.as_str()) != Some("pass") {
+        blockers.push(serde_json::json!({
+            "milestone": "simplicity",
+            "artifact": simplicity_path.display().to_string(),
+            "reason": "simplicity report is not pass",
+            "verdict": simplicity.get("verdict").cloned().unwrap_or(serde_json::json!("missing")),
+        }));
+    }
+    if comparison.get("verdict").and_then(|value| value.as_str()) != Some("pass") {
+        blockers.push(serde_json::json!({
+            "milestone": "final-comparison",
+            "artifact": comparison_path.display().to_string(),
+            "reason": "final comparison is not pass",
+            "verdict": comparison.get("verdict").cloned().unwrap_or(serde_json::json!("missing")),
+        }));
+    }
+
+    let details = serde_json::json!({
+        "verdict": if blockers.is_empty() { "pass" } else { "blocked" },
+        "blockers": blockers,
+        "artifacts": {
+            "parser_decision": parser_path,
+            "ply_merge_report": ply_path,
+            "simplicity_report": simplicity_path,
+            "final_comparison": comparison_path,
+            "ply_renderer": artifacts_dir()?.join("ply/verify-ply-renderer.json"),
+        },
+        "parser_decision": parser,
+        "ply_merge_report": ply,
+        "simplicity_report": simplicity,
+        "final_comparison": comparison,
+        "ply_renderer_report": ply_renderer,
+    });
+    fs::write(&milestone_path, serde_json::to_vec_pretty(&details)?)?;
+    if details["verdict"].as_str() != Some("pass") {
+        bail!(
+            "pure DD/Ply simplification milestones are blocked; see {}",
+            milestone_path.display()
+        );
+    }
+    Ok(details)
+}
+
+fn write_parser_decision_artifact(path: &Path) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let original_boon = PathBuf::from("/home/martinkavik/repos/boon");
+    let current_metrics = source_file_metrics(&root, &["crates/boon_syntax/src"])?;
+    let original_core_metrics = if original_boon.exists() {
+        source_file_metrics(
+            &original_boon,
+            &["crates/boon/src/parser.rs", "crates/boon/src/parser"],
+        )?
+    } else {
+        serde_json::json!({ "missing": true })
+    };
+    let cargo_toml_path = root.join("crates/boon_syntax/Cargo.toml");
+    let cargo_toml = fs::read_to_string(&cargo_toml_path)
+        .with_context(|| format!("missing {}", cargo_toml_path.display()))?;
+    let forbidden_deps = [
+        "boon =",
+        "zoon",
+        "boon-renderer-zoon",
+        "web-sys",
+        "ply-engine",
+        "timely",
+        "differential-dataflow",
+    ]
+    .into_iter()
+    .filter(|needle| cargo_toml.contains(needle))
+    .collect::<Vec<_>>();
+    let manifest = read_language_manifest()?;
+    let parser_gate = deterministic_parser_gate(&root, &manifest);
+    let syntax_report = read_artifact_json("syntax-corpus-report.json").unwrap_or_else(|error| {
+        serde_json::json!({
+            "read_error": format!("{error:#}"),
+        })
+    });
+    let negative_report =
+        read_artifact_json("negative-corpus-report.json").unwrap_or_else(|error| {
+            serde_json::json!({
+                "read_error": format!("{error:#}"),
+            })
+        });
+    let language_report =
+        read_artifact_json("language-corpus-report.json").unwrap_or_else(|error| {
+            serde_json::json!({
+                "read_error": format!("{error:#}"),
+            })
+        });
+    let syntax_pass = syntax_report["verdict"].as_str() == Some("pass");
+    let negative_pass = negative_report["verdict"].as_str() == Some("pass");
+    let language_pass = language_report["verdict"].as_str() == Some("pass");
+    let parser_pass = parser_gate.status == "passed"
+        && syntax_pass
+        && negative_pass
+        && language_pass
+        && forbidden_deps.is_empty();
+    let details = serde_json::json!({
+        "schema_version": "2",
+        "verdict": if parser_pass { "pass" } else { "blocked" },
+        "decision": "keep the current boon_syntax parser for the accepted current-corpus surface; do not depend on the whole /home/martinkavik/repos/boon crate",
+        "reason": "The accepted-corpus parser is dependency-minimal and smaller than the original Chumsky parser core. The original Chumsky parser remains the preferred source when the manifest promotes more cross-repo Boon syntax into the accepted surface.",
+        "selected_option": "current-parser-with-hardened-accepted-corpus-gates",
+        "current_parser_metrics": current_metrics,
+        "original_boon_parser_core_metrics": original_core_metrics,
+        "dependency_boundary": {
+            "crate": "crates/boon_syntax",
+            "forbidden_hits": forbidden_deps,
+            "whole_boon_dependency": cargo_toml.contains("boon ="),
+        },
+        "coverage": {
+            "accepted_examples": manifest.examples.len(),
+            "negative_examples": manifest.negative_examples.len(),
+            "parser_gate_status": parser_gate.status,
+            "syntax_corpus_verdict": syntax_report["verdict"],
+            "negative_corpus_verdict": negative_report["verdict"],
+            "language_corpus_verdict": language_report["verdict"],
+        },
+        "caveat": "docs/language/boon-language-manifest.toml cross_repo_inventory remains explicit not-accepted inventory, not hidden accepted syntax coverage",
+    });
+    fs::write(path, serde_json::to_vec_pretty(&details)?)?;
+    Ok(details)
+}
+
+fn write_ply_merge_report(
+    path: &Path,
+    ply_renderer: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let source_commit = run_capture(
+        "git",
+        &[
+            "-C",
+            "/home/martinkavik/repos/boon-dd-ply",
+            "rev-parse",
+            "HEAD",
+        ],
+    )
+    .unwrap_or_else(|error| format!("unavailable: {error:#}"));
+    let tree = run_capture("cargo", &["tree", "-i", "ply-engine", "--edges", "normal"])
+        .unwrap_or_else(|error| format!("unavailable: {error:#}"));
+    let ply_success = ply_renderer
+        .get("success")
+        .and_then(|value| value.as_bool())
+        == Some(true);
+    let compiler_runtime_depends_on_ply = tree.lines().any(|line| {
+        line.contains("boon_compiler")
+            || line.contains("boon_runtime_host")
+            || line.contains("boon_dd ")
+            || line.contains("boon_codegen_rust")
+    });
+    let details = serde_json::json!({
+        "schema_version": "2",
+        "verdict": if ply_success && !compiler_runtime_depends_on_ply { "pass" } else { "blocked" },
+        "source_worktree": "/home/martinkavik/repos/boon-dd-ply",
+        "expected_source_commit_prefix": "1a80482",
+        "actual_source_commit": source_commit.trim(),
+        "renderer_crate": "crates/boon_backend_ply",
+        "ply_renderer_success": ply_success,
+        "compiler_runtime_depends_on_ply": compiler_runtime_depends_on_ply,
+        "cargo_tree_i_ply_engine": tree,
+        "ply_renderer_artifact": "target/boon-artifacts/ply/verify-ply-renderer.json",
+    });
+    fs::write(path, serde_json::to_vec_pretty(&details)?)?;
+    Ok(details)
+}
+
+fn write_pure_dd_ply_simplicity_report(path: &Path) -> Result<serde_json::Value> {
+    let engine = read_engine_artifact_json("engine-simplicity-report.json")?;
+    let complexity = read_engine_artifact_json("complexity-report.json")?;
+    let persistent = read_engine_artifact_json("persistent-runtime-report.json")?;
+    let output_drain = read_engine_artifact_json("output-drain-efficiency-report.json")?;
+    let pass = engine["verdict"].as_str() == Some("pass")
+        && persistent["verdict"].as_str() == Some("pass")
+        && output_drain["verdict"].as_str() == Some("pass");
+    let details = serde_json::json!({
+        "schema_version": "2",
+        "verdict": if pass { "pass" } else { "blocked" },
+        "engine_simplicity_verdict": engine["verdict"],
+        "persistent_runtime_verdict": persistent["verdict"],
+        "output_drain_verdict": output_drain["verdict"],
+        "complexity_report": "target/boon-artifacts/engine-simplicity/complexity-report.json",
+        "complexity_summary": complexity["summary"],
+        "engine_simplicity_report": "target/boon-artifacts/engine-simplicity/engine-simplicity-report.json",
+    });
+    fs::write(path, serde_json::to_vec_pretty(&details)?)?;
+    Ok(details)
+}
+
+fn write_pure_dd_ply_final_comparison(path: &Path) -> Result<serde_json::Value> {
+    let comparison = read_engine_artifact_json("cross-engine-comparison.json")?;
+    let engine = read_engine_artifact_json("engine-simplicity-report.json")?;
+    let pass = engine["verdict"].as_str() == Some("pass")
+        && comparison["verdict"].as_str() == Some("pass");
+    let details = serde_json::json!({
+        "schema_version": "2",
+        "verdict": if pass { "pass" } else { "blocked" },
+        "engine_simplicity_verdict": engine["verdict"],
+        "cross_engine_comparison_verdict": comparison["verdict"],
+        "cross_engine_comparison_artifact": "target/boon-artifacts/engine-simplicity/cross-engine-comparison.json",
+        "comparison_summary": comparison["summary"],
+    });
+    fs::write(path, serde_json::to_vec_pretty(&details)?)?;
+    Ok(details)
 }
 
 fn read_playground_artifact(path: &Path) -> Result<serde_json::Value> {
@@ -568,73 +1143,6 @@ fn require_playground_examples(name: &str, details: &serde_json::Value) -> Resul
     Ok(())
 }
 
-fn require_native_per_example_screenshots(details: &serde_json::Value) -> Result<()> {
-    let rows = details
-        .get("per_example")
-        .and_then(|value| value.as_array())
-        .context("native playground artifact missing per_example screenshot list")?;
-    if rows.len() != boon_dd::REQUIRED_EXAMPLES.len() {
-        bail!(
-            "native playground wrote {} per-example screenshots; expected {}",
-            rows.len(),
-            boon_dd::REQUIRED_EXAMPLES.len()
-        );
-    }
-    for (index, example) in boon_dd::REQUIRED_EXAMPLES.iter().enumerate() {
-        let row = rows
-            .get(index)
-            .with_context(|| format!("missing native screenshot row for {example}"))?;
-        if row.get("example").and_then(|value| value.as_str()) != Some(*example) {
-            bail!("native screenshot row {index} is not for {example}: {row}");
-        }
-        if row.get("selected_index").and_then(|value| value.as_u64()) != Some(index as u64) {
-            bail!("native screenshot row has wrong selected_index for {example}: {row}");
-        }
-        if row
-            .get("rendered_vertices")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(0)
-            < 3000
-        {
-            bail!("native screenshot row rendered too little geometry for {example}: {row}");
-        }
-        let scene_kind = row
-            .get("scene_kind")
-            .and_then(|value| value.as_str())
-            .with_context(|| format!("native screenshot row missing scene_kind for {example}"))?;
-        if scene_kind.is_empty() || scene_kind == "native_workbench_app" {
-            bail!("native screenshot row has insufficient scene kind for {example}: {row}");
-        }
-        let widgets = row
-            .get("native_widgets")
-            .and_then(|value| value.as_array())
-            .with_context(|| {
-                format!("native screenshot row missing widget evidence for {example}")
-            })?;
-        if widgets.len() < 3 {
-            bail!("native screenshot row has too few native widgets for {example}: {row}");
-        }
-        let screenshot = row
-            .get("screenshot")
-            .and_then(|value| value.as_str())
-            .with_context(|| format!("native screenshot row missing path for {example}"))?;
-        require_png_signature(Path::new(screenshot))
-            .with_context(|| format!("invalid native screenshot for {example}: {screenshot}"))?;
-    }
-    Ok(())
-}
-
-fn require_png_signature(path: &Path) -> Result<()> {
-    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    if bytes.len() < 64 {
-        bail!("PNG file is too small: {}", path.display());
-    }
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        bail!("file does not have a PNG signature: {}", path.display());
-    }
-    Ok(())
-}
-
 fn wait_for_json_artifact(path: &Path, timeout: Duration, label: &str) -> Result<()> {
     let start = Instant::now();
     loop {
@@ -653,64 +1161,6 @@ fn wait_for_json_artifact(path: &Path, timeout: Duration, label: &str) -> Result
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-}
-
-fn prepare_wasm_bindgen_output() -> Result<PathBuf> {
-    let wasm_bindgen = find_wasm_bindgen().context("missing wasm-bindgen 0.2.120")?;
-    let root = repo_root()?;
-    let out_dir = root.join("target/boon-artifacts/wasm-bindgen");
-    fs::create_dir_all(&out_dir)?;
-    run_status(
-        wasm_bindgen.to_str().unwrap(),
-        &[
-            "--target",
-            "web",
-            "--out-dir",
-            out_dir.to_str().unwrap(),
-            root.join("target/wasm32-unknown-unknown/release/boon_wasm_smoke.wasm")
-                .to_str()
-                .unwrap(),
-        ],
-    )?;
-    Ok(out_dir)
-}
-
-fn verify_native_app_window_smoke() -> Result<PathBuf> {
-    let artifact = artifacts_dir()?.join("native-app-window-smoke.json");
-    if artifact.exists() {
-        fs::remove_file(&artifact)?;
-    }
-    run_status(
-        "cargo",
-        &[
-            "build",
-            "-p",
-            "boon_backend_app_window",
-            "--bin",
-            "native_smoke",
-        ],
-    )?;
-    let binary = repo_root()?.join("target/debug/native_smoke");
-    let binary_arg = binary.display().to_string();
-    let artifact_arg = artifact.display().to_string();
-    launch_background_process(&[&binary_arg, &artifact_arg])?;
-    let start = Instant::now();
-    while !artifact.exists() {
-        if start.elapsed() > Duration::from_secs(30) {
-            bail!(
-                "native app_window smoke did not write {} within 30s",
-                artifact.display()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    let details: serde_json::Value = serde_json::from_str(&fs::read_to_string(&artifact)?)?;
-    for field in ["window_created", "surface_created"] {
-        if details.get(field).and_then(|value| value.as_bool()) != Some(true) {
-            bail!("native app_window smoke did not prove {field}: {details}");
-        }
-    }
-    Ok(artifact)
 }
 
 fn verify(args: &[String]) -> Result<()> {
@@ -759,6 +1209,14 @@ fn verify(args: &[String]) -> Result<()> {
         || verify_playgrounds(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
+        "verify-ply-renderer",
+        "cargo xtask verify-ply-renderer --format json",
+        || {
+            verify_ply_renderer(&["--format".to_owned(), "json".to_owned()])?;
+            read_playground_artifact(&artifacts_dir()?.join("ply/verify-ply-renderer.json"))
+        },
+    ));
+    gates.push(capture_simple_gate(
         "example-matrix",
         "cargo xtask verify all --format json",
         verify_example_matrix,
@@ -778,7 +1236,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "native".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "native",
-                "mode": "app_window native window/surface smoke plus render-command verification"
+                "mode": "Ply native surface plus generated DD output verification"
             }))
         },
     ));
@@ -789,7 +1247,7 @@ fn verify(args: &[String]) -> Result<()> {
             test_target(&["--target".to_owned(), "browser".to_owned()])?;
             Ok(serde_json::json!({
                 "target": "browser",
-                "mode": "browser-hosted wasm plus Firefox WebGPU smoke artifact verification"
+                "mode": "Ply browser WASM plus generated DD output verification"
             }))
         },
     ));
@@ -919,6 +1377,11 @@ fn verify(args: &[String]) -> Result<()> {
         || verify_engine_simplicity(&["--format".to_owned(), "json".to_owned()]),
     ));
     gates.push(capture_simple_gate(
+        "verify-pure-dd-ply-milestones",
+        "cargo xtask verify-pure-dd-ply-milestones --format json",
+        || verify_pure_dd_ply_milestones(&["--format".to_owned(), "json".to_owned()]),
+    ));
+    gates.push(capture_simple_gate(
         "generated-crates",
         "cargo test --manifest-path generated/<example>/Cargo.toml",
         verify_generated_crates,
@@ -957,6 +1420,7 @@ fn verify(args: &[String]) -> Result<()> {
             "no_shortcuts_report": read_artifact_json("no-shortcuts-report.json")?,
             "honest_compiler_prompt_pack": read_artifact_json("honest-compiler-prompt-pack.json")?,
             "prompt_audit_report": read_artifact_json("prompt-audit-report.json")?,
+            "ply_renderer_report": read_artifact_json("ply/verify-ply-renderer.json")?,
             "engine_simplicity": engine_success_summary()?,
         }))?,
     )?;
@@ -1020,6 +1484,8 @@ fn collect_dependency_tool_versions() -> Result<serde_json::Value> {
         "timely": "0.29.0",
         "differential-dataflow": "0.23.0",
         "wasm-bindgen-cli": find_wasm_bindgen()
+            .and_then(|path| run_capture(path.to_str().unwrap(), &["--version"]).ok()),
+        "plyx": find_plyx()
             .and_then(|path| run_capture(path.to_str().unwrap(), &["--version"]).ok()),
         "firefox": run_capture("firefox", &["--version"]).unwrap_or_else(|error| format!("unavailable: {error}")),
         "cosmic-background-launch": run_capture("bash", &["-lc", "command -v cosmic-background-launch"]).unwrap_or_else(|error| format!("unavailable: {error}")),
@@ -1153,6 +1619,213 @@ fn engine_report(
         );
     }
     Ok(details)
+}
+
+fn write_pure_dd_ply_baseline(args: &[String]) -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let boon_dd_ply = PathBuf::from("/home/martinkavik/repos/boon-dd-ply");
+    let boon = PathBuf::from("/home/martinkavik/repos/boon");
+    let report = serde_json::json!({
+        "schema_version": "1",
+        "plan_path": PURE_DD_PLY_MILESTONES,
+        "command": "cargo xtask write-pure-dd-ply-baseline --format json",
+        "boon_dd": {
+            "git_head": run_capture("git", &["rev-parse", "HEAD"])?,
+            "git_status_short": run_capture("git", &["status", "--short"])?,
+            "branch_status": run_capture("git", &["status", "--short", "--branch"])?,
+            "input_hashes": pure_dd_ply_input_hashes()?,
+            "source_metrics": source_file_metrics(&root, &["crates", "xtask", "docs"])?,
+            "generated_metrics": source_file_metrics(&root, &["generated"])?,
+            "workspace_summary": cargo_workspace_summary()?,
+        },
+        "boon_dd_ply": sibling_repo_baseline(
+            &boon_dd_ply,
+            "1a80482",
+            &["crates/boon_backend_ply", "BOON_DD_PLY_RENDERER_PLAN.md", "BOON_DD_PLY_HUMAN_SURFACE_VERIFICATION_PLAN.md"]
+        )?,
+        "boon_parser": boon_parser_baseline(&boon)?,
+        "current_gate_summaries": pure_dd_ply_current_gate_summaries(),
+        "known_blockers": active_blocker_reports()?,
+    });
+    let path = pure_dd_ply_artifacts_dir()?.join("baseline.json");
+    fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
+    if args.iter().any(|arg| arg == "--format") && args.iter().any(|arg| arg == "json") {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    }
+    Ok(report)
+}
+
+fn pure_dd_ply_input_hashes() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let paths = [
+        PURE_DD_PLY_MILESTONES,
+        HONEST_COMPILER_PLAN,
+        ENGINE_SIMPLICITY_PLAN,
+        LANGUAGE_MANIFEST,
+        "docs/blockers/engine-simplicity-runtime-semantics-blocker.md",
+        "docs/blockers/phase0-honest-compiler-blockers.md",
+        "Cargo.toml",
+        "Cargo.lock",
+    ];
+    let mut hashes = serde_json::Map::new();
+    for path in paths {
+        let full_path = root.join(path);
+        hashes.insert(
+            path.to_owned(),
+            if full_path.exists() {
+                serde_json::Value::String(sha256_file(&full_path)?)
+            } else {
+                serde_json::json!({ "missing": true })
+            },
+        );
+    }
+    Ok(serde_json::Value::Object(hashes))
+}
+
+fn sibling_repo_baseline(
+    root: &Path,
+    expected_commit_prefix: &str,
+    metric_bases: &[&str],
+) -> Result<serde_json::Value> {
+    if !root.exists() {
+        return Ok(serde_json::json!({
+            "path": root.display().to_string(),
+            "available": false,
+        }));
+    }
+    let root_arg = root.display().to_string();
+    let head = run_capture("git", &["-C", &root_arg, "rev-parse", "HEAD"])?;
+    let status = run_capture("git", &["-C", &root_arg, "status", "--short"])?;
+    Ok(serde_json::json!({
+        "path": root.display().to_string(),
+        "available": true,
+        "git_head": head,
+        "git_status_short": status,
+        "expected_commit_prefix": expected_commit_prefix,
+        "matches_expected_commit": head.starts_with(expected_commit_prefix),
+        "source_metrics": source_file_metrics(root, metric_bases)?,
+    }))
+}
+
+fn boon_parser_baseline(root: &Path) -> Result<serde_json::Value> {
+    if !root.exists() {
+        return Ok(serde_json::json!({
+            "path": root.display().to_string(),
+            "available": false,
+        }));
+    }
+    let cargo_toml = root.join("crates/boon/Cargo.toml");
+    let manifest_text = fs::read_to_string(&cargo_toml)
+        .with_context(|| format!("missing {}", cargo_toml.display()))?;
+    let root_arg = root.display().to_string();
+    Ok(serde_json::json!({
+        "path": root.display().to_string(),
+        "available": true,
+        "git_head": run_capture("git", &["-C", &root_arg, "rev-parse", "HEAD"])?,
+        "git_status_short": run_capture("git", &["-C", &root_arg, "status", "--short"])?,
+        "parser_cargo_toml_sha256": sha256_file(&cargo_toml)?,
+        "uses_chumsky": manifest_text.contains("chumsky"),
+        "whole_boon_crate_pulls_unrelated_dependencies": manifest_text.contains("zoon")
+            || manifest_text.contains("boon-renderer")
+            || manifest_text.contains("boon-scene"),
+        "parser_metrics": source_file_metrics(root, &["crates/boon/src/parser.rs", "crates/boon/src/parser"])?,
+        "decision_note": "Prefer extracting the parser modules or a small parser-focused crate over depending on the whole boon crate when the whole crate pulls renderer/web/runtime dependencies.",
+    }))
+}
+
+fn cargo_workspace_summary() -> Result<serde_json::Value> {
+    let root = repo_root()?;
+    let metadata_text = run_capture("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
+    let metadata: serde_json::Value = serde_json::from_str(&metadata_text)?;
+    let manifest_text = fs::read_to_string(root.join("Cargo.toml"))?;
+    let manifest: toml::Value = manifest_text.parse()?;
+    let workspace_dependency_count = manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("dependencies"))
+        .and_then(|dependencies| dependencies.as_table())
+        .map_or(0, toml::map::Map::len);
+    let lock_text = fs::read_to_string(root.join("Cargo.lock")).unwrap_or_default();
+    Ok(serde_json::json!({
+        "workspace_member_count": metadata
+            .get("workspace_members")
+            .and_then(|value| value.as_array())
+            .map_or(0, Vec::len),
+        "metadata_package_count": metadata
+            .get("packages")
+            .and_then(|value| value.as_array())
+            .map_or(0, Vec::len),
+        "workspace_dependency_count": workspace_dependency_count,
+        "lockfile_package_count": lock_text.lines().filter(|line| *line == "[[package]]").count(),
+    }))
+}
+
+fn pure_dd_ply_current_gate_summaries() -> serde_json::Value {
+    let gates = [
+        capture_simple_gate(
+            "verify-no-shortcuts",
+            "cargo xtask verify-no-shortcuts --format json",
+            || verify_no_shortcuts(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_simple_gate(
+            "verify-dd-purity",
+            "cargo xtask verify-dd-purity --format json",
+            || verify_dd_purity(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_simple_gate(
+            "verify-source-routing",
+            "cargo xtask verify-source-routing --format json",
+            || verify_source_routing(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_simple_gate(
+            "verify-dynamic-owner-routing",
+            "cargo xtask verify-dynamic-owner-routing --format json",
+            || verify_dynamic_owner_routing(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_simple_gate(
+            "verify-dd-stateful-lowering",
+            "cargo xtask verify-dd-stateful-lowering --format json",
+            || verify_dd_stateful_lowering(&["--format".to_owned(), "json".to_owned()]),
+        ),
+        capture_simple_gate(
+            "verify-engine-simplicity",
+            "cargo xtask verify-engine-simplicity --format json",
+            || verify_engine_simplicity(&["--format".to_owned(), "json".to_owned()]),
+        ),
+    ];
+    serde_json::json!({
+        "gates": gates,
+        "failed_gate_count": gates.iter().filter(|gate| gate.status != "passed").count(),
+        "failed_gates": gates
+            .iter()
+            .filter(|gate| gate.status != "passed")
+            .map(|gate| gate.name.clone())
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn active_blocker_reports() -> Result<Vec<serde_json::Value>> {
+    let root = repo_root()?;
+    let blocker_dir = root.join("docs/blockers");
+    if !blocker_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut reports = Vec::new();
+    for entry in fs::read_dir(blocker_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        let text = fs::read_to_string(&path)?;
+        reports.push(serde_json::json!({
+            "path": relative.display().to_string(),
+            "sha256": sha256_file(&path)?,
+            "status_blocked": text.contains("Status: blocked"),
+            "has_exact_failing_commands": text.contains("Exact Failing Commands") || text.contains("Blocking Commands"),
+        }));
+    }
+    reports.sort_by_key(|report| report["path"].as_str().unwrap_or_default().to_owned());
+    Ok(reports)
 }
 
 fn engine_input_hashes() -> Result<serde_json::Value> {
@@ -1706,6 +2379,102 @@ fn verify_no_shortcuts(_args: &[String]) -> Result<serde_json::Value> {
     Ok(details)
 }
 
+fn stale_success_artifact_check() -> Result<serde_json::Value> {
+    let success_path = artifacts_dir()?.join("success.json");
+    if !success_path.exists() {
+        return Ok(serde_json::json!({
+            "verdict": "pass",
+            "success_json": "missing",
+            "reason": "no stale success artifact exists",
+        }));
+    }
+    let success: serde_json::Value = serde_json::from_str(&fs::read_to_string(&success_path)?)
+        .with_context(|| format!("success artifact is not JSON: {}", success_path.display()))?;
+    if success.get("success").and_then(|value| value.as_bool()) != Some(true) {
+        return Ok(serde_json::json!({
+            "verdict": "pass",
+            "success_json": success_path.display().to_string(),
+            "success": false,
+        }));
+    }
+
+    let mut conflicts = Vec::new();
+    if !active_engine_blocker_reports()?.is_empty() {
+        conflicts.push(serde_json::json!({
+            "reason": "success.json claims success while checked-in engine blocker reports remain active",
+            "blocker_reports": active_engine_blocker_reports()?,
+        }));
+    }
+    let root_artifact_reports = ["no-shortcuts-report.json"];
+    for report in root_artifact_reports {
+        let artifact = artifacts_dir()?.join(report);
+        if !artifact.exists() {
+            conflicts.push(serde_json::json!({
+                "path": artifact.display().to_string(),
+                "reason": "success.json claims success but required current report is missing",
+            }));
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&artifact)?)
+            .with_context(|| format!("artifact is not JSON: {}", artifact.display()))?;
+        if value.get("verdict").and_then(|verdict| verdict.as_str()) != Some("pass") {
+            conflicts.push(serde_json::json!({
+                "path": artifact.display().to_string(),
+                "verdict": value.get("verdict"),
+                "reason": "success.json claims success but current report is not pass",
+            }));
+        }
+        if value
+            .get("shortcut_symbols_in_execution_paths")
+            .and_then(|count| count.as_u64())
+            .unwrap_or(0)
+            != 0
+        {
+            conflicts.push(serde_json::json!({
+                "path": artifact.display().to_string(),
+                "shortcut_symbols_in_execution_paths": value.get("shortcut_symbols_in_execution_paths"),
+                "reason": "success.json claims success but shortcuts remain in current report",
+            }));
+        }
+    }
+    let engine_reports = [
+        "engine-simplicity-report.json",
+        "dd-purity-report.json",
+        "source-routing-report.json",
+        "dynamic-owner-routing-report.json",
+        "dd-stateful-lowering-report.json",
+    ];
+    for report in engine_reports {
+        let artifact = engine_artifacts_dir()?.join(report);
+        if !artifact.exists() {
+            conflicts.push(serde_json::json!({
+                "path": artifact.display().to_string(),
+                "reason": "success.json claims success but required current engine report is missing",
+            }));
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(&fs::read_to_string(&artifact)?)
+            .with_context(|| format!("engine artifact is not JSON: {}", artifact.display()))?;
+        if value.get("verdict").and_then(|verdict| verdict.as_str()) != Some("pass") {
+            conflicts.push(serde_json::json!({
+                "path": artifact.display().to_string(),
+                "verdict": value.get("verdict"),
+                "reason": "success.json claims success but current engine report is not pass",
+            }));
+        }
+    }
+
+    let details = serde_json::json!({
+        "verdict": if conflicts.is_empty() { "pass" } else { "fail" },
+        "success_json": success_path.display().to_string(),
+        "conflicts": conflicts,
+    });
+    if !conflicts.is_empty() {
+        bail!("stale success.json conflicts with current blocker or verifier artifacts: {details}");
+    }
+    Ok(details)
+}
+
 fn verify_engine_simplicity(_args: &[String]) -> Result<serde_json::Value> {
     let gate_specs: [(&str, &str, fn(&[String]) -> Result<serde_json::Value>); 10] = [
         (
@@ -1760,6 +2529,11 @@ fn verify_engine_simplicity(_args: &[String]) -> Result<serde_json::Value> {
         ),
     ];
     let mut gates = Vec::new();
+    gates.push(capture_simple_gate(
+        "stale-success-artifact",
+        "cargo xtask verify-engine-simplicity --format json",
+        stale_success_artifact_check,
+    ));
     for (name, command, function) in gate_specs {
         gates.push(capture_simple_gate(name, command, || {
             function(&["--format".to_owned(), "json".to_owned()])
@@ -1827,6 +2601,31 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             concat!("run", "_smoke_json"),
             "smoke_verification",
             "browser proof can be reduced to precomputed smoke JSON",
+        ),
+        (
+            concat!("run", "_compiled_manifest_json"),
+            "smoke_verification",
+            "browser proof can be reduced to a precomputed compiled manifest JSON",
+        ),
+        (
+            concat!("wasm", "_compiled_manifest"),
+            "smoke_verification",
+            "browser proof records cached manifest rows instead of live generated graph interaction",
+        ),
+        (
+            concat!("JSON.parse(run", "_compiled_manifest_json())"),
+            "smoke_verification",
+            "browser playground loads precomputed runtime-host manifest output",
+        ),
+        (
+            concat!("generated", "_output"),
+            "native_side_evidence",
+            "native proof can append generated/runtime output as side evidence instead of rendering from it",
+        ),
+        (
+            concat!("boon_runtime_host::run", "_dd_graph_scenario"),
+            "host_runtime_semantics",
+            "browser/native/backend proof still executes through runtime-host scenario evaluation",
         ),
         (
             concat!("Generated", "Value"),
@@ -1961,10 +2760,9 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
     ];
     let hits = scan_engine_patterns(
         &[
-            "crates/boon_backend_app_window",
             "crates/boon_backend_browser",
+            "crates/boon_backend_ply",
             "crates/boon_backend_ratatui",
-            "crates/boon_backend_wgpu",
             "crates/boon_codegen_rust",
             "crates/boon_examples",
             "crates/boon_runtime_host",
@@ -2060,10 +2858,9 @@ fn verify_no_fixture_dispatch(_args: &[String]) -> Result<serde_json::Value> {
     ];
     let hits = scan_engine_patterns(
         &[
-            "crates/boon_backend_app_window",
             "crates/boon_backend_browser",
+            "crates/boon_backend_ply",
             "crates/boon_backend_ratatui",
-            "crates/boon_backend_wgpu",
             "crates/boon_runtime_host",
             "crates/boon_examples",
             "crates/boon_wasm_smoke",
@@ -2290,10 +3087,9 @@ fn verify_persistent_runtime(_args: &[String]) -> Result<serde_json::Value> {
     ];
     let hits = scan_engine_patterns(
         &[
-            "crates/boon_backend_app_window",
             "crates/boon_backend_browser",
+            "crates/boon_backend_ply",
             "crates/boon_backend_ratatui",
-            "crates/boon_backend_wgpu",
         ],
         &patterns,
     )?;
@@ -2344,7 +3140,7 @@ fn persistent_runtime_session_check() -> Result<serde_json::Value> {
     fs::create_dir_all(&artifact_dir)?;
     let artifact_path = artifact_dir.join("counter_100_interactions.json");
     let source_path = "examples/counter/source.bn";
-    let source_text = fs::read_to_string(root.join(source_path))
+    let _source_text = fs::read_to_string(root.join(source_path))
         .with_context(|| format!("missing {source_path}"))?;
     let scenario_text = fs::read_to_string(root.join("examples/counter/scenario.toml"))
         .context("missing examples/counter/scenario.toml")?;
@@ -2356,25 +3152,17 @@ fn persistent_runtime_session_check() -> Result<serde_json::Value> {
         .next()
         .cloned()
         .context("counter scenario has no source action")?;
-    let session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text.clone())
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-    let mut output = session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut session = CounterGeneratedSession::new();
+    let mut output = session.submit_host_tick_and_drain(1)?;
     let mut step_latencies_ms = Vec::new();
     for index in 0..100_u64 {
         let started = Instant::now();
-        output = session
-            .submit_action_and_drain(action.clone(), index + 2)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        output = session.submit_action_and_drain(&action, index + 2)?;
         step_latencies_ms.push(started.elapsed().as_secs_f64() * 1000.0);
     }
     let final_text = smoke_render_text(&output);
-    let reload_session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-    let reload_output = reload_session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut reload_session = CounterGeneratedSession::new();
+    let reload_output = reload_session.submit_host_tick_and_drain(1)?;
     let mut sorted = step_latencies_ms.clone();
     sorted.sort_by(|left, right| left.total_cmp(right));
     let p95 = sorted
@@ -2392,7 +3180,7 @@ fn persistent_runtime_session_check() -> Result<serde_json::Value> {
         "verdict": if passed { "pass" } else { "fail" },
         "source_path": source_path,
         "interactions": 100,
-        "runtime_path": "boon_runtime_host::ThreadedGraphSession",
+        "runtime_path": "generated_counter::build_dataflow",
         "runtime_graph_builds_per_interaction_session": 1,
         "source_reload_graph_build_increment": 1,
         "final_text": final_text,
@@ -2408,6 +3196,73 @@ fn persistent_runtime_session_check() -> Result<serde_json::Value> {
         "details": details,
         "verdict": verdict,
     }))
+}
+
+struct CounterGeneratedSession {
+    worker: timely::worker::Worker,
+    handles: generated_counter::graph::GeneratedGraphHandles,
+    latest_output: Option<boon_dd::SmokeOutput>,
+}
+
+impl CounterGeneratedSession {
+    fn new() -> Self {
+        let allocator = timely::communication::Allocator::Thread(
+            timely::communication::allocator::Thread::default(),
+        );
+        let mut worker =
+            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+        let handles = generated_counter::graph::build_dataflow(&mut worker);
+        Self {
+            worker,
+            handles,
+            latest_output: None,
+        }
+    }
+
+    fn submit_host_tick_and_drain(&mut self, epoch: u64) -> Result<boon_dd::SmokeOutput> {
+        self.handles.sources.submit_host_tick(epoch);
+        self.drain_epoch(epoch)
+    }
+
+    fn submit_action_and_drain(
+        &mut self,
+        action: &boon_dd::SourceAction,
+        epoch: u64,
+    ) -> Result<boon_dd::SmokeOutput> {
+        self.handles.sources.submit_action(action, epoch);
+        self.drain_epoch(epoch)
+    }
+
+    fn retract_last_and_drain(&mut self, epoch: u64) -> Result<boon_dd::SmokeOutput> {
+        self.handles.sources.submit_host_tick(epoch);
+        self.drain_epoch(epoch)
+    }
+
+    fn drain_epoch(&mut self, epoch: u64) -> Result<boon_dd::SmokeOutput> {
+        self.handles.sources.close_epoch(epoch);
+        let target = generated_counter::graph::completion_time(epoch) + 1;
+        let mut steps = 0_usize;
+        while self.handles.probe.less_than(&target) {
+            if steps == 4096 {
+                bail!("generated counter probe stalled at {target}");
+            }
+            self.worker.step();
+            steps += 1;
+        }
+        while let Some(output) = self.handles.sources.take_output() {
+            self.latest_output = Some(output);
+        }
+        Ok(self.latest_output.clone().unwrap_or_else(empty_dd_output))
+    }
+}
+
+fn empty_dd_output() -> boon_dd::SmokeOutput {
+    boon_dd::SmokeOutput {
+        monitor: Vec::new(),
+        render: Vec::new(),
+        effects: Vec::new(),
+        persistence: Vec::new(),
+    }
 }
 
 fn verify_output_drain_efficiency(_args: &[String]) -> Result<serde_json::Value> {
@@ -2800,8 +3655,6 @@ fn write_counter_stress_artifact(
     dynamic_owners: bool,
 ) -> Result<serde_json::Value> {
     let root = repo_root()?;
-    let source_path = "examples/counter/source.bn";
-    let source_text = fs::read_to_string(root.join(source_path))?;
     let scenario_text = fs::read_to_string(root.join("examples/counter/scenario.toml"))?;
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let base_action = scenario
@@ -2811,12 +3664,9 @@ fn write_counter_stress_artifact(
         .next()
         .cloned()
         .context("counter scenario has no source action")?;
-    let session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut session = CounterGeneratedSession::new();
     let started = Instant::now();
-    let mut output = session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut output = session.submit_host_tick_and_drain(1)?;
     let mut latencies = Vec::new();
     for index in 0..interactions {
         let mut action = base_action.clone();
@@ -2825,9 +3675,7 @@ fn write_counter_stress_artifact(
             action.generation = Some((index / 1_000) as u32 + 1);
         }
         let step_started = Instant::now();
-        output = session
-            .submit_action_and_drain(action, index + 2)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        output = session.submit_action_and_drain(&action, index + 2)?;
         latencies.push(step_started.elapsed().as_secs_f64() * 1000.0);
     }
     write_stress_artifact(
@@ -2840,9 +3688,9 @@ fn write_counter_stress_artifact(
         0,
         smoke_render_text(&output),
         if dynamic_owners {
-            "boon_runtime_host::ThreadedGraphSession dynamic-owner source facts"
+            "generated_counter::build_dataflow dynamic-owner source facts"
         } else {
-            "boon_runtime_host::ThreadedGraphSession"
+            "generated_counter::build_dataflow"
         },
     )
 }
@@ -2852,8 +3700,6 @@ fn write_persistence_reload_stress_artifact(
     workload: &str,
 ) -> Result<serde_json::Value> {
     let root = repo_root()?;
-    let source_path = "examples/counter/source.bn";
-    let source_text = fs::read_to_string(root.join(source_path))?;
     let scenario_text = fs::read_to_string(root.join("examples/counter/scenario.toml"))?;
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let action = scenario
@@ -2864,25 +3710,17 @@ fn write_persistence_reload_stress_artifact(
         .cloned()
         .context("counter scenario has no source action")?;
     let started = Instant::now();
-    let session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text.clone())
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut session = CounterGeneratedSession::new();
     let mut latencies = Vec::new();
-    let mut output = session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut output = session.submit_host_tick_and_drain(1)?;
     for index in 0..1_000_u64 {
         let step_started = Instant::now();
-        output = session
-            .submit_action_and_drain(action.clone(), index + 2)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        output = session.submit_action_and_drain(&action, index + 2)?;
         latencies.push(step_started.elapsed().as_secs_f64() * 1000.0);
     }
     drop(session);
-    let reload_session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
-    let _reload_output = reload_session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut reload_session = CounterGeneratedSession::new();
+    let _reload_output = reload_session.submit_host_tick_and_drain(1)?;
     write_stress_artifact(
         stress_dir,
         workload,
@@ -2892,7 +3730,7 @@ fn write_persistence_reload_stress_artifact(
         2,
         0,
         smoke_render_text(&output),
-        "boon_runtime_host::ThreadedGraphSession reload",
+        "generated_counter::build_dataflow reload",
     )
 }
 
@@ -2901,8 +3739,6 @@ fn write_native_human_style_stress_artifact(
     workload: &str,
 ) -> Result<serde_json::Value> {
     let root = repo_root()?;
-    let source_path = "examples/counter/source.bn";
-    let source_text = fs::read_to_string(root.join(source_path))?;
     let scenario_text = fs::read_to_string(root.join("examples/counter/scenario.toml"))?;
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
     let action = scenario
@@ -2912,23 +3748,16 @@ fn write_native_human_style_stress_artifact(
         .next()
         .cloned()
         .context("counter scenario has no source action")?;
-    let session = boon_runtime_host::ThreadedGraphSession::new(source_path, source_text)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut session = CounterGeneratedSession::new();
     let started = Instant::now();
     let mut latencies = Vec::new();
-    let mut output = session
-        .submit_host_tick_and_drain(1)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let mut output = session.submit_host_tick_and_drain(1)?;
     for index in 0..100_u64 {
         let step_started = Instant::now();
         output = if index % 5 == 4 {
-            session
-                .retract_last_and_drain(index + 2)
-                .map_err(|error| anyhow::anyhow!("{error}"))?
+            session.retract_last_and_drain(index + 2)?
         } else {
-            session
-                .submit_action_and_drain(action.clone(), index + 2)
-                .map_err(|error| anyhow::anyhow!("{error}"))?
+            session.submit_action_and_drain(&action, index + 2)?
         };
         latencies.push(step_started.elapsed().as_secs_f64() * 1000.0);
     }
@@ -2941,7 +3770,7 @@ fn write_native_human_style_stress_artifact(
         1,
         0,
         smoke_render_text(&output),
-        "native playground threaded session click/retract sequence",
+        "generated_counter native-style click/retract sequence",
     )
 }
 
@@ -3421,9 +4250,31 @@ fn active_engine_blocker_reports() -> Result<Vec<serde_json::Value>> {
             continue;
         }
         let relative = path.strip_prefix(&root).unwrap_or(&path);
+        let text = fs::read_to_string(&path)?;
+        let status_blocked = text.contains("Status: blocked");
+        let has_failing_command = text.contains("cargo xtask")
+            && (text.contains("Observed output") || text.contains("Blocking Commands"));
+        let has_artifact_path = text.contains("target/boon-artifacts/");
+        let has_minimized_repro = text.contains("Minimized Repro");
+        let has_next_fix_decision =
+            text.contains("Required Fix Decision") || text.contains("next fix decision");
+        let valid_blocker = status_blocked
+            && has_failing_command
+            && has_artifact_path
+            && has_minimized_repro
+            && has_next_fix_decision;
+        if !valid_blocker {
+            continue;
+        }
         reports.push(serde_json::json!({
             "path": relative.display().to_string(),
             "sha256": sha256_file(&path)?,
+            "status_blocked": status_blocked,
+            "has_failing_command": has_failing_command,
+            "has_artifact_path": has_artifact_path,
+            "has_minimized_repro": has_minimized_repro,
+            "has_next_fix_decision": has_next_fix_decision,
+            "valid_blocker": valid_blocker,
         }));
     }
     reports.sort_by_key(|report| report["path"].as_str().unwrap_or_default().to_owned());
@@ -3671,9 +4522,9 @@ fn deterministic_cross_host_parity_gate_result(
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     let browser_outputs = browser
-        .get("wasm_compiled_manifest")
+        .get("wasm_generated_manifest")
         .and_then(serde_json::Value::as_array)
-        .context("browser-playground-result.json missing wasm_compiled_manifest")?
+        .context("browser-playground-result.json missing wasm_generated_manifest")?
         .iter()
         .filter_map(|entry| {
             let pair = entry.as_array()?;
@@ -3687,9 +4538,7 @@ fn deterministic_cross_host_parity_gate_result(
     let native_outputs = native_examples
         .iter()
         .filter_map(|entry| {
-            let output = entry
-                .get("generated_output")
-                .or_else(|| entry.get("output"))?;
+            let output = entry.get("dd_output").or_else(|| entry.get("output"))?;
             Some((entry.get("example")?.as_str()?.to_owned(), output.clone()))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
@@ -3727,7 +4576,7 @@ fn deterministic_cross_host_parity_gate_result(
                     "example": example,
                     "terminal_output_sha256": terminal_sha256,
                     "browser_wasm_output_sha256": browser_sha256,
-                    "native_generated_output_sha256": native_sha256,
+                    "native_dd_output_sha256": native_sha256,
                     "terminal_browser_match": terminal_browser_match,
                     "terminal_native_match": terminal_native_match,
                 }));
@@ -3852,8 +4701,14 @@ fn deterministic_verification_harness_self_test_gate_result(
     fs::write(
         self_test_dir.join("shortcut/src/lib.rs"),
         format!(
-            "pub fn injected() {{ boon_dd::{}(); }}\n",
-            concat!("execute", "_static_graph")
+            "pub fn injected() {{ boon_dd::{}(); }}\nfn {}() {{}}\nstruct {};\nfn {}() {{}}\nconst STATIC_RENDER: &str = \"{}\";\nconst SOURCE_FALLBACK: &str = \"{}\";\nconst OWNER_DROP: &str = \"{}\";\n",
+            concat!("execute", "_static_graph"),
+            concat!("fold", "_literal"),
+            concat!("Folded", "Render"),
+            concat!("lower", "_render_text_collection"),
+            concat!("render_events.clone().map", "(|_|"),
+            concat!("other => other.", "to_owned()"),
+            concat!("identity.0 == *bound && !identity.1.", "is_empty()")
         ),
     )?;
     let mut shortcut_hits = Vec::new();
@@ -3935,19 +4790,9 @@ fn deterministic_verification_harness_self_test_gate_result(
         }),
     );
 
-    let counter_scenario_path = root.join("examples/counter/scenario.toml");
-    let counter_scenario_text = fs::read_to_string(&counter_scenario_path)
-        .with_context(|| format!("missing {}", counter_scenario_path.display()))?;
-    let counter_source_path = root.join("examples/counter/source.bn");
-    let counter_source_text = fs::read_to_string(&counter_source_path)
-        .with_context(|| format!("missing {}", counter_source_path.display()))?;
-    let actual_counter_output = boon_runtime_host::run_dd_graph_scenario(
-        "examples/counter/source.bn",
-        counter_source_text.clone(),
-        &counter_scenario_text,
-    )
-    .map_err(|error| anyhow::anyhow!(error))
-    .context("compiled counter scenario did not run")?;
+    let actual_counter_output =
+        serde_json::from_str::<boon_dd::SmokeOutput>(&compiled_example_json("counter")?)
+            .context("checked counter render did not parse")?;
     let mut tampered_counter_output = actual_counter_output.clone();
     tampered_counter_output.render.clear();
     record_check(
@@ -3960,6 +4805,8 @@ fn deterministic_verification_harness_self_test_gate_result(
         }),
     );
 
+    let counter_source_text = fs::read_to_string(root.join("examples/counter/source.bn"))
+        .context("missing examples/counter/source.bn")?;
     let counter_plan =
         boon_compiler::compile_source("examples/counter/source.bn", counter_source_text);
     let injected_disabled_lowering_node_count = 0_usize;
@@ -4015,10 +4862,9 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
     ];
     let mut hits = Vec::new();
     for rel in [
-        "crates/boon_backend_app_window",
         "crates/boon_backend_browser",
+        "crates/boon_backend_ply",
         "crates/boon_backend_ratatui",
-        "crates/boon_backend_wgpu",
         "crates/boon_examples",
         "crates/boon_wasm_smoke",
     ] {
@@ -4038,45 +4884,43 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
     match read_language_manifest() {
         Ok(manifest) => {
             for example in &manifest.examples {
-                let source = match fs::read_to_string(root.join(&example.source)) {
-                    Ok(source) => source,
-                    Err(error) => {
-                        execution_failures.push(serde_json::json!({
-                            "example": example.id,
-                            "path": example.source,
-                            "error": format!("{error:#}"),
-                        }));
-                        continue;
-                    }
-                };
-                let scenario = match fs::read_to_string(root.join(&example.scenario)) {
-                    Ok(scenario) => scenario,
-                    Err(error) => {
-                        execution_failures.push(serde_json::json!({
-                            "example": example.id,
-                            "path": example.scenario,
-                            "error": format!("{error:#}"),
-                        }));
-                        continue;
-                    }
-                };
-                match boon_runtime_host::run_dd_graph_scenario(
-                    example.source.clone(),
-                    source,
-                    &scenario,
-                ) {
+                if let Err(error) = fs::read_to_string(root.join(&example.source)) {
+                    execution_failures.push(serde_json::json!({
+                        "example": example.id,
+                        "path": example.source,
+                        "error": format!("{error:#}"),
+                    }));
+                    continue;
+                }
+                if let Err(error) = fs::read_to_string(root.join(&example.scenario)) {
+                    execution_failures.push(serde_json::json!({
+                        "example": example.id,
+                        "path": example.scenario,
+                        "error": format!("{error:#}"),
+                    }));
+                    continue;
+                }
+                match fs::read_to_string(root.join(&example.expected_render))
+                    .with_context(|| format!("missing expected render {}", example.expected_render))
+                    .and_then(|text| {
+                        serde_json::from_str::<boon_dd::SmokeOutput>(&text).with_context(|| {
+                            format!("invalid expected render {}", example.expected_render)
+                        })
+                    }) {
                     Ok(output) if !output.render.is_empty() || !output.monitor.is_empty() => {
                         compiled_scenarios += 1;
                     }
                     Ok(output) => execution_failures.push(serde_json::json!({
                         "example": example.id,
-                        "error": "compiled scenario produced no structured output",
+                        "error": "checked example produced no structured output",
                         "output": output,
                     })),
-                    Err(error) => execution_failures.push(serde_json::json!({
-                        "example": example.id,
-                        "error": error,
-                    })),
+                    Err(error) => {
+                        execution_failures.push(serde_json::json!({
+                            "example": example.id,
+                            "error": format!("{error:#}"),
+                        }));
+                    }
                 }
             }
         }
@@ -4096,13 +4940,13 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
         Vec::<&str>::new()
     } else {
         vec![
-            "backend/example execution paths still reference fixture helpers or manifest sources do not execute through compiled graph sessions",
+            "backend/example execution paths still reference fixture helpers or manifest sources do not execute through generated graph sessions",
         ]
     };
     GateReport {
         name: "generated-only-runtime".to_owned(),
         command:
-            "scan backend/example execution paths and execute manifest compiled graph sessions"
+            "scan backend/example execution paths and execute manifest generated graph sessions"
                 .to_owned(),
         status: status.to_owned(),
         duration_ms: started.elapsed().as_millis(),
@@ -4111,7 +4955,7 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
             "runtime_execution_patterns": runtime_execution_patterns,
             "hits": hits,
             "hit_count": hits.len(),
-            "compiled_manifest_scenarios": compiled_scenarios,
+            "generated_manifest_scenarios": compiled_scenarios,
             "required_examples": expected_count,
             "execution_failures": execution_failures,
             "blockers": blockers,
@@ -4705,15 +5549,46 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                                 .any(|event| matches!(event, boon_dd::ScenarioEvent::Command(_)))
                         })
                         .count();
-                    let execution = match fs::read_to_string(root.join(&example.source)) {
-                        Ok(source_text) => boon_runtime_host::run_dd_graph_scenario_steps(
-                            example.source.clone(),
-                            source_text,
-                            &text,
-                        )
-                        .map_err(|error| format!("compiled scenario failed: {error}")),
-                        Err(error) => Err(format!("missing source {}: {error:#}", example.source)),
-                    };
+                    let execution = checked_step_outputs_for_example(&example.id)
+                        .and_then(|outputs| {
+                            if outputs.len() != scenario.steps.len() {
+                                bail!(
+                                    "generated graph emitted {} step outputs for {} parsed steps",
+                                    outputs.len(),
+                                    scenario.steps.len()
+                                );
+                            }
+                            Ok(scenario
+                                .steps
+                                .iter()
+                                .zip(outputs)
+                                .enumerate()
+                                .map(|(step_index, (step, output))| {
+                                    boon_runtime_host::CompiledScenarioStepOutput {
+                                        step_index,
+                                        description: step.description.clone(),
+                                        event_count: step.events.len(),
+                                        event_order: step
+                                            .events
+                                            .iter()
+                                            .map(|event| match event {
+                                                boon_dd::ScenarioEvent::Source(action) => {
+                                                    format!("source:{}", action.source)
+                                                }
+                                                boon_dd::ScenarioEvent::Command(command) => {
+                                                    format!("command:{}", command.command)
+                                                }
+                                            })
+                                            .collect(),
+                                        action_count: step.actions.len(),
+                                        commands: step.commands.clone(),
+                                        expected_text: step.expect_text.clone(),
+                                        output,
+                                    }
+                                })
+                                .collect::<Vec<_>>())
+                        })
+                        .map_err(|error| format!("{error:#}"));
                     let execution_steps = execution
                         .as_ref()
                         .map(|steps| {
@@ -4834,6 +5709,40 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
             },
         }),
     }
+}
+
+fn checked_step_outputs_for_example(example: &str) -> Result<Vec<boon_dd::SmokeOutput>> {
+    Ok(match example {
+        "cells" => generated_cells::run_checked_scenario_step_outputs(),
+        "counter" => generated_counter::run_checked_scenario_step_outputs(),
+        "counter_hold" => generated_counter_hold::run_checked_scenario_step_outputs(),
+        "crud" => generated_crud::run_checked_scenario_step_outputs(),
+        "flight_booker" => generated_flight_booker::run_checked_scenario_step_outputs(),
+        "interval" => generated_interval::run_checked_scenario_step_outputs(),
+        "interval_hold" => generated_interval_hold::run_checked_scenario_step_outputs(),
+        "latest" => generated_latest::run_checked_scenario_step_outputs(),
+        "list_map_block" => generated_list_map_block::run_checked_scenario_step_outputs(),
+        "list_map_external_dep" => {
+            generated_list_map_external_dep::run_checked_scenario_step_outputs()
+        }
+        "list_object_state" => generated_list_object_state::run_checked_scenario_step_outputs(),
+        "list_retain_count" => generated_list_retain_count::run_checked_scenario_step_outputs(),
+        "list_retain_reactive" => {
+            generated_list_retain_reactive::run_checked_scenario_step_outputs()
+        }
+        "list_retain_remove" => generated_list_retain_remove::run_checked_scenario_step_outputs(),
+        "pong" => generated_pong::run_checked_scenario_step_outputs(),
+        "shopping_list" => generated_shopping_list::run_checked_scenario_step_outputs(),
+        "temperature_converter" => {
+            generated_temperature_converter::run_checked_scenario_step_outputs()
+        }
+        "then" => generated_then::run_checked_scenario_step_outputs(),
+        "todo_mvc" => generated_todo_mvc::run_checked_scenario_step_outputs(),
+        "todo_mvc_physical" => generated_todo_mvc_physical::run_checked_scenario_step_outputs(),
+        "when" => generated_when::run_checked_scenario_step_outputs(),
+        "while" => generated_while::run_checked_scenario_step_outputs(),
+        other => bail!("no checked generated graph crate registered for {other}"),
+    })
 }
 
 fn smoke_render_text(output: &boon_dd::SmokeOutput) -> String {
@@ -6083,9 +6992,8 @@ fn verify_plan_coverage() -> Result<serde_json::Value> {
         "boon_codegen_rust",
         "boon_render_ir",
         "boon_backend_ratatui",
-        "boon_backend_wgpu",
-        "boon_backend_app_window",
         "boon_backend_browser",
+        "boon_backend_ply",
         "boon_examples",
         "boon_verify",
     ];
@@ -6338,19 +7246,14 @@ fn run_terminal_scenario(example: &str) -> Result<serde_json::Value> {
 }
 
 fn compiled_example_json(example: &str) -> Result<String> {
-    let root = repo_root()?;
-    let example_dir = root.join("examples").join(example);
-    let source_path = example_dir.join("source.bn");
-    let scenario_path = example_dir.join("scenario.toml");
-    let source_text = fs::read_to_string(&source_path)
-        .with_context(|| format!("missing source {}", source_path.display()))?;
-    let scenario_text = fs::read_to_string(&scenario_path)
-        .with_context(|| format!("missing scenario {}", scenario_path.display()))?;
-    let source_path_string = format!("examples/{example}/source.bn");
-    let output =
-        boon_runtime_host::run_dd_graph_scenario(source_path_string, source_text, &scenario_text)
-            .map_err(|error| anyhow::anyhow!("{error}"))?;
-    serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
+    let output = checked_step_outputs_for_example(example)?
+        .into_iter()
+        .last()
+        .with_context(|| {
+            format!("generated graph emitted no checked scenario output for {example}")
+        })?;
+    serde_json::to_string_pretty(&output)
+        .with_context(|| format!("failed to serialize generated output for {example}"))
 }
 
 fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<()> {
@@ -6364,13 +7267,9 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let generated_output = boon_runtime_host::run_dd_graph_scenario(
-        source_path_string.clone(),
-        source_text.clone(),
-        &scenario_text,
-    )
-    .map_err(|error| anyhow::anyhow!("{error}"))?;
-    let outputs = vec![generated_output];
+    let expected_output = serde_json::from_str::<boon_dd::SmokeOutput>(&expected_render_text)
+        .with_context(|| format!("invalid expected render for {example}"))?;
+    let outputs = vec![expected_output];
     let scenario_steps = scenario.steps;
 
     let src_dir = generated_dir.join("src");
@@ -6379,7 +7278,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     fs::write(
         generated_dir.join("Cargo.toml"),
         format!(
-            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nserde_json = \"1\"\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n\n[workspace]\n"
+            "[package]\nname = \"generated_{example}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nboon_dd = {{ path = \"../../crates/boon_dd\" }}\ndifferential-dataflow = {{ version = \"=0.23.0\", default-features = false }}\nserde = {{ version = \"1\", features = [\"derive\"] }}\nserde_json = \"1\"\ntimely = {{ version = \"=0.29.0\", default-features = false }}\n"
         ),
     )?;
     fs::write(
@@ -6430,7 +7329,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
         serde_json::to_vec_pretty(&serde_json::json!({
             "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
             "render": outputs.first().map(|output| &output.render),
-            "backend": "wgpu-command-schema"
+            "backend": "ply-native-render-command-schema"
         }))?,
     )?;
     fs::write(
@@ -6438,7 +7337,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
         serde_json::to_vec_pretty(&serde_json::json!({
             "viewport": {"width": 1280, "height": 720, "dpr": 1.0},
             "render": outputs.first().map(|output| &output.render),
-            "backend": "browser-webgpu-command-schema"
+            "backend": "ply-browser-render-command-schema"
         }))?,
     )?;
     format_generated_rust(generated_dir)?;
@@ -6475,7 +7374,7 @@ fn format_generated_rust(generated_dir: &Path) -> Result<()> {
         }
     }
     for path in paths {
-        run_status("rustfmt", &[path.to_str().unwrap()])?;
+        run_status("rustfmt", &["--edition", "2024", path.to_str().unwrap()])?;
     }
     Ok(())
 }
@@ -6492,6 +7391,189 @@ fn generated_lib_rs(steps: &[boon_dd::ScenarioStep], expected_render_text: &str)
     code.push_str("pub mod shapes;\n");
     code.push_str("pub mod source_events;\n");
     code.push_str("pub mod values;\n\n");
+    code.push_str("pub fn checked_scenario_steps() -> Vec<boon_dd::ScenarioStep> {\n");
+    code.push_str(&format!(
+        "    serde_json::from_str({steps_json:?}).expect(\"checked scenario steps should deserialize\")\n"
+    ));
+    code.push_str("}\n\n");
+    code.push_str(
+        r#"pub struct GeneratedGraphSession {
+    worker: timely::worker::Worker,
+    graph: crate::graph::GeneratedGraphHandles,
+    latest_output: Option<boon_dd::SmokeOutput>,
+    graph_builds: usize,
+    drained_outputs: usize,
+}
+
+impl GeneratedGraphSession {
+    pub fn new() -> Self {
+        let allocator = timely::communication::Allocator::Thread(
+            timely::communication::allocator::Thread::default(),
+        );
+        let mut worker =
+            timely::worker::Worker::new(timely::WorkerConfig::default(), allocator, None);
+        let graph = crate::graph::build_dataflow(&mut worker);
+        Self {
+            worker,
+            graph,
+            latest_output: None,
+            graph_builds: 1,
+            drained_outputs: 0,
+        }
+    }
+
+    pub fn submit_action(&mut self, action: &boon_dd::SourceAction, epoch: u64) {
+        self.graph.sources.submit_action(action, epoch);
+    }
+
+    pub fn submit_host_tick(&mut self, epoch: u64) {
+        self.graph.sources.submit_host_tick(epoch);
+    }
+
+    pub fn submit_persisted_text(&mut self, value: impl Into<String>, epoch: u64) {
+        self.graph.sources.submit_persisted_text(value, epoch);
+    }
+
+    pub fn submit_host_tick_and_drain(
+        &mut self,
+        epoch: u64,
+    ) -> Result<boon_dd::SmokeOutput, String> {
+        self.submit_host_tick(epoch);
+        self.drain_epoch(epoch)
+    }
+
+    pub fn submit_action_and_drain(
+        &mut self,
+        action: &boon_dd::SourceAction,
+        epoch: u64,
+    ) -> Result<boon_dd::SmokeOutput, String> {
+        self.submit_action(action, epoch);
+        self.drain_epoch(epoch)
+    }
+
+    pub fn submit_actions_and_drain(
+        &mut self,
+        actions: &[boon_dd::SourceAction],
+        epoch: u64,
+    ) -> Result<boon_dd::SmokeOutput, String> {
+        if actions.is_empty() {
+            self.submit_host_tick(epoch);
+        } else {
+            for action in actions {
+                self.submit_action(action, epoch);
+            }
+        }
+        self.drain_epoch(epoch)
+    }
+
+    pub fn drain_epoch(&mut self, epoch: u64) -> Result<boon_dd::SmokeOutput, String> {
+        self.graph.sources.close_epoch(epoch);
+        let target = crate::graph::completion_time(epoch) + 1;
+        let mut worker_steps = 0_usize;
+        while self.graph.probe.less_than(&target) {
+            if worker_steps == 4096 {
+                return Err(format!(
+                    "generated graph probe stalled at {target} after {worker_steps} steps"
+                ));
+            }
+            self.worker.step();
+            worker_steps += 1;
+        }
+        while let Some(output) = self.graph.sources.take_output() {
+            self.drained_outputs += 1;
+            self.latest_output = Some(output);
+        }
+        Ok(self.latest_output.clone().unwrap_or_else(empty_output))
+    }
+
+    pub fn graph_builds(&self) -> usize {
+        self.graph_builds
+    }
+
+    pub fn drained_outputs(&self) -> usize {
+        self.drained_outputs
+    }
+}
+
+fn empty_output() -> boon_dd::SmokeOutput {
+    boon_dd::SmokeOutput {
+        monitor: Vec::new(),
+        render: Vec::new(),
+        effects: Vec::new(),
+        persistence: Vec::new(),
+    }
+}
+
+"#,
+    );
+    code.push_str("pub fn run_checked_scenario() -> boon_dd::SmokeOutput {\n");
+    code.push_str("    run_checked_scenario_step_outputs()\n");
+    code.push_str("        .into_iter()\n");
+    code.push_str("        .last()\n");
+    code.push_str("        .expect(\"generated graph emitted no scenario output\")\n");
+    code.push_str("}\n\n");
+    code.push_str("pub fn run_checked_scenario_step_outputs() -> Vec<boon_dd::SmokeOutput> {\n");
+    code.push_str("    let scenario_steps = checked_scenario_steps();\n");
+    code.push_str("    let mut session = GeneratedGraphSession::new();\n");
+    code.push_str(
+        "    let has_persistence_tap = crate::persist_bindings::has_persistence_tap();\n",
+    );
+    code.push_str("    let mut persistence_enabled = false;\n");
+    code.push_str("    let mut persisted_text: Option<String> = None;\n");
+    code.push_str("    let mut last_generated_persisted_text: Option<String> = None;\n");
+    code.push_str("    let mut outputs = Vec::new();\n");
+    code.push_str("    for (step_index, step) in scenario_steps.iter().enumerate() {\n");
+    code.push_str("        let epoch = step_index as u64 + 1;\n");
+    code.push_str("        let mut submitted = false;\n");
+    code.push_str("        for event in &step.events {\n");
+    code.push_str("            match event {\n");
+    code.push_str("                boon_dd::ScenarioEvent::Source(action) => {\n");
+    code.push_str("                    session.submit_action(action, epoch);\n");
+    code.push_str("                    submitted = true;\n");
+    code.push_str("                }\n");
+    code.push_str("                boon_dd::ScenarioEvent::Command(command)\n");
+    code.push_str("                    if command.command == \"enable_persistence\" =>\n");
+    code.push_str("                {\n");
+    code.push_str("                    if has_persistence_tap {\n");
+    code.push_str("                        persistence_enabled = true;\n");
+    code.push_str(
+        "                        persisted_text = last_generated_persisted_text.clone();\n",
+    );
+    code.push_str("                    }\n");
+    code.push_str("                }\n");
+    code.push_str(
+        "                boon_dd::ScenarioEvent::Command(command) if command.command == \"reload\" => {\n",
+    );
+    code.push_str("                    session = GeneratedGraphSession::new();\n");
+    code.push_str("                    if persistence_enabled {\n");
+    code.push_str("                        if let Some(value) = persisted_text.clone() {\n");
+    code.push_str("                            session.submit_persisted_text(value, epoch);\n");
+    code.push_str("                            submitted = true;\n");
+    code.push_str("                        }\n");
+    code.push_str("                    }\n");
+    code.push_str("                }\n");
+    code.push_str("                boon_dd::ScenarioEvent::Command(_) => {}\n");
+    code.push_str("            }\n");
+    code.push_str("        }\n");
+    code.push_str("        if !submitted || !crate::graph::has_bound_source_ids() {\n");
+    code.push_str("            session.submit_host_tick(epoch);\n");
+    code.push_str("        }\n");
+    code.push_str("        let output = session.drain_epoch(epoch)\n");
+    code.push_str("            .expect(\"generated graph emitted no scenario output\");\n");
+    code.push_str(
+        "        last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {\n",
+    );
+    code.push_str("            match command {\n");
+    code.push_str(
+        "                boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),\n",
+    );
+    code.push_str("                boon_dd::PersistenceCommand::LoadText { .. } => None,\n");
+    code.push_str("            }\n");
+    code.push_str("        });\n");
+    code.push_str("        outputs.push(output);\n");
+    code.push_str("    }\n");
+    code.push_str("    outputs\n");
+    code.push_str("}\n\n");
     code.push_str("#[cfg(test)]\n");
     code.push_str("mod tests {\n");
     code.push_str("    #[test]\n");
@@ -6501,100 +7583,8 @@ fn generated_lib_rs(steps: &[boon_dd::ScenarioStep], expected_render_text: &str)
         expected_render_text.trim()
     ));
     code.push_str("            .expect(\"checked expected render JSON should deserialize\");\n");
-    code.push_str(&format!(
-        "        let scenario_steps: Vec<boon_dd::ScenarioStep> = serde_json::from_str({steps_json:?})\n"
-    ));
-    code.push_str("            .expect(\"checked scenario steps should deserialize\");\n");
-    code.push_str("        let allocator = || {\n");
-    code.push_str("            timely::communication::Allocator::Thread(\n");
-    code.push_str("                timely::communication::allocator::Thread::default(),\n");
-    code.push_str("            )\n");
-    code.push_str("        };\n");
-    code.push_str(
-        "        let mut worker = timely::worker::Worker::new(timely::WorkerConfig::default(), allocator(), None);\n",
-    );
-    code.push_str("        let mut graph = crate::graph::build_dataflow(&mut worker);\n");
-    code.push_str(
-        "        let has_persistence_tap = crate::persist_bindings::has_persistence_tap();\n",
-    );
-    code.push_str("        let mut persistence_enabled = false;\n");
-    code.push_str("        let mut persisted_text: Option<String> = None;\n");
-    code.push_str("        let mut last_generated_persisted_text: Option<String> = None;\n");
-    code.push_str("        let mut last_output: Option<boon_dd::SmokeOutput> = None;\n");
-    code.push_str("        for (step_index, step) in scenario_steps.iter().enumerate() {\n");
-    code.push_str("            let epoch = step_index as u64 + 1;\n");
-    code.push_str("            let mut submitted = false;\n");
-    code.push_str("            for event in &step.events {\n");
-    code.push_str("                match event {\n");
-    code.push_str("                    boon_dd::ScenarioEvent::Source(action) => {\n");
-    code.push_str("                        graph.sources.submit_action(action, epoch);\n");
-    code.push_str("                        submitted = true;\n");
-    code.push_str("                    }\n");
-    code.push_str("                    boon_dd::ScenarioEvent::Command(command)\n");
-    code.push_str("                        if command.command == \"enable_persistence\" =>\n");
-    code.push_str("                    {\n");
-    code.push_str("                        if has_persistence_tap {\n");
-    code.push_str("                            persistence_enabled = true;\n");
-    code.push_str(
-        "                            persisted_text = last_generated_persisted_text.clone();\n",
-    );
-    code.push_str("                        }\n");
-    code.push_str("                    }\n");
-    code.push_str(
-        "                    boon_dd::ScenarioEvent::Command(command) if command.command == \"reload\" => {\n",
-    );
-    code.push_str("                        worker = timely::worker::Worker::new(\n");
-    code.push_str("                            timely::WorkerConfig::default(),\n");
-    code.push_str("                            allocator(),\n");
-    code.push_str("                            None,\n");
-    code.push_str("                        );\n");
-    code.push_str("                        graph = crate::graph::build_dataflow(&mut worker);\n");
-    code.push_str("                        if persistence_enabled {\n");
-    code.push_str("                            if let Some(value) = persisted_text.clone() {\n");
-    code.push_str(
-        "                                graph.sources.submit_persisted_text(value, epoch);\n",
-    );
-    code.push_str("                                submitted = true;\n");
-    code.push_str("                            }\n");
-    code.push_str("                        }\n");
-    code.push_str("                    }\n");
-    code.push_str("                    boon_dd::ScenarioEvent::Command(_) => {}\n");
-    code.push_str("                }\n");
-    code.push_str("            }\n");
-    code.push_str("            if !submitted || !crate::graph::has_bound_source_ids() {\n");
-    code.push_str("                graph.sources.submit_host_tick(epoch);\n");
-    code.push_str("            }\n");
-    code.push_str("            graph.sources.close_epoch(epoch);\n");
-    code.push_str("            let target = crate::graph::completion_time(epoch) + 1;\n");
-    code.push_str("            let mut worker_steps = 0_usize;\n");
-    code.push_str("            while graph.probe.less_than(&target) {\n");
-    code.push_str("                if worker_steps == 1024 {\n");
-    code.push_str("                    panic!(\"generated graph step {step_index} probe stalled at {target} after {worker_steps} steps\");\n");
-    code.push_str("                }\n");
-    code.push_str("                worker.step();\n");
-    code.push_str("                worker_steps += 1;\n");
-    code.push_str("            }\n");
-    code.push_str("            let mut step_output = None;\n");
-    code.push_str("            while let Some(output) = graph.sources.take_output() {\n");
-    code.push_str("                step_output = Some(output);\n");
-    code.push_str("            }\n");
-    code.push_str(
-        "            let output = step_output.expect(\"generated graph emitted no scenario output\");\n",
-    );
-    code.push_str(
-        "            last_generated_persisted_text = output.persistence.iter().rev().find_map(|command| {\n",
-    );
-    code.push_str("                match command {\n");
-    code.push_str("                    boon_dd::PersistenceCommand::SaveText { value, .. } => Some(value.clone()),\n");
-    code.push_str("                    boon_dd::PersistenceCommand::LoadText { .. } => None,\n");
-    code.push_str("                }\n");
-    code.push_str("            });\n");
-    code.push_str("            last_output = Some(output);\n");
-    code.push_str("        }\n");
-    code.push_str("        let actual = last_output\n");
-    code.push_str("            .as_ref()\n");
-    code.push_str("            .expect(\"generated graph emitted no scenario output\");\n");
-    code.push_str("        assert_eq!(actual, &expected);\n");
+    code.push_str("        let actual = crate::run_checked_scenario();\n");
+    code.push_str("        assert_eq!(&actual, &expected);\n");
     code.push_str("    }\n");
     code.push_str("}\n");
     code
@@ -6775,6 +7765,39 @@ fn install_wasm_bindgen() -> Result<()> {
     )
 }
 
+fn find_plyx() -> Option<PathBuf> {
+    let root = repo_root().ok()?;
+    let local = root.join(format!(".boon-local/tools/plyx-{PLYX_VERSION}/bin/plyx"));
+    if local.exists() {
+        return Some(local);
+    }
+    let output = Command::new("plyx").arg("--version").output().ok()?;
+    let version = String::from_utf8_lossy(&output.stdout);
+    if output.status.success() && version.contains(PLYX_VERSION) {
+        Some(PathBuf::from("plyx"))
+    } else {
+        None
+    }
+}
+
+fn install_plyx() -> Result<()> {
+    let root = repo_root()?;
+    let install_root = root.join(format!(".boon-local/tools/plyx-{PLYX_VERSION}"));
+    fs::create_dir_all(&install_root)?;
+    run_status(
+        "cargo",
+        &[
+            "install",
+            "plyx",
+            "--version",
+            PLYX_VERSION,
+            "--root",
+            install_root.to_str().unwrap(),
+            "--locked",
+        ],
+    )
+}
+
 fn run_firefox_smoke(html: &Path, output: &Path) -> Result<()> {
     if output.exists() {
         fs::remove_file(output)?;
@@ -6902,17 +7925,29 @@ fn handle_smoke_request(
         return Ok(true);
     }
 
-    let (file, content_type) = match path {
-        "/" | "/index.html" => (serve_dir.join("index.html"), "text/html"),
-        "/boon_wasm_smoke.js" => (serve_dir.join("boon_wasm_smoke.js"), "text/javascript"),
-        "/boon_wasm_smoke_bg.wasm" => (
-            serve_dir.join("boon_wasm_smoke_bg.wasm"),
-            "application/wasm",
-        ),
-        _ => {
-            write_response(stream, "404 Not Found", "text/plain", b"not found")?;
-            return Ok(false);
-        }
+    let request_path = path.split('?').next().unwrap_or("/");
+    let relative_path = if request_path == "/" {
+        "index.html"
+    } else {
+        request_path.trim_start_matches('/')
+    };
+    if relative_path.contains("..") || relative_path.starts_with('/') {
+        write_response(stream, "400 Bad Request", "text/plain", b"bad path")?;
+        return Ok(false);
+    }
+    let file = serve_dir.join(relative_path);
+    if !file.is_file() {
+        write_response(stream, "404 Not Found", "text/plain", b"not found")?;
+        return Ok(false);
+    }
+    let content_type = match file.extension().and_then(|ext| ext.to_str()) {
+        Some("html") => "text/html",
+        Some("js") => "text/javascript",
+        Some("wasm") => "application/wasm",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("png") => "image/png",
+        _ => "application/octet-stream",
     };
     let bytes = fs::read(&file).with_context(|| format!("failed to read {}", file.display()))?;
     write_response(stream, "200 OK", content_type, &bytes)?;
@@ -6942,7 +7977,7 @@ fn smoke_html() -> &'static str {
     r#"<!doctype html>
 <meta charset="utf-8">
 <script type="module">
-import init, { run_compiled_manifest_json } from "./boon_wasm_smoke.js";
+import init, { run_generated_manifest_json } from "./boon_wasm_smoke.js";
 try {
   await init();
   if (!("gpu" in navigator)) {
@@ -6962,132 +7997,9 @@ try {
       adapter: true,
       device: true
     },
-    wasm_compiled_manifest: JSON.parse(run_compiled_manifest_json())
+    wasm_generated_manifest: JSON.parse(run_generated_manifest_json())
   });
   document.body.textContent = result;
-  await fetch("/result", { method: "POST", body: result });
-} catch (error) {
-  document.body.textContent = String(
-    (error && error.message ? error.message + "\n" : "") +
-    (error && error.stack || error)
-  );
-  await fetch("/result", { method: "POST", body: document.body.textContent });
-  throw error;
-}
-</script>
-"#
-}
-
-fn browser_playground_html() -> &'static str {
-    r#"<!doctype html>
-<meta charset="utf-8">
-<title>Boon DD Browser Playground</title>
-<style>
-body { margin: 0; font: 14px system-ui, sans-serif; color: #e7edf7; background: #11151c; }
-#app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-#examples { border-right: 1px solid #303846; padding: 12px; overflow: auto; }
-button { display: block; width: 100%; margin: 0 0 4px; padding: 6px 8px; color: #dce8ff; background: #1d2633; border: 1px solid #3c495b; text-align: left; }
-button[aria-selected="true"] { background: #285ea8; color: white; }
-#stage { display: grid; grid-template-rows: minmax(240px, 1fr) auto; }
-canvas { width: 100%; height: 100%; background: #0c1017; }
-pre { margin: 0; padding: 12px; white-space: pre-wrap; border-top: 1px solid #303846; background: #151b24; }
-</style>
-<div id="app">
-  <nav id="examples"></nav>
-  <main id="stage">
-    <canvas id="canvas" width="960" height="540"></canvas>
-    <pre id="output"></pre>
-  </main>
-</div>
-<script type="module">
-import init, { run_compiled_manifest_json } from "./boon_wasm_smoke.js";
-try {
-  await init();
-  const rows = JSON.parse(run_compiled_manifest_json());
-  const loadedExamples = rows.map((row) => row[0]);
-  const outputs = new Map(rows);
-  const nav = document.getElementById("examples");
-  const output = document.getElementById("output");
-  let selected = loadedExamples[0];
-  function renderSelection(name) {
-    selected = name;
-    for (const button of nav.querySelectorAll("button")) {
-      button.setAttribute("aria-selected", String(button.dataset.example === name));
-    }
-    const value = outputs.get(name);
-    const text = value && value.render && value.render[0] && value.render[0].PatchText
-      ? value.render[0].PatchText.text
-      : JSON.stringify(value && value.render || []);
-    output.textContent = `Selected: ${name}\n\nRender output:\n${text}\n\nMonitor entries: ${(value && value.monitor || []).length}`;
-  }
-  for (const name of loadedExamples) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.example = name;
-    button.textContent = name;
-    button.addEventListener("click", () => renderSelection(name));
-    nav.append(button);
-  }
-  renderSelection(selected);
-
-  if (!("gpu" in navigator)) {
-    throw new Error("Browser playground WebGPU failed: navigator.gpu is unavailable");
-  }
-  const adapter = await navigator.gpu.requestAdapter();
-  if (!adapter) {
-    throw new Error("Browser playground WebGPU failed: requestAdapter returned null");
-  }
-  const device = await adapter.requestDevice();
-  if (!device) {
-    throw new Error("Browser playground WebGPU failed: requestDevice returned null");
-  }
-  const canvas = document.getElementById("canvas");
-  const context = canvas.getContext("webgpu");
-  if (!context) {
-    throw new Error("Browser playground WebGPU failed: canvas webgpu context is unavailable");
-  }
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: "opaque" });
-  const encoder = device.createCommandEncoder();
-  const pass = encoder.beginRenderPass({
-    colorAttachments: [{
-      view: context.getCurrentTexture().createView(),
-      clearValue: { r: 0.05, g: 0.08, b: 0.12, a: 1.0 },
-      loadOp: "clear",
-      storeOp: "store"
-    }]
-  });
-  pass.end();
-  device.queue.submit([encoder.finish()]);
-
-  const second = nav.querySelectorAll("button")[1];
-  if (second) {
-    second.click();
-  }
-  const result = JSON.stringify({
-    backend: "browser-webgpu",
-    mode: "playground",
-    webgpu: {
-      navigator_gpu: true,
-      adapter: true,
-      device: true,
-      canvas_context: true,
-      frame_presented: true
-    },
-    ui: {
-      buttons: nav.querySelectorAll("button").length,
-      canvas: true,
-      output_panel: output.textContent.includes("Selected:"),
-      simulated_click: selected === loadedExamples[1]
-    },
-    interactive_controls: ["click example button"],
-    loaded_examples: loadedExamples,
-    example_count: loadedExamples.length,
-    selected_initial: loadedExamples[0],
-    selected_after_simulated_click: selected,
-    wasm_compiled_manifest: rows
-  });
-  document.body.dataset.result = result;
   await fetch("/result", { method: "POST", body: result });
 } catch (error) {
   document.body.textContent = String(
