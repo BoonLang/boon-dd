@@ -143,7 +143,7 @@ fn terminal_examples() -> Result<Vec<(String, boon_dd::SmokeOutput)>, Box<dyn st
     TERMINAL_FIXTURES
         .iter()
         .map(|fixture| {
-            let output = boon_runtime_host::run_compiled_source_scenario(
+            let output = boon_runtime_host::run_dd_graph_scenario(
                 fixture.source_path,
                 fixture.source,
                 fixture.scenario,

@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 
 macro_rules! run_manifest_source {
     ($name:literal) => {{
-        let output = boon_runtime_host::run_compiled_source_scenario(
+        let output = boon_runtime_host::run_dd_graph_scenario(
             concat!("examples/", $name, "/source.bn"),
             include_str!(concat!("../../../examples/", $name, "/source.bn")),
             include_str!(concat!("../../../examples/", $name, "/scenario.toml")),

@@ -1400,7 +1400,7 @@ fn write_per_example_screenshots(
         let pixels = rasterize_vertices(WIDTH, HEIGHT, &vertices);
         let screenshot = screenshots_dir.join(format!("{:02}-{}.png", index + 1, example.name));
         write_png_rgb(&screenshot, WIDTH, HEIGHT, &pixels)?;
-        let generated_output = boon_runtime_host::run_compiled_source_scenario(
+        let generated_output = boon_runtime_host::run_dd_graph_scenario(
             example.source_path,
             example.source_text,
             example.scenario_text,

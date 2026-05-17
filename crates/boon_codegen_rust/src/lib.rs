@@ -349,7 +349,7 @@ fn generated_event_is_host_tick(event: &GeneratedSourceEvent) -> bool {
 }
 
 fn effect_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String {
-    let commands = protocol
+    let commands: Vec<_> = protocol
         .sinks
         .iter()
         .filter_map(|sink| match sink {
@@ -359,7 +359,7 @@ fn effect_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String
             )),
             _ => None,
         })
-        .collect::<Vec<_>>();
+        .collect();
     if commands.is_empty() {
         "Vec::new()".to_owned()
     } else {
@@ -368,7 +368,7 @@ fn effect_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String
 }
 
 fn persistence_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> String {
-    let commands = protocol
+    let commands: Vec<_> = protocol
         .sinks
         .iter()
         .filter_map(|sink| match sink {
@@ -378,7 +378,7 @@ fn persistence_commands_from_protocol(protocol: &boon_dd::DdOutputProtocol) -> S
             )),
             _ => None,
         })
-        .collect::<Vec<_>>();
+        .collect();
     if commands.is_empty() {
         "Vec::new()".to_owned()
     } else {
@@ -555,8 +555,8 @@ impl FoldedRender {
                 text.parse::<i64>().unwrap_or_default()
             }
             FoldedRender::Bool(value) => i64::from(*value),
-            FoldedRender::List(values) => values.len() as i64,
-            FoldedRender::Record(fields) => fields.len() as i64,
+            FoldedRender::List(values) => i64::try_from(values.len()).unwrap_or(i64::MAX),
+            FoldedRender::Record(fields) => i64::try_from(fields.len()).unwrap_or(i64::MAX),
             FoldedRender::Empty => 0,
         }
     }
@@ -574,7 +574,7 @@ impl FoldedRender {
         }
     }
 
-    fn field(&self, name: &str) -> Option<FoldedRender> {
+    fn member(&self, name: &str) -> Option<FoldedRender> {
         match self {
             FoldedRender::Record(fields) => fields.get(name).cloned(),
             _ => None,
@@ -643,7 +643,7 @@ fn fold_graph_value(
             Some(FoldedRender::Record(record))
         }
         boon_dd::DdRenderGraphOperation::FieldAccess { base, field } => {
-            fold_graph_value(graph, base, env)?.field(field)
+            fold_graph_value(graph, base, env)?.member(field)
         }
         boon_dd::DdRenderGraphOperation::List(values) => {
             let mut items = Vec::new();
@@ -927,7 +927,7 @@ fn fold_path_value(path: &str, env: &FoldEnv) -> Option<FoldedRender> {
     let root = parts.next()?;
     let mut value = env.get(root).cloned()?;
     for part in parts {
-        value = value.field(part)?;
+        value = value.member(part)?;
     }
     Some(value)
 }

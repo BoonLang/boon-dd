@@ -47,6 +47,12 @@ const HONEST_SHORTCUT_PATTERNS: &[&str] = &[
     concat!("constant", "_value("),
     concat!("call", "_constant("),
     concat!("pipe", "_constant("),
+    concat!("fold", "_literal"),
+    concat!("fold", "_call_literal"),
+    concat!("fold", "_graph_value"),
+    concat!("fold", "_call_value"),
+    concat!("Folded", "Render"),
+    concat!("lower", "_render_text_collection"),
     concat!("dd", "_render_operation_from_expr("),
     concat!("expression", "_has_call("),
     concat!("line.contains", "(\"command =\")"),
@@ -1868,6 +1874,41 @@ fn verify_dd_purity(_args: &[String]) -> Result<serde_json::Value> {
             "runtime host evaluates Boon library calls outside generated typed DD operators",
         ),
         (
+            concat!("fold", "_literal"),
+            "host_runtime_semantics",
+            "runtime host recursively folds DD render graph nodes through Rust control flow",
+        ),
+        (
+            concat!("fold", "_call_literal"),
+            "host_runtime_semantics",
+            "runtime host folds Boon library calls through Rust control flow",
+        ),
+        (
+            concat!("lower", "_render_text_collection"),
+            "host_runtime_semantics",
+            "runtime host lowers render graph text through a generic Rust semantic dispatcher",
+        ),
+        (
+            concat!("fold", "_graph_value"),
+            "generated_semantics",
+            "codegen folds DD render graph values through Rust control flow",
+        ),
+        (
+            concat!("fold", "_call_value"),
+            "generated_semantics",
+            "codegen folds Boon library calls through Rust control flow",
+        ),
+        (
+            concat!("Folded", "Render"),
+            "generated_semantics",
+            "codegen carries a generic folded render value evaluator",
+        ),
+        (
+            concat!("render_events.clone().map", "(|_|"),
+            "generated_static_semantics",
+            "generated graph can hide static or pre-folded Boon output behind a DD map",
+        ),
+        (
             concat!("generated", "_source_event_value"),
             "source_identity",
             "source identity can be discarded before semantic evaluation",
@@ -2097,6 +2138,11 @@ fn verify_source_routing(_args: &[String]) -> Result<serde_json::Value> {
             "source_identity_drop",
             "dynamic source family/owner/generation are ignored by generated semantic evaluation",
         ),
+        (
+            concat!("other => other.", "to_owned()"),
+            "source_identity_fallback",
+            "unknown source paths are accepted as raw source ids instead of rejected",
+        ),
     ];
     let hits = scan_engine_patterns(&["crates/boon_codegen_rust", "generated"], &patterns)?;
     let failures = hits.clone();
@@ -2152,6 +2198,19 @@ fn verify_dynamic_owner_routing(_args: &[String]) -> Result<serde_json::Value> {
             concat!("GeneratedSourceEvent::Dynamic { family_id, .. }"),
             "owner_generation_drop",
             "dynamic source routing can check only family id while dropping owner and generation",
+        ),
+        (
+            concat!("identity.0 == *bound && !identity.1.", "is_empty()"),
+            "owner_generation_drop",
+            "generated dynamic source routing accepts family plus non-empty owner while ignoring generation",
+        ),
+        (
+            concat!(
+                "identity.0 == bound.as_str()) && !identity.1.",
+                "is_empty()"
+            ),
+            "owner_generation_drop",
+            "runtime dynamic source routing accepts family plus non-empty owner while ignoring generation",
         ),
         (
             concat!("OwnerKey", "(\"Root\".to_owned())"),
@@ -2489,6 +2548,36 @@ fn verify_dd_stateful_lowering(_args: &[String]) -> Result<serde_json::Value> {
             concat!("runtime", "_call_value"),
             "host_semantics",
             "runtime host evaluates Boon library calls as Rust control flow",
+        ),
+        (
+            concat!("fold", "_literal"),
+            "host_semantics",
+            "runtime host recursively folds DD render graph nodes as Rust values",
+        ),
+        (
+            concat!("fold", "_call_literal"),
+            "host_semantics",
+            "runtime host folds Boon library calls as Rust control flow",
+        ),
+        (
+            concat!("fold", "_graph_value"),
+            "generated_semantics",
+            "codegen recursively folds DD render graph nodes as Rust values",
+        ),
+        (
+            concat!("fold", "_call_value"),
+            "generated_semantics",
+            "codegen folds Boon library calls as Rust control flow",
+        ),
+        (
+            concat!("Folded", "Render"),
+            "generated_semantics",
+            "codegen carries a generic folded render value evaluator",
+        ),
+        (
+            concat!("render_events.clone().map", "(|_|"),
+            "generated_semantics",
+            "generated graph can hide static or pre-folded Boon output behind a DD map",
         ),
         (
             concat!("fn truthy"),
@@ -3852,7 +3941,7 @@ fn deterministic_verification_harness_self_test_gate_result(
     let counter_source_path = root.join("examples/counter/source.bn");
     let counter_source_text = fs::read_to_string(&counter_source_path)
         .with_context(|| format!("missing {}", counter_source_path.display()))?;
-    let actual_counter_output = boon_runtime_host::run_compiled_source_scenario(
+    let actual_counter_output = boon_runtime_host::run_dd_graph_scenario(
         "examples/counter/source.bn",
         counter_source_text.clone(),
         &counter_scenario_text,
@@ -3971,7 +4060,7 @@ fn deterministic_generated_only_runtime_gate(root: &Path) -> GateReport {
                         continue;
                     }
                 };
-                match boon_runtime_host::run_compiled_source_scenario(
+                match boon_runtime_host::run_dd_graph_scenario(
                     example.source.clone(),
                     source,
                     &scenario,
@@ -4617,7 +4706,7 @@ fn deterministic_scenario_protocol_gate(root: &Path, manifest: &LanguageManifest
                         })
                         .count();
                     let execution = match fs::read_to_string(root.join(&example.source)) {
-                        Ok(source_text) => boon_runtime_host::run_compiled_source_scenario_steps(
+                        Ok(source_text) => boon_runtime_host::run_dd_graph_scenario_steps(
                             example.source.clone(),
                             source_text,
                             &text,
@@ -6258,12 +6347,9 @@ fn compiled_example_json(example: &str) -> Result<String> {
     let scenario_text = fs::read_to_string(&scenario_path)
         .with_context(|| format!("missing scenario {}", scenario_path.display()))?;
     let source_path_string = format!("examples/{example}/source.bn");
-    let output = boon_runtime_host::run_compiled_source_scenario(
-        source_path_string,
-        source_text,
-        &scenario_text,
-    )
-    .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let output =
+        boon_runtime_host::run_dd_graph_scenario(source_path_string, source_text, &scenario_text)
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
     serde_json::to_string(&output).context("failed to serialize compiled DD graph output")
 }
 
@@ -6278,7 +6364,7 @@ fn write_generated_artifacts_at(example: &str, generated_dir: &Path) -> Result<(
     let source_path_string = format!("examples/{example}/source.bn");
     let plan = boon_compiler::compile_source(&source_path_string, &source_text);
     let scenario = boon_runtime_host::parse_scenario(&scenario_text);
-    let generated_output = boon_runtime_host::run_compiled_source_scenario(
+    let generated_output = boon_runtime_host::run_dd_graph_scenario(
         source_path_string.clone(),
         source_text.clone(),
         &scenario_text,
