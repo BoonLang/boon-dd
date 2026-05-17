@@ -6,47 +6,24 @@ Plan path: `BOON_DD_ENGINE_SIMPLICITY_PLAN.md`
 
 ## Summary
 
-The engine-simplicity goal is still blocked, but the current blocker surface is
-narrower than the previous report. Source routing, dynamic owner routing,
-output drain efficiency, generated freshness, generated crates, persistent
-runtime reuse, fixture-dispatch checks, cross-engine comparison, and engine
-complexity now pass in the current checkout.
+The engine-simplicity goal is still blocked. This checkpoint narrowed the
+generated/codegen blocker surface by removing generic generated source payload
+text/list/record coercions from generated execution paths, regenerating all
+example graphs, and keeping generated artifacts fresh.
 
-The remaining engine blockers are real runtime/generated-semantics blockers:
+The current hard blockers are:
 
-- `boon_runtime_host` still contains a runtime-host render evaluator and const
-  evaluator (`runtime_render_collection`, `ConstValue`, `const_value`,
-  `runtime_payload_text`, `runtime_boon_text`).
-- backend/browser/native/xtask paths still call
+- `boon_runtime_host` still contains host-side Boon render/const semantics.
+- backend/browser/native/xtask paths still depend on
   `boon_runtime_host::run_compiled_source_scenario`.
-- generated Rust still lowers list, record, payload-text, payload-bool, count,
-  map, retain, sort, and text operations through host Rust helpers/collections
-  instead of typed Differential Dataflow operators.
-- prompt audit must stay blocked until the deterministic DD purity and
-  stateful-lowering gates pass.
+- `boon_codegen_rust` still contains stateful/list semantic patterns in
+  compile-time folding and non-folded fallback boundaries that the verifier
+  correctly refuses to accept as clean execution-path proof.
+- prompt audit remains blocked until deterministic DD purity and stateful
+  lowering pass.
 
-This is not a success state. Do not mark the `/goal` complete until the full
-aggregate verifier passes on a clean current checkout.
-
-## Checkpoint Git State
-
-Current HEAD at the refreshed aggregate run:
-
-```text
-f00fd5c02e60e967b82248fd72a573ddbfa4ce94
-```
-
-Dirty status at the refreshed aggregate run:
-
-```text
- M crates/boon_codegen_rust/src/lib.rs
- M crates/boon_runtime_host/src/lib.rs
- M examples/list_object_state/expected.render.json
- M generated/*/src/graph.rs
- M generated/*/src/lib.rs
- M generated/list_object_state/monitor_snapshot.json
- M xtask/src/main.rs
-```
+This is not a success state. Do not mark the `/goal` complete until
+`cargo xtask verify all --format json` passes on the current checkout.
 
 ## Failing Command
 
@@ -64,9 +41,8 @@ The refreshed aggregate report records these failed gates:
 
 ```text
 verify-playgrounds
-target-browser
-plan-coverage
 verify-honest-compiler
+verify-honesty-deterministic
 verify-prompt-audit
 verify-dd-purity
 verify-dd-stateful-lowering
@@ -74,13 +50,13 @@ verify-engine-prompt-audit
 verify-engine-simplicity
 ```
 
-Current `target/boon-artifacts/success.json` summary:
+Current `target/boon-artifacts/success.json` engine-simplicity summary:
 
 ```text
 success: false
 engine_simplicity.verdict: blocked
 engine_simplicity.dd_purity: blocked
-engine_simplicity.stateful_lowering_shortcuts: 369
+engine_simplicity.stateful_lowering_shortcuts: 147
 engine_simplicity.dynamic_owner_leaks: 0
 engine_simplicity.fixture_dispatch_paths: 0
 engine_simplicity.full_output_vector_clones_in_execution_paths: 0
@@ -88,10 +64,6 @@ engine_simplicity.runtime_graph_builds_per_interaction_session: 1
 engine_simplicity.source_routing_wrong_id_failures: 0
 engine_simplicity.stale_artifacts: 0
 engine_simplicity.prompt_audit_verdict: blocked
-prompt_audit_report.verdict: fail
-prompt_audit_report.audits_required: 7
-prompt_audit_report.audits_passed: 0
-prompt_audit_report.hash_mismatches: 14
 ```
 
 ## Current Artifact Paths
@@ -100,9 +72,10 @@ prompt_audit_report.hash_mismatches: 14
 target/boon-artifacts/verify-report.json
 target/boon-artifacts/success.json
 target/boon-artifacts/honest-compiler-report.json
+target/boon-artifacts/honesty-deterministic-report.json
 target/boon-artifacts/prompt-audit-report.json
-target/boon-artifacts/plan-coverage.json
 target/boon-artifacts/verify-playgrounds.json
+target/boon-artifacts/native-playground.json
 target/boon-artifacts/browser-playground-result.json
 target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
 target/boon-artifacts/engine-simplicity/dd-purity-report.json
@@ -118,93 +91,84 @@ target/boon-artifacts/engine-simplicity/prompt-audit-report.json
 Current key artifact hashes:
 
 ```text
-0dba1ca5d37fabd5af0df679b56de48d4f9b042d269c8ae3bda3ba48bea3b544  target/boon-artifacts/verify-report.json
-af22601dab22538d24f4f4c14ee5179a70fce0d5f19b135809ca5187b7e9b604  target/boon-artifacts/success.json
-f978c8758b5ff1e20f91feaf916f82fab2b5844042e1b2f6a1180f62a3b49d68  target/boon-artifacts/honest-compiler-report.json
-3b9f3af498e1f017342993889c6709e8ada1245c6e20fd1f2e76c19c3dcd6667  target/boon-artifacts/engine-simplicity/dd-purity-report.json
-dcfdaae16be096d097d8352ed65a5ce8f8634b7affa017c93ef4843d46b89578  target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
-5b6b6ad44e63f30404b2856b175b174c11180a27666d977b68f8014caa8f7f2b  target/boon-artifacts/engine-simplicity/source-routing-report.json
-d05e74dd92ebb091163c5e4d07e15755b7dba06e4031245606ee2dad924e6b44  target/boon-artifacts/engine-simplicity/dynamic-owner-routing-report.json
-8745a92012b6d52bb3121bd3ae433e8867189b6fa7b60b3d515d43d225dedb71  target/boon-artifacts/engine-simplicity/output-drain-efficiency-report.json
-39f4dae86ab3a2c849190c2fb25aff0eeba031c5b1b57328728e0a418c103de2  target/boon-artifacts/engine-simplicity/prompt-audit-report.json
-3fd696b4fe15a6806ceddb920ea3a79c9c7ff2e08813a6f0389507dcac817b68  target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
+04d6a9ded7c90a16ed5a40ff91161c132b8146c96aeebe1a07cccbe32f7be75b  target/boon-artifacts/verify-report.json
+ed5d5ebb64c894f21bbd72b20a2fe3e83fa1b36c0523825fd0578f0c8baae658  target/boon-artifacts/success.json
+213090a04ad065fd62a26011d480c9cd6e7482d6550182fd9a0b47b5167fa89b  target/boon-artifacts/honest-compiler-report.json
+9d4f2f3f97009f512cca5b9089969fbd4367c8d161b7fb5e6e6b2a716db8f0d3  target/boon-artifacts/engine-simplicity/dd-purity-report.json
+3bee12a436c17e2d3a35d082c6519ea67ee0e96c3188794aa12a6c1c9f08bc40  target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
+bcbdd4c4d8e41f7eef757ca8d94360399ef57ed72de7f2226fd9c1d8074321a4  target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
+b2418920756b4bf1573250b3ca36bc187dd7f48c3ab21235184d83d539f855f6  target/boon-artifacts/engine-simplicity/prompt-audit-report.json
 ```
 
 ## Concrete Evidence
 
-`cargo xtask verify-dd-purity --format json` is blocked with 167 failures:
+`cargo xtask verify-dd-purity --format json` is blocked with 148 failures:
 
 ```text
-generated_semantics: 19
 host_runtime_semantics: 148
 ```
 
-Representative hits:
+This is an improvement from the previous report: generated semantic purity
+failures are currently gone, but the runtime-host semantic evaluator remains.
 
-```text
-crates/boon_backend_app_window/src/lib.rs:6
-boon_runtime_host::run_compiled_source_scenario(source_path, source_text, scenario_text).ok()
-
-crates/boon_runtime_host/src/lib.rs:519
-fn runtime_render_collection<'scope>(
-
-crates/boon_runtime_host/src/lib.rs:564
-enum ConstValue {
-
-crates/boon_codegen_rust/src/lib.rs:433
-"({}).into_iter().map(|item_value| {}).collect::<Vec<_>>().join(\",\")",
-
-crates/boon_codegen_rust/src/lib.rs:1003
-"std::collections::BTreeMap::<String, String>::from([{}])",
-```
-
-`cargo xtask verify-dd-stateful-lowering --format json` is blocked with 369
+`cargo xtask verify-dd-stateful-lowering --format json` is blocked with 147
 failures:
 
 ```text
-host_semantics: 291
-host_list_semantics: 68
-host_record_semantics: 10
+host_semantics: 131
+host_list_semantics: 16
 ```
 
-Representative hits:
+This is down from 369 in the previous blocker report. The remaining hits must
+be resolved by removing execution-path host semantics, moving any legitimate
+compile-time-only static folding behind an auditable non-runtime boundary, and
+replacing dynamic aggregate behavior with typed Differential Dataflow
+operators.
+
+The aggregate `verify-playgrounds` gate currently fails with:
 
 ```text
-crates/boon_codegen_rust/src/lib.rs:143
-generated_payload_text(payload)
-
-crates/boon_codegen_rust/src/lib.rs:196
-Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
-
-crates/boon_codegen_rust/src/lib.rs:462
-RenderKind::List(_) => format!("({}).len() as i64", self.code),
-
-crates/boon_codegen_rust/src/lib.rs:1482
-"({}).into_iter().filter(|item_value| { let item_value = (*item_value).clone(); {} }).collect::<Vec<_>>()",
-
-crates/boon_codegen_rust/src/lib.rs:1509
-"{ let mut values = {}; values.sort_by_key(|item_value| { let item_value = item_value.clone(); {} }); values }",
+native playground did not write parseable JSON target/boon-artifacts/native-playground.json within 45s
 ```
+
+The artifact exists after the aggregate run, so this should be treated as an
+aggregate timeout/artifact timing bug, not as proof that the native playground
+is absent.
 
 ## Passing Evidence
 
-The following engine-simplicity gates pass in the current checkout:
+These commands passed during this checkpoint:
 
 ```bash
-cargo xtask verify-no-fixture-dispatch --format json
-cargo xtask verify-source-routing --format json
-cargo xtask verify-dynamic-owner-routing --format json
-cargo xtask verify-persistent-runtime --format json
-cargo xtask verify-output-drain-efficiency --format json
-cargo xtask verify-generated-freshness --format json
+cargo fmt -p boon_codegen_rust
+cargo check -p boon_codegen_rust
+cargo xtask write-generated-artifacts --format json
 cargo xtask verify-generated-crates --format json
-cargo xtask compare-engines --format json
-cargo xtask verify-engine-complexity --format json
+cargo xtask verify-generated-freshness --format json
 ```
 
-The full aggregate still fails because the purity/stateful-lowering blockers
-above remain, prompt audit is intentionally blocked, and non-engine aggregate
-contracts still report missing or malformed artifacts.
+The aggregate also reports these relevant gates as passed:
+
+```text
+verify-deps
+verify-generated-freshness
+verify-wasm-dd
+target-browser
+plan-coverage
+verify-no-shortcuts
+verify-language-corpus
+verify-no-fixture-dispatch
+verify-source-routing
+verify-dynamic-owner-routing
+verify-persistent-runtime
+verify-output-drain-efficiency
+verify-engine-stress
+verify-engine-complexity
+generated-crates
+```
+
+These passes are not sufficient to declare success because DD purity,
+stateful-lowering, prompt audit, and the aggregate still fail.
 
 ## Minimized Repro
 
@@ -213,13 +177,13 @@ cargo xtask verify-dd-purity --format json
 cargo xtask verify-dd-stateful-lowering --format json
 cargo xtask verify-engine-prompt-audit --format json
 cargo xtask verify-engine-simplicity --format json
+cargo xtask verify-playgrounds --format json
 cargo xtask verify all --format json
 ```
 
 Expected current behavior: these commands fail or report blocked until the
-runtime-host evaluator and generated typed host-side list/record/text
-semantics are removed from execution paths and replaced with real typed
-Timely/Differential Dataflow graph state.
+runtime-host evaluator, stateful generated/codegen semantic patterns, prompt
+audit acceptance, and aggregate native-playground timing bug are fixed.
 
 ## Next Decision
 
@@ -230,10 +194,14 @@ for the missing implementation. The next implementation pass should:
    `boon_runtime_host::run_compiled_source_scenario`.
 2. Delete or quarantine the `boon_runtime_host` semantic evaluator so runtime
    hosts only inject facts and drain generated graph output.
-3. Replace generated list/record/text/count/map/retain/sort lowering with typed
-   DD collections/operators.
-4. Rerun generated artifact writing and all deterministic gates.
-5. Only then rerun prompt audits and require deterministic `pass` verdicts.
+3. Replace dynamic list/record/text/count/map/retain/sort behavior with typed
+   Timely/Differential Dataflow collections and operators.
+4. Put any accepted compile-time-only static folding behind a clearly
+   non-runtime, non-execution-path module boundary, with verifier coverage that
+   proves it cannot execute as Boon semantics at runtime.
+5. Fix the aggregate `verify-playgrounds` native artifact timing failure.
+6. Rerun generated artifact writing, deterministic gates, prompt audits, and
+   the full aggregate.
 
 Any browser/native GUI verification that opens windows must keep wrapping the
 actual window-creating process with:

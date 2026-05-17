@@ -140,12 +140,12 @@ fn generated_source_text(event: &GeneratedSourceEvent) -> String {
         GeneratedSourceEvent::Static { source_id, payload }
             if source_id.0 == "__persisted_text" || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_text(payload)
+            generated_typed_source_text(payload)
         }
         GeneratedSourceEvent::Dynamic { family_id, owner_key, generation, payload }
             if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) =>
         {
-            generated_payload_text(payload)
+            generated_typed_source_text(payload)
         }
         _ => String::new(),
     }
@@ -157,12 +157,12 @@ fn generated_source_number(event: &GeneratedSourceEvent) -> i64 {
         GeneratedSourceEvent::Static { source_id, payload }
             if source_id.0 == "__persisted_text" || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_number(payload)
+            generated_typed_source_number(payload)
         }
         GeneratedSourceEvent::Dynamic { family_id, owner_key, generation, payload }
             if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) =>
         {
-            generated_payload_number(payload)
+            generated_typed_source_number(payload)
         }
         _ => 0,
     }
@@ -174,35 +174,39 @@ fn generated_source_bool(event: &GeneratedSourceEvent) -> bool {
         GeneratedSourceEvent::Static { source_id, payload }
             if source_id.0 == "__persisted_text" || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_bool(payload)
+            generated_typed_source_bool(payload)
         }
         GeneratedSourceEvent::Dynamic { family_id, owner_key, generation, payload }
             if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) =>
         {
-            generated_payload_bool(payload)
+            generated_typed_source_bool(payload)
         }
         _ => false,
     }
 }
 
 #[allow(dead_code)]
-fn generated_payload_text(payload: &GeneratedSourceEventPayload) -> String {
+fn generated_typed_source_text(payload: &GeneratedSourceEventPayload) -> String {
     match payload {
         GeneratedSourceEventPayload::EmptyRecord => String::new(),
         GeneratedSourceEventPayload::Text(text) => text.clone(),
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => number.to_string(),
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => number.to_string(),
         GeneratedSourceEventPayload::Tag { name, payload } => match payload {
-            Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
+            Some(_) => panic!("typed generated DD source text does not support nested tag payloads"),
             None => name.0.clone(),
         },
-        GeneratedSourceEventPayload::Record(_) => String::new(),
-        GeneratedSourceEventPayload::List(values) => values.iter().map(boon_dd::value_to_text).collect::<Vec<_>>().join(","),
+        GeneratedSourceEventPayload::Record(_) => {
+            panic!("typed generated DD source text does not support record payloads")
+        }
+        GeneratedSourceEventPayload::List(_) => {
+            panic!("typed generated DD source text does not support list payloads")
+        }
     }
 }
 
 #[allow(dead_code)]
-fn generated_payload_number(payload: &GeneratedSourceEventPayload) -> i64 {
+fn generated_typed_source_number(payload: &GeneratedSourceEventPayload) -> i64 {
     match payload {
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => *number,
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => *number as i64,
@@ -215,14 +219,18 @@ fn generated_payload_number(payload: &GeneratedSourceEventPayload) -> i64 {
 }
 
 #[allow(dead_code)]
-fn generated_payload_bool(payload: &GeneratedSourceEventPayload) -> bool {
+fn generated_typed_source_bool(payload: &GeneratedSourceEventPayload) -> bool {
     match payload {
         GeneratedSourceEventPayload::Tag { name, .. } => matches!(name.0.as_str(), "True" | "true" | "Some"),
         GeneratedSourceEventPayload::Text(text) => !text.is_empty() && text != "False" && text != "false",
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => *number != 0,
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => *number != 0.0,
-        GeneratedSourceEventPayload::List(values) => !values.is_empty(),
-        GeneratedSourceEventPayload::Record(record) => !record.is_empty(),
+        GeneratedSourceEventPayload::List(_) => {
+            panic!("typed generated DD source bool does not support list payloads")
+        }
+        GeneratedSourceEventPayload::Record(_) => {
+            panic!("typed generated DD source bool does not support record payloads")
+        }
         GeneratedSourceEventPayload::EmptyRecord => false,
     }
 }
@@ -423,32 +431,16 @@ impl RenderExprCode {
                 self.code
             ),
             RenderKind::Record => "String::new()".to_owned(),
-            RenderKind::List(item) => {
-                let item_text = RenderExprCode {
-                    kind: (**item).clone(),
-                    code: "item_value".to_owned(),
-                }
-                .text();
-                format!(
-                    "({}).into_iter().map(|item_value| {}).collect::<Vec<_>>().join(\",\")",
-                    self.code, item_text
-                )
+            RenderKind::List(_) => {
+                "panic!(\"non-folded list text rendering requires DD list lowering\")".to_owned()
             }
         }
     }
 
     fn render_text(&self) -> String {
         match &self.kind {
-            RenderKind::List(item) => {
-                let item_text = RenderExprCode {
-                    kind: (**item).clone(),
-                    code: "item_value".to_owned(),
-                }
-                .render_text();
-                format!(
-                    "({}).into_iter().map(|item_value| {}).collect::<Vec<_>>().join(\"\")",
-                    self.code, item_text
-                )
+            RenderKind::List(_) => {
+                "panic!(\"non-folded list render text requires DD list lowering\")".to_owned()
             }
             _ => self.text(),
         }
@@ -459,8 +451,9 @@ impl RenderExprCode {
             RenderKind::Number => self.code.clone(),
             RenderKind::Text => format!("({}).parse::<i64>().unwrap_or_default()", self.code),
             RenderKind::Bool => format!("i64::from({})", self.code),
-            RenderKind::List(_) => format!("({}).len() as i64", self.code),
-            RenderKind::Record => format!("({}).len() as i64", self.code),
+            RenderKind::List(_) | RenderKind::Record => {
+                "panic!(\"non-folded aggregate count requires DD lowering\")".to_owned()
+            }
         }
     }
 
@@ -472,7 +465,9 @@ impl RenderExprCode {
                 self.code
             ),
             RenderKind::Number => format!("({}) != 0", self.code),
-            RenderKind::List(_) | RenderKind::Record => format!("!({}).is_empty()", self.code),
+            RenderKind::List(_) | RenderKind::Record => {
+                "panic!(\"non-folded aggregate truthiness requires DD lowering\")".to_owned()
+            }
         }
     }
 }
@@ -493,19 +488,448 @@ impl RenderCollectionCode {
                 self.code
             ),
             RenderKind::Record => format!("({}).map(|_| String::new())", self.code),
-            RenderKind::List(item) => {
-                let item_text = RenderExprCode {
-                    kind: *item,
-                    code: "item_value".to_owned(),
-                }
-                .text();
-                format!(
-                    "({}).map(|values| values.into_iter().map(|item_value| {}).collect::<Vec<_>>().join(\",\"))",
-                    self.code, item_text
-                )
-            }
+            RenderKind::List(_) => format!(
+                "({}).map(|_| panic!(\"non-folded list collection rendering requires DD list lowering\"))",
+                self.code
+            ),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum FoldedRender {
+    Text(String),
+    Number(i64),
+    Bool(bool),
+    Tag(String),
+    List(Vec<FoldedRender>),
+    Record(BTreeMap<String, FoldedRender>),
+    Empty,
+}
+
+impl FoldedRender {
+    fn kind(&self) -> RenderKind {
+        match self {
+            FoldedRender::Text(_) | FoldedRender::Tag(_) | FoldedRender::Empty => RenderKind::Text,
+            FoldedRender::Number(_) => RenderKind::Number,
+            FoldedRender::Bool(_) => RenderKind::Bool,
+            FoldedRender::Record(_) => RenderKind::Record,
+            FoldedRender::List(values) => RenderKind::List(Box::new(
+                values
+                    .first()
+                    .map(FoldedRender::kind)
+                    .unwrap_or(RenderKind::Text),
+            )),
+        }
+    }
+
+    fn text(&self) -> String {
+        match self {
+            FoldedRender::Text(text) | FoldedRender::Tag(text) => text.clone(),
+            FoldedRender::Number(number) => number.to_string(),
+            FoldedRender::Bool(value) => {
+                if *value {
+                    "True".to_owned()
+                } else {
+                    "False".to_owned()
+                }
+            }
+            FoldedRender::List(values) => {
+                let mut out = String::new();
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&value.text());
+                }
+                out
+            }
+            FoldedRender::Record(_) | FoldedRender::Empty => String::new(),
+        }
+    }
+
+    fn number(&self) -> i64 {
+        match self {
+            FoldedRender::Number(number) => *number,
+            FoldedRender::Text(text) | FoldedRender::Tag(text) => {
+                text.parse::<i64>().unwrap_or_default()
+            }
+            FoldedRender::Bool(value) => i64::from(*value),
+            FoldedRender::List(values) => values.len() as i64,
+            FoldedRender::Record(fields) => fields.len() as i64,
+            FoldedRender::Empty => 0,
+        }
+    }
+
+    fn bool(&self) -> bool {
+        match self {
+            FoldedRender::Bool(value) => *value,
+            FoldedRender::Text(text) | FoldedRender::Tag(text) => {
+                !text.is_empty() && text != "False" && text != "false"
+            }
+            FoldedRender::Number(number) => *number != 0,
+            FoldedRender::List(values) => !values.is_empty(),
+            FoldedRender::Record(fields) => !fields.is_empty(),
+            FoldedRender::Empty => false,
+        }
+    }
+
+    fn field(&self, name: &str) -> Option<FoldedRender> {
+        match self {
+            FoldedRender::Record(fields) => fields.get(name).cloned(),
+            _ => None,
+        }
+    }
+
+    fn into_expr_code(self) -> RenderExprCode {
+        let kind = self.kind();
+        let code = match self {
+            FoldedRender::Text(text) | FoldedRender::Tag(text) => {
+                format!("{}.to_owned()", quote(&text))
+            }
+            FoldedRender::Number(number) => format!("{number}_i64"),
+            FoldedRender::Bool(value) => value.to_string(),
+            FoldedRender::List(values) => {
+                let mut parts = Vec::new();
+                for value in values {
+                    parts.push(value.into_expr_code().text());
+                }
+                format!("vec![{}]", parts.join(", "))
+            }
+            FoldedRender::Record(_) => {
+                "std::collections::BTreeMap::<String, String>::new()".to_owned()
+            }
+            FoldedRender::Empty => "String::new()".to_owned(),
+        };
+        RenderExprCode { kind, code }
+    }
+}
+
+type FoldEnv = BTreeMap<String, FoldedRender>;
+
+fn fold_graph_value(
+    graph: &boon_dd::DdRenderGraph,
+    node: &boon_dd::NodeId,
+    env: &FoldEnv,
+) -> Option<FoldedRender> {
+    let node = render_graph_node(graph, node);
+    match &node.operation {
+        boon_dd::DdRenderGraphOperation::Missing
+        | boon_dd::DdRenderGraphOperation::Source
+        | boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. }
+        | boon_dd::DdRenderGraphOperation::Skip => None,
+        boon_dd::DdRenderGraphOperation::Path(path) => fold_path_value(path, env),
+        boon_dd::DdRenderGraphOperation::Number(number) => number
+            .parse::<i64>()
+            .ok()
+            .or_else(|| number.parse::<f64>().ok().map(|number| number as i64))
+            .map(FoldedRender::Number),
+        boon_dd::DdRenderGraphOperation::Tag(tag) => Some(match tag.as_str() {
+            "True" => FoldedRender::Bool(true),
+            "False" => FoldedRender::Bool(false),
+            _ => FoldedRender::Tag(tag.clone()),
+        }),
+        boon_dd::DdRenderGraphOperation::Text(text) => Some(FoldedRender::Text(text.clone())),
+        boon_dd::DdRenderGraphOperation::Record(fields)
+        | boon_dd::DdRenderGraphOperation::Constructor { fields, .. } => {
+            let mut record = BTreeMap::new();
+            for field in fields {
+                record.insert(
+                    field.name.clone(),
+                    fold_graph_value(graph, &field.value, env)?,
+                );
+            }
+            Some(FoldedRender::Record(record))
+        }
+        boon_dd::DdRenderGraphOperation::FieldAccess { base, field } => {
+            fold_graph_value(graph, base, env)?.field(field)
+        }
+        boon_dd::DdRenderGraphOperation::List(values) => {
+            let mut items = Vec::new();
+            for value in values {
+                items.push(fold_graph_value(graph, value, env)?);
+            }
+            Some(FoldedRender::List(items))
+        }
+        boon_dd::DdRenderGraphOperation::Block(values)
+        | boon_dd::DdRenderGraphOperation::Latest(values)
+        | boon_dd::DdRenderGraphOperation::Then { body: values }
+        | boon_dd::DdRenderGraphOperation::Hold { body: values, .. } => values
+            .last()
+            .and_then(|value| fold_graph_value(graph, value, env)),
+        boon_dd::DdRenderGraphOperation::Call { callee, args } => {
+            fold_call_value(graph, callee, None, args, env)
+        }
+        boon_dd::DdRenderGraphOperation::Pipe { input, stage } => {
+            let input = fold_graph_value(graph, input, env)?;
+            fold_stage_value(graph, stage, input, env)
+        }
+        boon_dd::DdRenderGraphOperation::BinaryAdd { left, right } => Some(FoldedRender::Number(
+            fold_graph_value(graph, left, env)?.number()
+                + fold_graph_value(graph, right, env)?.number(),
+        )),
+        boon_dd::DdRenderGraphOperation::BinarySubtract { left, right } => {
+            Some(FoldedRender::Number(
+                fold_graph_value(graph, left, env)?.number()
+                    - fold_graph_value(graph, right, env)?.number(),
+            ))
+        }
+        boon_dd::DdRenderGraphOperation::BinaryEqual { left, right } => Some(FoldedRender::Bool(
+            fold_graph_value(graph, left, env)?.text()
+                == fold_graph_value(graph, right, env)?.text(),
+        )),
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            let matched = env.get("pipe_input")?;
+            let matched_text = matched.text();
+            for arm in arms {
+                if arm.pattern == "__" || arm.pattern == matched_text {
+                    return fold_graph_value(graph, &arm.value, env);
+                }
+                if match_pattern_binds(&arm.pattern) {
+                    let mut nested = env.clone();
+                    nested.insert(
+                        arm.pattern.clone(),
+                        FoldedRender::Text(matched_text.clone()),
+                    );
+                    return fold_graph_value(graph, &arm.value, &nested);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn fold_stage_value(
+    graph: &boon_dd::DdRenderGraph,
+    stage: &boon_dd::NodeId,
+    input: FoldedRender,
+    env: &FoldEnv,
+) -> Option<FoldedRender> {
+    let stage = render_graph_node(graph, stage);
+    match &stage.operation {
+        boon_dd::DdRenderGraphOperation::Call { callee, args } => {
+            fold_call_value(graph, callee, Some(input), args, env)
+        }
+        boon_dd::DdRenderGraphOperation::Match { arms, .. } => {
+            let matched_text = input.text();
+            for arm in arms {
+                if arm.pattern == "__" || arm.pattern == matched_text {
+                    let mut nested = env.clone();
+                    nested.insert("pipe_input".to_owned(), input.clone());
+                    return fold_graph_value(graph, &arm.value, &nested);
+                }
+                if match_pattern_binds(&arm.pattern) {
+                    let mut nested = env.clone();
+                    nested.insert("pipe_input".to_owned(), input.clone());
+                    nested.insert(
+                        arm.pattern.clone(),
+                        FoldedRender::Text(matched_text.clone()),
+                    );
+                    return fold_graph_value(graph, &arm.value, &nested);
+                }
+            }
+            None
+        }
+        boon_dd::DdRenderGraphOperation::SourceAt { .. }
+        | boon_dd::DdRenderGraphOperation::Link { .. } => Some(input),
+        _ => {
+            let mut nested = env.clone();
+            nested.insert("pipe_input".to_owned(), input);
+            fold_graph_value(graph, &stage.node, &nested)
+        }
+    }
+}
+
+fn fold_call_value(
+    graph: &boon_dd::DdRenderGraph,
+    callee: &str,
+    input: Option<FoldedRender>,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &FoldEnv,
+) -> Option<FoldedRender> {
+    match canonical_library_call(callee) {
+        "Document/new" | "Scene/new" => input
+            .or_else(|| fold_named_arg(graph, args, "root", env))
+            .or_else(|| fold_first_arg(graph, args, env)),
+        "Text/from_number" => {
+            let value = input.or_else(|| fold_first_arg(graph, args, env))?;
+            Some(FoldedRender::Text(value.number().to_string()))
+        }
+        "Text/append" => {
+            let base = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let suffix = fold_first_arg(graph, args, env)
+                .or_else(|| fold_named_arg(graph, args, "suffix", env))
+                .unwrap_or(FoldedRender::Text(String::new()));
+            Some(FoldedRender::Text(format!(
+                "{}{}",
+                base.text(),
+                suffix.text()
+            )))
+        }
+        "Text/join" | "Text/join_lines" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let separator = fold_named_arg(graph, args, "separator", env)
+                .map(|value| value.text())
+                .unwrap_or_else(|| {
+                    if callee == "Text/join_lines" {
+                        "\n".to_owned()
+                    } else {
+                        ",".to_owned()
+                    }
+                });
+            match input {
+                FoldedRender::List(values) => {
+                    let mut text = String::new();
+                    for (index, value) in values.iter().enumerate() {
+                        if index > 0 {
+                            text.push_str(&separator);
+                        }
+                        text.push_str(&value.text());
+                    }
+                    Some(FoldedRender::Text(text))
+                }
+                value => Some(FoldedRender::Text(value.text())),
+            }
+        }
+        "Text/uppercase" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            Some(FoldedRender::Text(input.text().to_uppercase()))
+        }
+        "Text/is_empty" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            Some(FoldedRender::Bool(input.text().is_empty()))
+        }
+        "Bool/not" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            Some(FoldedRender::Bool(!input.bool()))
+        }
+        "List/append" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let item = fold_named_arg(graph, args, "item", env)
+                .or_else(|| fold_first_arg(graph, args, env))
+                .unwrap_or(FoldedRender::Empty);
+            match input {
+                FoldedRender::List(mut values) => {
+                    values.push(item);
+                    Some(FoldedRender::List(values))
+                }
+                value => Some(value),
+            }
+        }
+        "List/map" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let new_expr = named_graph_arg(args, "new")?;
+            match input {
+                FoldedRender::List(values) => {
+                    let mut mapped = Vec::new();
+                    for item in values {
+                        let mut nested = env.clone();
+                        nested.insert("item".to_owned(), item);
+                        mapped.push(fold_graph_value(graph, new_expr, &nested)?);
+                    }
+                    Some(FoldedRender::List(mapped))
+                }
+                value => Some(value),
+            }
+        }
+        "List/retain" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let predicate = named_graph_arg(args, "if");
+            match input {
+                FoldedRender::List(values) => {
+                    let mut retained = Vec::new();
+                    for item in values {
+                        let keep = if let Some(predicate) = predicate {
+                            let mut nested = env.clone();
+                            nested.insert("item".to_owned(), item.clone());
+                            fold_graph_value(graph, predicate, &nested)
+                                .map(|value| value.bool())
+                                .unwrap_or(false)
+                        } else {
+                            true
+                        };
+                        if keep {
+                            retained.push(item);
+                        }
+                    }
+                    Some(FoldedRender::List(retained))
+                }
+                value => Some(value),
+            }
+        }
+        "List/count" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            let predicate = named_graph_arg(args, "if");
+            match input {
+                FoldedRender::List(values) => {
+                    let mut count = 0_i64;
+                    for item in values {
+                        let keep = if let Some(predicate) = predicate {
+                            let mut nested = env.clone();
+                            nested.insert("item".to_owned(), item);
+                            fold_graph_value(graph, predicate, &nested)
+                                .map(|value| value.bool())
+                                .unwrap_or(false)
+                        } else {
+                            true
+                        };
+                        if keep {
+                            count += 1;
+                        }
+                    }
+                    Some(FoldedRender::Number(count))
+                }
+                FoldedRender::Empty => Some(FoldedRender::Number(0)),
+                _ => Some(FoldedRender::Number(1)),
+            }
+        }
+        "List/latest" => match input.or_else(|| fold_first_arg(graph, args, env))? {
+            FoldedRender::List(values) => values.last().cloned(),
+            value => Some(value),
+        },
+        "Temperature/c_to_f" => {
+            let input = input.or_else(|| fold_first_arg(graph, args, env))?;
+            Some(FoldedRender::Number(input.number() * 9 / 5 + 32))
+        }
+        callee if callee.starts_with("Element/") => input
+            .or_else(|| fold_named_arg(graph, args, "label", env))
+            .or_else(|| fold_named_arg(graph, args, "text", env))
+            .or_else(|| fold_named_arg(graph, args, "child", env))
+            .or_else(|| fold_named_arg(graph, args, "contents", env))
+            .or_else(|| fold_first_arg(graph, args, env)),
+        _ => input.or_else(|| fold_first_arg(graph, args, env)),
+    }
+}
+
+fn fold_first_arg(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    env: &FoldEnv,
+) -> Option<FoldedRender> {
+    first_graph_arg(args).and_then(|node| fold_graph_value(graph, node, env))
+}
+
+fn fold_named_arg(
+    graph: &boon_dd::DdRenderGraph,
+    args: &[boon_dd::DdRenderGraphArg],
+    name: &str,
+    env: &FoldEnv,
+) -> Option<FoldedRender> {
+    named_graph_arg(args, name).and_then(|node| fold_graph_value(graph, node, env))
+}
+
+fn fold_path_value(path: &str, env: &FoldEnv) -> Option<FoldedRender> {
+    if path == "pipe_input" {
+        return env.get("pipe_input").cloned();
+    }
+    let mut parts = path.split('.');
+    let root = parts.next()?;
+    let mut value = env.get(root).cloned()?;
+    for part in parts {
+        value = value.field(part)?;
+    }
+    Some(value)
 }
 
 fn value_collection_graph_code(
@@ -513,6 +937,15 @@ fn value_collection_graph_code(
     node: &boon_dd::NodeId,
     env: &RenderEnv,
 ) -> RenderCollectionCode {
+    if env.is_empty()
+        && let Some(folded) = fold_graph_value(graph, node, &BTreeMap::new())
+    {
+        let value = folded.into_expr_code();
+        return RenderCollectionCode {
+            kind: value.kind,
+            code: format!("render_events.clone().map(|_| {})", value.code),
+        };
+    }
     let node = render_graph_node(graph, node);
     match &node.operation {
         boon_dd::DdRenderGraphOperation::Source | boon_dd::DdRenderGraphOperation::Path(_) => {
@@ -954,6 +1387,11 @@ fn value_graph_code(
     node: &boon_dd::NodeId,
     env: &RenderEnv,
 ) -> RenderExprCode {
+    if env.is_empty()
+        && let Some(folded) = fold_graph_value(graph, node, &BTreeMap::new())
+    {
+        return folded.into_expr_code();
+    }
     let node = render_graph_node(graph, node);
     match &node.operation {
         boon_dd::DdRenderGraphOperation::Missing => unsupported_expr("missing render expression"),
@@ -987,23 +1425,9 @@ fn value_graph_code(
             kind: RenderKind::Text,
             code: format!("{}.to_owned()", quote(text)),
         },
-        boon_dd::DdRenderGraphOperation::Record(fields)
-        | boon_dd::DdRenderGraphOperation::Constructor { fields, .. } => {
-            let fields = fields
-                .iter()
-                .map(|field| {
-                    let value = value_graph_code(graph, &field.value, env).text();
-                    format!("({}.to_owned(), {})", quote(&field.name), value)
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            RenderExprCode {
-                kind: RenderKind::Record,
-                code: format!(
-                    "std::collections::BTreeMap::<String, String>::from([{}])",
-                    fields
-                ),
-            }
+        boon_dd::DdRenderGraphOperation::Record(_)
+        | boon_dd::DdRenderGraphOperation::Constructor { .. } => {
+            unsupported_expr("non-folded record construction requires DD record lowering")
         }
         boon_dd::DdRenderGraphOperation::FieldAccess { base, field } => {
             let base = value_graph_code(graph, base, env);
@@ -1016,21 +1440,8 @@ fn value_graph_code(
                 ),
             }
         }
-        boon_dd::DdRenderGraphOperation::List(values) => {
-            let values = values
-                .iter()
-                .map(|value| value_graph_code(graph, value, env))
-                .collect::<Vec<_>>();
-            let item_kind = common_list_kind(&values);
-            let value_codes = values
-                .iter()
-                .map(|value| coerce_expr_code(value, &item_kind))
-                .collect::<Vec<_>>()
-                .join(", ");
-            RenderExprCode {
-                kind: RenderKind::List(Box::new(item_kind)),
-                code: format!("vec![{}]", value_codes),
-            }
+        boon_dd::DdRenderGraphOperation::List(_) => {
+            unsupported_expr("non-folded list construction requires DD list lowering")
         }
         boon_dd::DdRenderGraphOperation::Block(values)
         | boon_dd::DdRenderGraphOperation::Latest(values)
@@ -1113,23 +1524,15 @@ fn call_graph_value_code(
             named_graph_arg_code(graph, args, "root", env)
                 .unwrap_or_else(|| unsupported_expr("Document/new or Scene/new missing root"))
         }),
-        "Assets/icon" => RenderExprCode {
-            kind: RenderKind::Record,
-            code: "std::collections::BTreeMap::<String, String>::from([(\"checkbox_active\".to_owned(), \"[ ]\".to_owned()), (\"checkbox_completed\".to_owned(), \"[x]\".to_owned())])".to_owned(),
-        },
-        "Theme/corners"
-        | "Theme/depth"
-        | "Theme/elevation"
-        | "Theme/sizing"
-        | "Theme/spacing"
+        "Assets/icon" => unsupported_expr("Assets/icon requires DD record lowering"),
+        "Theme/corners" | "Theme/depth" | "Theme/elevation" | "Theme/sizing" | "Theme/spacing"
         | "Theme/spring_range" => RenderExprCode {
             kind: RenderKind::Number,
             code: "0_i64".to_owned(),
         },
-        "Theme/font" | "Theme/material" => RenderExprCode {
-            kind: RenderKind::Record,
-            code: "std::collections::BTreeMap::<String, String>::from([(\"color\".to_owned(), String::new())])".to_owned(),
-        },
+        "Theme/font" | "Theme/material" => {
+            unsupported_expr("Theme/font and Theme/material require DD record lowering")
+        }
         "Theme/geometry" | "Theme/lights" | "Theme/text" => RenderExprCode {
             kind: RenderKind::Record,
             code: "std::collections::BTreeMap::<String, String>::new()".to_owned(),
@@ -1261,25 +1664,16 @@ fn call_graph_value_code(
         }
         "Text/join" => {
             let input = input.unwrap_or_else(|| unsupported_expr("Text/join missing input"));
-            let separator = named_graph_arg_code(graph, args, "separator", env)
-                .unwrap_or_else(|| RenderExprCode {
-                    kind: RenderKind::Text,
-                    code: "\",\".to_owned()".to_owned(),
+            let _separator =
+                named_graph_arg_code(graph, args, "separator", env).unwrap_or_else(|| {
+                    RenderExprCode {
+                        kind: RenderKind::Text,
+                        code: "\",\".to_owned()".to_owned(),
+                    }
                 });
             let text = match input.kind.list_item() {
-                Some(item) => {
-                    let item_text = RenderExprCode {
-                        kind: item.clone(),
-                        code: "item_value".to_owned(),
-                    }
-                    .text();
-                    format!(
-                        "({}).into_iter().map(|item_value| {}).collect::<Vec<_>>().join(&({}))",
-                        input.code,
-                        item_text,
-                        separator.text()
-                    )
-                }
+                Some(_) => "panic!(\"non-folded Text/join over List requires DD list lowering\")"
+                    .to_owned(),
                 None => input.text(),
             };
             RenderExprCode {
@@ -1290,16 +1684,9 @@ fn call_graph_value_code(
         "Text/join_lines" => {
             let input = input.unwrap_or_else(|| unsupported_expr("Text/join_lines missing input"));
             let text = match input.kind.list_item() {
-                Some(item) => {
-                    let item_text = RenderExprCode {
-                        kind: item.clone(),
-                        code: "item_value".to_owned(),
-                    }
-                    .text();
-                    format!(
-                        "({}).into_iter().map(|item_value| {}).collect::<Vec<_>>().join(\"\\n\")",
-                        input.code, item_text
-                    )
+                Some(_) => {
+                    "panic!(\"non-folded Text/join_lines over List requires DD list lowering\")"
+                        .to_owned()
                 }
                 None => input.text(),
             };
@@ -1322,25 +1709,7 @@ fn call_graph_value_code(
                 code: format!("generated_url_encode(&({}))", input.text()),
             }
         }
-        "List/append" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/append missing input"));
-            let item = named_graph_arg_code(graph, args, "item", env)
-                .or_else(|| first_graph_arg_code(graph, args, env))
-                .unwrap_or_else(|| unsupported_expr("List/append missing item"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            RenderExprCode {
-                kind: RenderKind::List(Box::new(item_kind.clone())),
-                code: format!(
-                    "{{ let mut values = {}; values.push({}); values }}",
-                    input.code,
-                    coerce_expr_code(&item, &item_kind)
-                ),
-            }
-        }
+        "List/append" => unsupported_expr("non-folded List/append requires DD list lowering"),
         "List/range" => {
             let from = named_graph_arg_code(graph, args, "from", env)
                 .unwrap_or_else(|| unsupported_expr("List/range missing from"));
@@ -1355,217 +1724,19 @@ fn call_graph_value_code(
                 ),
             }
         }
-        "List/get" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/get missing input"));
-            let index = named_graph_arg_code(graph, args, "index", env)
-                .or_else(|| first_graph_arg_code(graph, args, env))
-                .unwrap_or_else(|| unsupported_expr("List/get missing index"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            RenderExprCode {
-                kind: item_kind,
-                code: format!(
-                    "{{ let values = {}; let index = {}; if index <= 0 {{ panic!(\"generated DD render List/get index must be one-based and positive\") }} values.get((index - 1) as usize).cloned().unwrap_or_else(|| panic!(\"generated DD render List/get index out of bounds\")) }}",
-                    input.code,
-                    index.number()
-                ),
-            }
-        }
-        "List/latest" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/latest missing input"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            RenderExprCode {
-                kind: item_kind,
-                code: format!(
-                    "({}).into_iter().last().unwrap_or_else(|| panic!(\"generated DD render List/latest expected non-empty List\"))",
-                    input.code
-                ),
-            }
-        }
-        "List/zip" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/zip missing input"));
-            let right = named_graph_arg_code(graph, args, "with", env)
-                .or_else(|| first_graph_arg_code(graph, args, env))
-                .unwrap_or_else(|| unsupported_expr("List/zip missing with"));
-            let left_item = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            let right_item = right
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            let first = RenderExprCode {
-                kind: left_item,
-                code: "first".to_owned(),
-            }
-            .text();
-            let second = RenderExprCode {
-                kind: right_item,
-                code: "second".to_owned(),
-            }
-            .text();
-            RenderExprCode {
-                kind: RenderKind::List(Box::new(RenderKind::Record)),
-                code: format!(
-                    "({}).into_iter().zip({}).map(|(first, second)| std::collections::BTreeMap::<String, String>::from([(\"first\".to_owned(), {}), (\"second\".to_owned(), {})])).collect::<Vec<_>>()",
-                    input.code, right.code, first, second
-                ),
-            }
-        }
-        "List/is_empty" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/is_empty missing input"));
-            RenderExprCode {
-                kind: RenderKind::Bool,
-                code: format!("({}).is_empty()", input.code),
-            }
-        }
-        "List/map" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/map missing input"));
-            let Some(new_expr) = named_graph_arg(args, "new") else {
-                return unsupported_expr("List/map missing new expression");
-            };
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            let mut nested_env = env.clone();
-            nested_env.insert(
-                "item".to_owned(),
-                RenderExprCode {
-                    kind: item_kind,
-                    code: "item_value.clone()".to_owned(),
-                },
-            );
-            let mapped = value_graph_code(graph, new_expr, &nested_env);
-            RenderExprCode {
-                kind: RenderKind::List(Box::new(mapped.kind)),
-                code: format!(
-                    "({}).into_iter().map(|item_value| {}).collect::<Vec<_>>()",
-                    input.code, mapped.code
-                ),
-            }
-        }
-        "List/retain" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/retain missing input"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            let predicate = named_graph_arg(args, "if")
-                .map(|expr| {
-                    let mut nested_env = env.clone();
-                    nested_env.insert(
-                        "item".to_owned(),
-                        RenderExprCode {
-                            kind: item_kind.clone(),
-                            code: "item_value.clone()".to_owned(),
-                        },
-                    );
-                    value_graph_code(graph, expr, &nested_env).bool()
-                })
-                .unwrap_or_else(|| "true".to_owned());
-            RenderExprCode {
-                kind: input.kind,
-                code: format!(
-                    "({}).into_iter().filter(|item_value| {{ let item_value = (*item_value).clone(); {} }}).collect::<Vec<_>>()",
-                    input.code, predicate
-                ),
-            }
-        }
-        "List/sort_by" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/sort_by missing input"));
-            let Some(key_expr) = named_graph_arg(args, "key") else {
-                return unsupported_expr("List/sort_by missing key expression");
-            };
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            let mut nested_env = env.clone();
-            nested_env.insert(
-                "item".to_owned(),
-                RenderExprCode {
-                    kind: item_kind,
-                    code: "item_value.clone()".to_owned(),
-                },
-            );
-            let key = value_graph_code(graph, key_expr, &nested_env);
-            RenderExprCode {
-                kind: input.kind,
-                code: format!(
-                    "{{ let mut values = {}; values.sort_by_key(|item_value| {{ let item_value = item_value.clone(); {} }}); values }}",
-                    input.code, key.code
-                ),
-            }
-        }
-        "List/count" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/count missing input"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Text);
-            if let Some(expr) = named_graph_arg(args, "if") {
-                let mut nested_env = env.clone();
-                nested_env.insert(
-                    "item".to_owned(),
-                    RenderExprCode {
-                        kind: item_kind,
-                        code: "item_value.clone()".to_owned(),
-                    },
-                );
-                let predicate = value_graph_code(graph, expr, &nested_env).bool();
-                RenderExprCode {
-                    kind: RenderKind::Number,
-                    code: format!(
-                        "({}).into_iter().filter(|item_value| {{ let item_value = (*item_value).clone(); {} }}).count() as i64",
-                        input.code, predicate
-                    ),
-                }
-            } else {
-                RenderExprCode {
-                    kind: RenderKind::Number,
-                    code: format!("({}).len() as i64", input.code),
-                }
-            }
-        }
-        "List/sum" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("List/sum missing input"));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Number);
-            let item_number = RenderExprCode {
-                kind: item_kind,
-                code: "item_value".to_owned(),
-            }
-            .number();
-            RenderExprCode {
-                kind: RenderKind::Number,
-                code: format!("({}).into_iter().map(|item_value| {}).sum::<i64>()", input.code, item_number),
-            }
-        }
+        "List/get" => unsupported_expr("non-folded List/get requires DD list lowering"),
+        "List/latest" => unsupported_expr("non-folded List/latest requires DD list lowering"),
+        "List/zip" => unsupported_expr("non-folded List/zip requires DD list lowering"),
+        "List/is_empty" => unsupported_expr("non-folded List/is_empty requires DD list lowering"),
+        "List/map" => unsupported_expr("non-folded List/map requires DD list lowering"),
+        "List/retain" => unsupported_expr("non-folded List/retain requires DD list lowering"),
+        "List/sort_by" => unsupported_expr("non-folded List/sort_by requires DD list lowering"),
+        "List/count" => unsupported_expr("non-folded List/count requires DD list lowering"),
+        "List/sum" => unsupported_expr("non-folded List/sum requires DD list lowering"),
         "List/any" | "List/every" => {
-            let input = input.unwrap_or_else(|| unsupported_expr(&format!("{callee} missing input")));
-            let item_kind = input
-                .kind
-                .list_item()
-                .cloned()
-                .unwrap_or(RenderKind::Bool);
+            let input =
+                input.unwrap_or_else(|| unsupported_expr(&format!("{callee} missing input")));
+            let item_kind = input.kind.list_item().cloned().unwrap_or(RenderKind::Bool);
             let predicate = named_graph_arg(args, "if")
                 .map(|expr| {
                     let mut nested_env = env.clone();
@@ -1588,7 +1759,10 @@ fn call_graph_value_code(
             let quantifier = if callee == "List/any" { "any" } else { "all" };
             RenderExprCode {
                 kind: RenderKind::Bool,
-                code: format!("({}).into_iter().{}(|item_value| {})", input.code, quantifier, predicate),
+                code: format!(
+                    "({}).into_iter().{}(|item_value| {})",
+                    input.code, quantifier, predicate
+                ),
             }
         }
         "Math/min" => math_min_call(graph, input, args, env),
@@ -1600,7 +1774,8 @@ fn call_graph_value_code(
             }
         }
         "Temperature/c_to_f" => {
-            let input = input.unwrap_or_else(|| unsupported_expr("Temperature/c_to_f missing input"));
+            let input =
+                input.unwrap_or_else(|| unsupported_expr("Temperature/c_to_f missing input"));
             RenderExprCode {
                 kind: RenderKind::Number,
                 code: format!("({}) * 9 / 5 + 32", input.number()),
@@ -1657,7 +1832,12 @@ fn call_graph_value_code(
                 .unwrap_or_else(|| unsupported_expr("Number/clamp missing max"));
             RenderExprCode {
                 kind: RenderKind::Number,
-                code: format!("({}).clamp({}, {})", value.number(), min.number(), max.number()),
+                code: format!(
+                    "({}).clamp({}, {})",
+                    value.number(),
+                    min.number(),
+                    max.number()
+                ),
             }
         }
         "Number/percent_of_range" => {
@@ -1886,6 +2066,13 @@ fn first_graph_arg_code(
     })
 }
 
+fn first_graph_arg(args: &[boon_dd::DdRenderGraphArg]) -> Option<&boon_dd::NodeId> {
+    args.iter().find_map(|arg| match arg {
+        boon_dd::DdRenderGraphArg::Positional(value) => Some(value),
+        boon_dd::DdRenderGraphArg::Named { .. } => None,
+    })
+}
+
 fn named_graph_arg_code(
     graph: &boon_dd::DdRenderGraph,
     args: &[boon_dd::DdRenderGraphArg],
@@ -1945,33 +2132,6 @@ fn path_expr_code(path: &str, env: &RenderEnv) -> RenderExprCode {
         };
     }
     value
-}
-
-fn common_list_kind(values: &[RenderExprCode]) -> RenderKind {
-    let Some(first) = values.first() else {
-        return RenderKind::Text;
-    };
-    if values.iter().all(|value| value.kind == first.kind) {
-        first.kind.clone()
-    } else {
-        RenderKind::Text
-    }
-}
-
-fn coerce_expr_code(value: &RenderExprCode, target: &RenderKind) -> String {
-    match target {
-        RenderKind::Text => value.text(),
-        RenderKind::Number => value.number(),
-        RenderKind::Bool => value.bool(),
-        RenderKind::Record => {
-            if matches!(value.kind, RenderKind::Record) {
-                value.code.clone()
-            } else {
-                "std::collections::BTreeMap::<String, String>::new()".to_owned()
-            }
-        }
-        RenderKind::List(_) => value.code.clone(),
-    }
 }
 
 fn empty_text_expr() -> RenderExprCode {

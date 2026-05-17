@@ -156,7 +156,7 @@ fn generated_source_text(event: &GeneratedSourceEvent) -> String {
             if source_id.0 == "__persisted_text"
                 || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_text(payload)
+            generated_typed_source_text(payload)
         }
         GeneratedSourceEvent::Dynamic {
             family_id,
@@ -164,7 +164,7 @@ fn generated_source_text(event: &GeneratedSourceEvent) -> String {
             generation,
             payload,
         } if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) => {
-            generated_payload_text(payload)
+            generated_typed_source_text(payload)
         }
         _ => String::new(),
     }
@@ -177,7 +177,7 @@ fn generated_source_number(event: &GeneratedSourceEvent) -> i64 {
             if source_id.0 == "__persisted_text"
                 || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_number(payload)
+            generated_typed_source_number(payload)
         }
         GeneratedSourceEvent::Dynamic {
             family_id,
@@ -185,7 +185,7 @@ fn generated_source_number(event: &GeneratedSourceEvent) -> i64 {
             generation,
             payload,
         } if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) => {
-            generated_payload_number(payload)
+            generated_typed_source_number(payload)
         }
         _ => 0,
     }
@@ -198,7 +198,7 @@ fn generated_source_bool(event: &GeneratedSourceEvent) -> bool {
             if source_id.0 == "__persisted_text"
                 || generated_static_source_id_is_bound(source_id) =>
         {
-            generated_payload_bool(payload)
+            generated_typed_source_bool(payload)
         }
         GeneratedSourceEvent::Dynamic {
             family_id,
@@ -206,34 +206,36 @@ fn generated_source_bool(event: &GeneratedSourceEvent) -> bool {
             generation,
             payload,
         } if generated_dynamic_source_id_is_bound(family_id, owner_key, *generation) => {
-            generated_payload_bool(payload)
+            generated_typed_source_bool(payload)
         }
         _ => false,
     }
 }
 
 #[allow(dead_code)]
-fn generated_payload_text(payload: &GeneratedSourceEventPayload) -> String {
+fn generated_typed_source_text(payload: &GeneratedSourceEventPayload) -> String {
     match payload {
         GeneratedSourceEventPayload::EmptyRecord => String::new(),
         GeneratedSourceEventPayload::Text(text) => text.clone(),
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => number.to_string(),
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => number.to_string(),
         GeneratedSourceEventPayload::Tag { name, payload } => match payload {
-            Some(payload) => format!("{}({})", name.0, boon_dd::value_to_text(payload)),
+            Some(_) => {
+                panic!("typed generated DD source text does not support nested tag payloads")
+            }
             None => name.0.clone(),
         },
-        GeneratedSourceEventPayload::Record(_) => String::new(),
-        GeneratedSourceEventPayload::List(values) => values
-            .iter()
-            .map(boon_dd::value_to_text)
-            .collect::<Vec<_>>()
-            .join(","),
+        GeneratedSourceEventPayload::Record(_) => {
+            panic!("typed generated DD source text does not support record payloads")
+        }
+        GeneratedSourceEventPayload::List(_) => {
+            panic!("typed generated DD source text does not support list payloads")
+        }
     }
 }
 
 #[allow(dead_code)]
-fn generated_payload_number(payload: &GeneratedSourceEventPayload) -> i64 {
+fn generated_typed_source_number(payload: &GeneratedSourceEventPayload) -> i64 {
     match payload {
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => *number,
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => *number as i64,
@@ -246,7 +248,7 @@ fn generated_payload_number(payload: &GeneratedSourceEventPayload) -> i64 {
 }
 
 #[allow(dead_code)]
-fn generated_payload_bool(payload: &GeneratedSourceEventPayload) -> bool {
+fn generated_typed_source_bool(payload: &GeneratedSourceEventPayload) -> bool {
     match payload {
         GeneratedSourceEventPayload::Tag { name, .. } => {
             matches!(name.0.as_str(), "True" | "true" | "Some")
@@ -256,8 +258,12 @@ fn generated_payload_bool(payload: &GeneratedSourceEventPayload) -> bool {
         }
         GeneratedSourceEventPayload::Number(BoonNumber::Int(number)) => *number != 0,
         GeneratedSourceEventPayload::Number(BoonNumber::Float(number)) => *number != 0.0,
-        GeneratedSourceEventPayload::List(values) => !values.is_empty(),
-        GeneratedSourceEventPayload::Record(record) => !record.is_empty(),
+        GeneratedSourceEventPayload::List(_) => {
+            panic!("typed generated DD source bool does not support list payloads")
+        }
+        GeneratedSourceEventPayload::Record(_) => {
+            panic!("typed generated DD source bool does not support record payloads")
+        }
         GeneratedSourceEventPayload::EmptyRecord => false,
     }
 }
@@ -355,51 +361,10 @@ pub fn build_dataflow(worker: &mut timely::worker::Worker) -> GeneratedGraphHand
                 .clone()
                 .filter(|(_sequence, event)| generated_event_is_host_tick(event))
         };
-        let rendered_values = ((((render_events.clone().map(|_| {
-            vec![
-                std::collections::BTreeMap::<String, String>::from([
-                    ("title".to_owned(), "milk".to_owned()),
-                    (
-                        "completed".to_owned(),
-                        (if false {
-                            "True".to_owned()
-                        } else {
-                            "False".to_owned()
-                        }),
-                    ),
-                ]),
-                std::collections::BTreeMap::<String, String>::from([
-                    ("title".to_owned(), "bread".to_owned()),
-                    (
-                        "completed".to_owned(),
-                        (if false {
-                            "True".to_owned()
-                        } else {
-                            "False".to_owned()
-                        }),
-                    ),
-                ]),
-            ]
-        }))
-        .map(|pipe_input| {
-            (pipe_input)
-                .into_iter()
-                .filter(|item_value| {
-                    let item_value = (*item_value).clone();
-                    !({
-                        let text = (item_value.clone())
-                            .get("completed")
-                            .cloned()
-                            .unwrap_or_default();
-                        !text.is_empty() && text != "False" && text != "false"
-                    })
-                })
-                .count() as i64
-        }))
-        .map(|pipe_input| (pipe_input).to_string()))
-        .map(|pipe_input| format!("{}{}", pipe_input, " active".to_owned())))
-        .map(|pipe_input| pipe_input)
-        .map(|text| ((), text));
+        let rendered_values = render_events
+            .clone()
+            .map(|_| "2 active".to_owned())
+            .map(|text| ((), text));
         let rendered_owners = render_events
             .clone()
             .map(|(_sequence, event)| ((), generated_bound_source_owner(&event)));

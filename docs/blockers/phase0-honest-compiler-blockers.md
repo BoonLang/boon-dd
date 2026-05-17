@@ -7,16 +7,15 @@ Plan path: `BOON_DD_HONEST_COMPILER_PLAN.md`
 ## Summary
 
 The Phase 0 command surface exists, but the honest compiler aggregate cannot
-pass yet. The current checkout has made concrete engine progress, but the full
-`cargo xtask verify all --format json` contract is still blocked by:
+pass yet. This checkpoint improved generated-code purity and kept generated
+artifacts fresh, but the full contract is still blocked by:
 
 - engine DD purity failures,
 - engine stateful-lowering failures,
-- intentionally blocked prompt audit,
+- deterministic honesty failure caused by native playground artifact timing,
+- prompt-audit acceptance/hash mismatch failures,
 - honest-compiler aggregate failure,
-- playground artifact schema mismatch,
-- browser WASM smoke artifact wiring,
-- incomplete plan coverage.
+- engine-simplicity aggregate failure.
 
 This is not a success state. Do not mark the `/goal` complete until
 `cargo xtask verify all --format json` passes and writes
@@ -38,9 +37,8 @@ Current failed aggregate gates:
 
 ```text
 verify-playgrounds
-target-browser
-plan-coverage
 verify-honest-compiler
+verify-honesty-deterministic
 verify-prompt-audit
 verify-dd-purity
 verify-dd-stateful-lowering
@@ -51,10 +49,9 @@ verify-engine-simplicity
 Current aggregate failure details:
 
 ```text
-verify-playgrounds: playground artifact missing example_count
-target-browser: missing browser WASM smoke artifact; run verify-wasm-dd first: No such file or directory (os error 2)
-plan-coverage: plan coverage is incomplete; see target/boon-artifacts/plan-coverage.json
+verify-playgrounds: native playground did not write parseable JSON target/boon-artifacts/native-playground.json within 45s
 verify-honest-compiler: honest compiler is not implemented yet; see target/boon-artifacts/honest-compiler-report.json
+verify-honesty-deterministic: deterministic honesty verification is not complete; see target/boon-artifacts/honesty-deterministic-report.json
 verify-prompt-audit: prompt audit is incomplete; see target/boon-artifacts/prompt-audit-report.json
 verify-dd-purity: engine-simplicity DD purity blocked
 verify-dd-stateful-lowering: engine-simplicity stateful lowering blocked
@@ -62,20 +59,17 @@ verify-engine-prompt-audit: engine-simplicity prompt audit blocked
 verify-engine-simplicity: engine-simplicity aggregate blocked
 ```
 
-`cargo xtask verify-honest-compiler --format json` currently fails with:
-
-```text
-Error: honest compiler is not implemented yet; see target/boon-artifacts/honest-compiler-report.json
-```
-
-The current `target/boon-artifacts/honest-compiler-report.json` summary is:
+`target/boon-artifacts/honest-compiler-report.json` currently says:
 
 ```text
 verdict: fail
-blockers: prompt-audit verification is not passing
+blockers:
+- deterministic honesty verification is not passing
+- honest compiler prompt pack could not be refreshed
+- prompt-audit verification is not passing
 ```
 
-`cargo xtask verify-prompt-audit --format json` currently fails with:
+`target/boon-artifacts/prompt-audit-report.json` currently says:
 
 ```text
 verdict: fail
@@ -83,11 +77,14 @@ audits_required: 7
 audits_passed: 0
 critical_findings_open: 0
 hash_mismatches: 14
-blockers: prompt audit outputs are missing, stale, inconclusive, failing, or schema-invalid
+blockers:
+- prompt audit outputs are missing, stale, inconclusive, failing, or schema-invalid
 ```
 
-Those audits must remain non-accepted until the engine hard-gate failures are
-fixed and the audits are rerun on the current checkout.
+All seven prompt-audit JSON files report `verdict: pass`, but none are accepted
+because their repo-state and deterministic-report hashes are stale for the
+current checkout. Refreshing those hashes is not allowed as a substitute for
+fixing the DD purity and stateful-lowering blockers first.
 
 ## Current Artifact Paths
 
@@ -101,8 +98,8 @@ target/boon-artifacts/no-shortcuts-report.json
 target/boon-artifacts/prompt-audit-report.json
 target/boon-artifacts/generated-crates.json
 target/boon-artifacts/generated-freshness-report.json
-target/boon-artifacts/plan-coverage.json
 target/boon-artifacts/verify-playgrounds.json
+target/boon-artifacts/native-playground.json
 target/boon-artifacts/browser-playground-result.json
 target/boon-artifacts/engine-simplicity/dd-purity-report.json
 target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
@@ -117,34 +114,53 @@ target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
 Current key artifact hashes:
 
 ```text
-0dba1ca5d37fabd5af0df679b56de48d4f9b042d269c8ae3bda3ba48bea3b544  target/boon-artifacts/verify-report.json
-af22601dab22538d24f4f4c14ee5179a70fce0d5f19b135809ca5187b7e9b604  target/boon-artifacts/success.json
-f978c8758b5ff1e20f91feaf916f82fab2b5844042e1b2f6a1180f62a3b49d68  target/boon-artifacts/honest-compiler-report.json
-3b9f3af498e1f017342993889c6709e8ada1245c6e20fd1f2e76c19c3dcd6667  target/boon-artifacts/engine-simplicity/dd-purity-report.json
-dcfdaae16be096d097d8352ed65a5ce8f8634b7affa017c93ef4843d46b89578  target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
-5b6b6ad44e63f30404b2856b175b174c11180a27666d977b68f8014caa8f7f2b  target/boon-artifacts/engine-simplicity/source-routing-report.json
-d05e74dd92ebb091163c5e4d07e15755b7dba06e4031245606ee2dad924e6b44  target/boon-artifacts/engine-simplicity/dynamic-owner-routing-report.json
-8745a92012b6d52bb3121bd3ae433e8867189b6fa7b60b3d515d43d225dedb71  target/boon-artifacts/engine-simplicity/output-drain-efficiency-report.json
-39f4dae86ab3a2c849190c2fb25aff0eeba031c5b1b57328728e0a418c103de2  target/boon-artifacts/engine-simplicity/prompt-audit-report.json
-3fd696b4fe15a6806ceddb920ea3a79c9c7ff2e08813a6f0389507dcac817b68  target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
+04d6a9ded7c90a16ed5a40ff91161c132b8146c96aeebe1a07cccbe32f7be75b  target/boon-artifacts/verify-report.json
+ed5d5ebb64c894f21bbd72b20a2fe3e83fa1b36c0523825fd0578f0c8baae658  target/boon-artifacts/success.json
+213090a04ad065fd62a26011d480c9cd6e7482d6550182fd9a0b47b5167fa89b  target/boon-artifacts/honest-compiler-report.json
+9d4f2f3f97009f512cca5b9089969fbd4367c8d161b7fb5e6e6b2a716db8f0d3  target/boon-artifacts/engine-simplicity/dd-purity-report.json
+3bee12a436c17e2d3a35d082c6519ea67ee0e96c3188794aa12a6c1c9f08bc40  target/boon-artifacts/engine-simplicity/dd-stateful-lowering-report.json
+bcbdd4c4d8e41f7eef757ca8d94360399ef57ed72de7f2226fd9c1d8074321a4  target/boon-artifacts/engine-simplicity/engine-simplicity-report.json
 ```
 
 ## Passing Evidence
 
-These commands pass in the current checkout:
+These commands passed during this checkpoint:
 
 ```bash
-cargo xtask verify-honesty-deterministic --format json
-cargo xtask verify-language-corpus --format json
-cargo xtask verify-no-shortcuts --format json
-cargo xtask verify-generated-freshness --format json
+cargo fmt -p boon_codegen_rust
+cargo check -p boon_codegen_rust
+cargo xtask write-generated-artifacts --format json
 cargo xtask verify-generated-crates --format json
-cargo xtask verify-no-fixture-dispatch --format json
-cargo xtask verify-source-routing --format json
-cargo xtask verify-dynamic-owner-routing --format json
-cargo xtask verify-persistent-runtime --format json
-cargo xtask verify-output-drain-efficiency --format json
-cargo xtask verify-engine-complexity --format json
+cargo xtask verify-generated-freshness --format json
+```
+
+The aggregate also reports these relevant gates as passed:
+
+```text
+verify-deps
+verify-generated-freshness
+verify-wasm-dd
+target-browser
+plan-coverage
+verify-syntax-corpus
+parser-completeness
+verify-resolver-corpus
+verify-shape-corpus
+verify-semantic-ir
+semantic-ir-coverage
+verify-no-shortcuts
+verify-language-corpus
+verify-negative-corpus
+verify-lowering
+compare-engines
+verify-no-fixture-dispatch
+verify-source-routing
+verify-dynamic-owner-routing
+verify-persistent-runtime
+verify-output-drain-efficiency
+verify-engine-stress
+verify-engine-complexity
+generated-crates
 ```
 
 These passes are not sufficient to declare success because the full aggregate
@@ -154,27 +170,29 @@ still fails and engine DD purity/stateful-lowering are blocked.
 
 ```bash
 cargo xtask verify-honest-compiler --format json
+cargo xtask verify-honesty-deterministic --format json
 cargo xtask verify-prompt-audit --format json
 cargo xtask verify-dd-purity --format json
 cargo xtask verify-dd-stateful-lowering --format json
 cargo xtask verify-engine-simplicity --format json
 cargo xtask verify-playgrounds --format json
-cargo xtask test --target browser
 cargo xtask verify all --format json
 ```
 
 Expected current behavior: these commands fail or report blocked until the
 runtime/generated execution defects in
-`docs/blockers/engine-simplicity-runtime-semantics-blocker.md` are fixed and
-the aggregate artifact contracts are brought into sync.
+`docs/blockers/engine-simplicity-runtime-semantics-blocker.md`, prompt-audit
+acceptance, and native-playground aggregate timing are fixed.
 
 ## Next Decision
 
-Do not change `verify-honest-compiler` to pass independently of prompt audit,
-and do not refresh prompt-audit hashes as a substitute for fixing the engine.
-The next implementation pass should remove the runtime-host evaluator and
-generated typed host-side list/record/text semantics, then repair the remaining
-aggregate artifact wiring before rerunning prompt audits.
+Do not change `verify-honest-compiler` to pass independently of deterministic
+honesty and prompt audit, and do not refresh prompt-audit hashes as a substitute
+for fixing the engine. The next implementation pass should remove the
+runtime-host evaluator, complete typed DD lowering for dynamic aggregate
+semantics, quarantine or replace compile-time-only static folding so it cannot
+be mistaken for runtime Boon semantics, fix the native-playground aggregate
+timing issue, and then rerun prompt audits on the fixed checkout.
 
 Any browser/native GUI verification that opens windows must keep wrapping the
 actual window-creating process with:
